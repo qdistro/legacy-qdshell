@@ -197,15 +197,15 @@ if [ "$NO_INT" = 1 ]; then
 else
     step "integration (qdistro repo + bats VM)"
     QDISTRO_DIR="${QDISTRO_DIR:-../qdistro}"
-    if [ ! -d "$QDISTRO_DIR/phase1/compositor/vm-tests" ]; then
-        warn "  qdistro repo not at $QDISTRO_DIR — skipping integration"
+    if [ ! -d "$QDISTRO_DIR/tests/integration/vm" ]; then
+        warn "  qdistro sibling repo not at $QDISTRO_DIR — skipping integration"
         INT_RESULT="skipped"
     else
         # Drive the qdshell-broker bats from the qdistro side so it
         # reuses the existing helpers + VM bootstrap.
-        BATS_FILE="$QDISTRO_DIR/phase1/compositor/vm-tests/phase9-qdshell-broker.bats"
+        BATS_FILE="$QDISTRO_DIR/tests/integration/vm/broker-e2e.bats"
         if [ ! -f "$BATS_FILE" ]; then
-            warn "  no phase9-qdshell-broker.bats yet — skipping integration"
+            warn "  no broker-e2e.bats — skipping integration"
             INT_RESULT="skipped"
         else
             if (cd "$QDISTRO_DIR" && bats "$BATS_FILE"); then

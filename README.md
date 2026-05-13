@@ -22,6 +22,22 @@ published. See [CREDITS.md](CREDITS.md).
   wizard, changelog, about box, wallhaven, and GitHub release plumbing
   were removed. The upstream migration chain was reset to schema v1.
 
+## Repository layout (sibling checkout)
+
+For development, qdshell expects the qdistro umbrella checked out as
+a sibling (`../qdistro/`) — the test scripts in `scripts/` look there
+for bats tests + the broker source. Canonical layout:
+
+```
+qdistro-org/
+├── qdistro/     ← umbrella (broker, tests, scripts)
+├── qdwin/       ← compositor
+└── qdshell/     ← this repo
+```
+
+See the [qdistro umbrella README](https://codeberg.org/qdistro/qdistro)
+for the full clone sequence.
+
 ## Build
 
 qdshell is Quickshell QML. From a checkout:
