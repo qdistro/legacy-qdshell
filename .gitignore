@@ -7,3 +7,15 @@ RELEASE.md
 __pycache__
 result
 build
+
+# Local test screenshot outputs.
+# NOTE: Assets/Screenshots/ holds the tracked upstream Noctalia
+# branding screenshots — that path is anchored under Assets/ and
+# stays in-tree.
+/screenshots/
+/test-screenshots/
+/test-output/
+/tests/**/screenshots/
+*.screenshot.png
+shot-*.png
+shot-*.jpg
