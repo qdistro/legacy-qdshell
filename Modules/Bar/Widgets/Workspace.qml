@@ -8,7 +8,7 @@ import Quickshell.Io
 import Quickshell.Widgets
 import qs.Commons
 import qs.Modules.Bar.Extras
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -96,9 +96,9 @@ Item {
   function getSelectedWindow() {
     if (!selectedWindowId)
       return null;
-    // Search directly in CompositorService to get the live window object
-    for (var i = 0; i < CompositorService.windows.count; i++) {
-      var win = CompositorService.windows.get(i);
+    // Search directly in Qdwin to get the live window object
+    for (var i = 0; i < Qdwin.windows.count; i++) {
+      var win = Qdwin.windows.get(i);
       // Using loose equality on purpose (==)
       if (win && (win.id == selectedWindowId || win.address == selectedWindowId)) {
         return win;
@@ -206,7 +206,7 @@ Item {
       next = localWorkspaces.count - 1;
     const ws = localWorkspaces.get(next);
     if (ws && ws.idx !== undefined)
-      CompositorService.switchToWorkspace(ws);
+      Qdwin.switchToWorkspace(ws);
   }
 
   // Helper function to normalize app IDs for case-insensitive matching
@@ -259,7 +259,7 @@ Item {
   onShowApplicationsChanged: refreshWorkspaces()
 
   Connections {
-    target: CompositorService
+    target: Qdwin
     function onWorkspacesChanged() {
       refreshWorkspaces();
     }
@@ -289,8 +289,8 @@ Item {
     var targetList = [];
     var focusedOutput = null;
     if (followFocusedScreen) {
-      for (var i = 0; i < CompositorService.workspaces.count; i++) {
-        const ws = CompositorService.workspaces.get(i);
+      for (var i = 0; i < Qdwin.workspaces.count; i++) {
+        const ws = Qdwin.workspaces.get(i);
         if (ws.isFocused)
           focusedOutput = ws.output.toLowerCase();
       }
@@ -298,10 +298,10 @@ Item {
 
     if (screen !== null) {
       const screenName = screen.name.toLowerCase();
-      for (var i = 0; i < CompositorService.workspaces.count; i++) {
-        const ws = CompositorService.workspaces.get(i);
+      for (var i = 0; i < Qdwin.workspaces.count; i++) {
+        const ws = Qdwin.workspaces.get(i);
         // For global workspaces (e.g., LabWC), show all workspaces on all screens
-        const matchesScreen = CompositorService.globalWorkspaces || (followFocusedScreen && ws.output.toLowerCase() == focusedOutput) || (!followFocusedScreen && ws.output.toLowerCase() == screenName);
+        const matchesScreen = Qdwin.globalWorkspaces || (followFocusedScreen && ws.output.toLowerCase() == focusedOutput) || (!followFocusedScreen && ws.output.toLowerCase() == screenName);
 
         if (!matchesScreen)
           continue;
@@ -463,11 +463,11 @@ Item {
                    const selectedWindow = root.getSelectedWindow();
 
                    if (action === "focus" && selectedWindow) {
-                     CompositorService.focusWindow(selectedWindow);
+                     Qdwin.focusWindow(selectedWindow);
                    } else if (action === "pin" && selectedAppId) {
                      root.toggleAppPin(selectedAppId);
                    } else if (action === "close" && selectedWindow) {
-                     CompositorService.closeWindow(selectedWindow);
+                     Qdwin.closeWindow(selectedWindow);
                    } else if (action === "widget-settings") {
                      BarService.openWidgetSettings(screen, section, sectionWidgetIndex, widgetId, widgetSettings);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
@@ -635,7 +635,7 @@ Item {
       function updateWindows() {
         var wsId = workspaceModel?.id;
         if (wsId !== undefined && wsId !== null) {
-          liveWindows = CompositorService.getWindowsForWorkspace(wsId);
+          liveWindows = Qdwin.getWindowsForWorkspace(wsId);
         } else {
           liveWindows = [];
         }
@@ -680,7 +680,7 @@ Item {
         preventStealing: true
         onPressed: mouse => {
                      if (mouse.button === Qt.LeftButton) {
-                       CompositorService.switchToWorkspace(groupedContainer.workspaceModel);
+                       Qdwin.switchToWorkspace(groupedContainer.workspaceModel);
                      }
                    }
         onReleased: mouse => {
@@ -755,7 +755,7 @@ Item {
 
               onPressed: mouse => {
                            if (mouse.button === Qt.LeftButton) {
-                             CompositorService.focusWindow(modelData);
+                             Qdwin.focusWindow(modelData);
                            }
                          }
 

@@ -14,7 +14,7 @@ Singleton {
 
   readonly property int currentVersion: 2
   // Main source URL - plugins from this source keep plain IDs
-  readonly property string mainSourceUrl: "https://github.com/noctalia-dev/noctalia-plugins"
+  readonly property string mainSourceUrl: "https://github.com/qdshell-dev/qdshell-plugins"
 
   Component.onCompleted: {
     ensurePluginsDirectory();
@@ -27,7 +27,7 @@ Singleton {
     return hash.substring(0, 6);
   }
 
-  // Check if a source is the main Noctalia plugins repository
+  // Check if a source is the main Qdshell plugins repository
   function isMainSource(sourceUrl) {
     return sourceUrl === root.mainSourceUrl;
   }
@@ -119,8 +119,8 @@ Singleton {
       if (root.pluginSources.length === 0) {
         root.pluginSources = [
           {
-            "name": "Noctalia Plugins",
-            "url": "https://github.com/noctalia-dev/noctalia-plugins",
+            "name": "Qdshell Plugins",
+            "url": "https://github.com/qdshell-dev/qdshell-plugins",
             "enabled": true
           }
         ];
@@ -140,8 +140,8 @@ Singleton {
       root.pluginStates = {};
       root.pluginSources = [
             {
-              "name": "Noctalia Plugins",
-              "url": "https://github.com/noctalia-dev/noctalia-plugins",
+              "name": "Qdshell Plugins",
+              "url": "https://github.com/qdshell-dev/qdshell-plugins",
               "enabled": true
             }
           ];
@@ -180,19 +180,19 @@ Singleton {
       }
     }
 
-    // Migration: rename "Official Noctalia Plugins" -> "Noctalia Plugins"
+    // Migration: rename "Official Qdshell Plugins" -> "Qdshell Plugins"
     var newSources = [];
     var sourcesChanged = false;
     for (var i = 0; i < root.pluginSources.length; i++) {
       var source = root.pluginSources[i];
-      if (source.name === "Official Noctalia Plugins") {
+      if (source.name === "Official Qdshell Plugins") {
         newSources.push({
-                          name: "Noctalia Plugins",
+                          name: "Qdshell Plugins",
                           url: source.url,
                           enabled: source.enabled
                         });
         sourcesChanged = true;
-        Logger.i("PluginRegistry", "Migrating source name: 'Official Noctalia Plugins' -> 'Noctalia Plugins'");
+        Logger.i("PluginRegistry", "Migrating source name: 'Official Qdshell Plugins' -> 'Qdshell Plugins'");
       } else {
         newSources.push(source);
       }

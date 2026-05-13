@@ -203,7 +203,7 @@ class TerminalGenerator:
     def generate_alacritty(self) -> str:
         """Generate alacritty theme (TOML format)."""
         c = self.colors
-        lines = ["# Colors (Noctalia)", ""]
+        lines = ["# Colors (Qdshell)", ""]
 
         # Bright colors
         lines.append("[colors.bright]")
@@ -299,8 +299,8 @@ class TerminalGenerator:
         # Metadata
         lines.append("")
         lines.append("[metadata]")
-        lines.append('author = "Noctalia"')
-        lines.append('name = "Noctalia"')
+        lines.append('author = "Qdshell"')
+        lines.append('name = "Qdshell"')
 
         return "\n".join(lines) + "\n"
 

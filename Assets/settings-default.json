@@ -250,7 +250,7 @@
           "id": "WallpaperSelector"
         },
         {
-          "id": "NoctaliaPerformance"
+          "id": "QdshellPerformance"
         }
       ],
       "right": [
@@ -448,7 +448,7 @@
   },
   "colorSchemes": {
     "useWallpaperColors": false,
-    "predefinedScheme": "Noctalia (default)",
+    "predefinedScheme": "Qdshell (default)",
     "darkMode": true,
     "schedulingMode": "off",
     "manualSunrise": "06:30",

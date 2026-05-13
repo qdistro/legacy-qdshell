@@ -6,7 +6,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.System
 import qs.Services.UI
 import qs.Widgets
@@ -482,9 +482,9 @@ Item {
                                    Logger.d("Dock", "Executing terminal app manually: " + app.name);
                                    const terminal = Settings.data.appLauncher.terminalCommand.split(" ");
                                    const command = terminal.concat(app.command);
-                                   CompositorService.spawn(command);
+                                   Qdwin.spawn(command);
                                  } else if (app.command && app.command.length > 0) {
-                                   CompositorService.spawn(app.command);
+                                   Qdwin.spawn(app.command);
                                  } else if (app.execute) {
                                    app.execute();
                                  } else {

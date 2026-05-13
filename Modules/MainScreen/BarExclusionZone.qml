@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 
 /**
@@ -24,7 +24,7 @@ PanelWindow {
   readonly property real barMarginH: (barFloating && edge === Settings.getBarPositionForScreen(screen?.name)) ? Math.ceil(Settings.data.bar.marginHorizontal) : 0
   readonly property real barMarginV: (barFloating && edge === Settings.getBarPositionForScreen(screen?.name)) ? Math.ceil(Settings.data.bar.marginVertical) : 0
   // Reduce exclusion zone by 1 physical pixel so app windows blend flush against the bar edge
-  readonly property real bleedInset: 1.0 / (CompositorService.getDisplayScale(screen?.name) || 1.0)
+  readonly property real bleedInset: 1.0 / (Qdwin.getDisplayScale(screen?.name) || 1.0)
 
   // Invisible - just reserves space
   color: "transparent"
@@ -33,7 +33,7 @@ PanelWindow {
 
   // Wayland layer shell configuration
   WlrLayershell.layer: WlrLayer.Top
-  WlrLayershell.namespace: "noctalia-bar-exclusion-" + edge + "-" + (screen?.name || "unknown")
+  WlrLayershell.namespace: "qdshell-bar-exclusion-" + edge + "-" + (screen?.name || "unknown")
   // When auto-hide, non-exclusive mode is enabled, OR bar is explicitly hidden via IPC, don't reserve space
   // Note: We check BarService.isVisible directly, NOT effectivelyVisible, because we want
   // the exclusion zone to stay during overview (effectivelyVisible is false during overview

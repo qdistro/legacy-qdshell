@@ -20,7 +20,7 @@ Singleton {
                            "PowerProfile": powerProfileComponent,
                            "WiFi": networkComponent,
                            "Network": networkComponent,
-                           "NoctaliaPerformance": noctaliaPerformanceComponent,
+                           "QdshellPerformance": qdshellPerformanceComponent,
                            "WallpaperSelector": wallpaperSelectorComponent
                          })
 
@@ -65,8 +65,8 @@ Singleton {
   property Component networkComponent: Component {
     Network {}
   }
-  property Component noctaliaPerformanceComponent: Component {
-    NoctaliaPerformance {}
+  property Component qdshellPerformanceComponent: Component {
+    QdshellPerformance {}
   }
   property Component wallpaperSelectorComponent: Component {
     WallpaperSelector {}

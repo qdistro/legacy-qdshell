@@ -264,7 +264,7 @@ Popup {
       }
     };
 
-    xhr.open("GET", "https://raw.githubusercontent.com/noctalia-dev/noctalia-colorschemes/main/registry.json");
+    xhr.open("GET", "https://raw.githubusercontent.com/qdshell-dev/qdshell-colorschemes/main/registry.json");
     xhr.send();
   }
 
@@ -308,7 +308,7 @@ Popup {
           }
         }
       };
-      xhr.open("GET", "https://api.github.com/repos/noctalia-dev/noctalia-colorschemes");
+      xhr.open("GET", "https://api.github.com/repos/qdshell-dev/qdshell-colorschemes");
       xhr.send();
     }
   }
@@ -341,7 +341,7 @@ Popup {
         }
       }
     };
-    xhr.open("GET", "https://api.github.com/repos/noctalia-dev/noctalia-colorschemes/git/refs/heads/" + branch);
+    xhr.open("GET", "https://api.github.com/repos/qdshell-dev/qdshell-colorschemes/git/refs/heads/" + branch);
     xhr.send();
   }
 
@@ -361,7 +361,7 @@ Popup {
                 if (item.type === "blob" && item.path.startsWith(scheme.path + "/")) {
                   files.push({
                                "path": item.path,
-                               "url": "https://raw.githubusercontent.com/noctalia-dev/noctalia-colorschemes/" + branch + "/" + item.path,
+                               "url": "https://raw.githubusercontent.com/qdshell-dev/qdshell-colorschemes/" + branch + "/" + item.path,
                                "name": item.path.split("/").pop()
                              });
                 }
@@ -385,7 +385,7 @@ Popup {
         }
       }
     };
-    xhr.open("GET", "https://api.github.com/repos/noctalia-dev/noctalia-colorschemes/git/trees/" + sha + "?recursive=1");
+    xhr.open("GET", "https://api.github.com/repos/qdshell-dev/qdshell-colorschemes/git/trees/" + sha + "?recursive=1");
     xhr.send();
   }
 
@@ -424,7 +424,7 @@ Popup {
         }
       }
     };
-    xhr.open("GET", "https://api.github.com/repos/noctalia-dev/noctalia-colorschemes/contents/" + scheme.path);
+    xhr.open("GET", "https://api.github.com/repos/qdshell-dev/qdshell-colorschemes/contents/" + scheme.path);
     xhr.send();
   }
 
@@ -660,11 +660,11 @@ Popup {
 
         // If the deleted scheme was the active one, reset to default BEFORE reloading
         if (needsReset) {
-          Logger.i("ColorSchemeDownload", "Deleted scheme was active, resetting to Noctalia (default)");
+          Logger.i("ColorSchemeDownload", "Deleted scheme was active, resetting to Qdshell (default)");
           // Clear the setting immediately so ColorSchemeService won't try to apply the deleted scheme
-          Settings.data.colorSchemes.predefinedScheme = "Noctalia (default)";
+          Settings.data.colorSchemes.predefinedScheme = "Qdshell (default)";
           // Apply the default scheme immediately
-          ColorSchemeService.setPredefinedScheme("Noctalia (default)");
+          ColorSchemeService.setPredefinedScheme("Qdshell (default)");
         }
 
         // Reload color schemes

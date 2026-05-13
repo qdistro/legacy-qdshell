@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.System
 
 Item {
@@ -573,10 +573,10 @@ Item {
                            const terminal = Settings.data.appLauncher.terminalCommand.split(" ");
                            const command = terminal.concat(app.command);
                            Logger.d("ApplicationsProvider", "Executing command (manual terminal): " + command.join(" "));
-                           CompositorService.spawn(command);
+                           Qdwin.spawn(command);
                          } else if (app.command && app.command.length > 0) {
                            Logger.d("ApplicationsProvider", "Executing command: " + app.command.join(" "));
-                           CompositorService.spawn(app.command);
+                           Qdwin.spawn(app.command);
                          } else if (app.execute) {
                            Logger.d("ApplicationsProvider", "Calling app.execute() for: " + app.name);
                            app.execute();

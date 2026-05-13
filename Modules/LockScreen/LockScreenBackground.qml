@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Power
 import qs.Services.UI
 
@@ -47,7 +47,7 @@ Item {
 
   // Listen for display scale changes
   Connections {
-    target: CompositorService
+    target: Qdwin
     function onDisplayScalesChanged() {
       if (screen && width > 0 && height > 0) {
         Qt.callLater(requestCachedWallpaper);
@@ -84,7 +84,7 @@ Item {
       return;
     }
 
-    const compositorScale = CompositorService.getDisplayScale(screen.name);
+    const compositorScale = Qdwin.getDisplayScale(screen.name);
     const targetWidth = Math.round(width * compositorScale);
     const targetHeight = Math.round(height * compositorScale);
     if (targetWidth <= 0 || targetHeight <= 0) {
@@ -123,7 +123,7 @@ Item {
     layer.enabled: true
     layer.smooth: false
     layer.effect: MultiEffect {
-      blurEnabled: !PowerProfileService.noctaliaPerformanceMode && (Settings.data.general.lockScreenBlur > 0)
+      blurEnabled: !PowerProfileService.qdshellPerformanceMode && (Settings.data.general.lockScreenBlur > 0)
       blur: Settings.data.general.lockScreenBlur
       blurMax: 48
     }

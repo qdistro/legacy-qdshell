@@ -1,48 +1,45 @@
 # Credits
 
-Noctalia Shell is made possible by the incredible work of many open-source projects and contributors.
+`qdshell` is a hard fork of [Noctalia](https://github.com/noctalia-dev/noctalia-shell)
+v4.5.0 (2026-02-17, commit `dbfe3634d`), tagged in this repository as
+`fork-base/upstream-v4.5.0` for traceability.
 
-## Design & Branding
+## Why fork
 
-- **MrDowntempo** - Creator of the Noctalia Owl and moon logo
-- **[SaberJ2X](https://www.reddit.com/user/SaberJ64/)** - Creator of Talia, the Noctalia mascot
+Noctalia upstream targets a different audience (multi-compositor
+desktop shell, hobbyist project) than qdshell (single-compositor —
+qdwin — security-aware shell layer for [qdistro](https://github.com/qdistro)).
+The fork rationale, scope, and discipline are documented in
+`todo/noctalia-fork-plan.md` of the qdistro repository.
 
-## Core Framework
+## What we kept from upstream
 
-- **[Quickshell](https://github.com/outfoxxed/quickshell)** - The Qt/QML-based Wayland shell framework that powers Noctalia
+The bulk of the codebase: `Modules/Bar/`, `Modules/Panels/`,
+`Modules/Launcher/`, `Modules/LockScreen/`, `Modules/Notification/`,
+`Modules/OSD/`, `Modules/Dock/`, `Modules/Cards/`, `Widgets/`,
+`Commons/` (minus migrations), most of `Services/`, the plugin
+loader machinery, the settings tab system, and the theming engine.
 
-## Runtime Dependencies
+## What we changed (rename pass — first commit)
 
-### System Integration
-- **[brightnessctl](https://github.com/Hummer12007/brightnessctl)** - Screen brightness control
-- **[wlsunset](https://sr.ht/~kennylevinsen/wlsunset/)** - Night light and blue light filter support
-- **[wl-clipboard](https://github.com/bugaevc/wl-clipboard)** - Wayland clipboard utilities
-- **[ddcutil](https://www.ddcutil.com/)** - External display brightness control
-- **[power-profiles-daemon](https://gitlab.freedesktop.org/upower/power-profiles-daemon)** - Power profile management
+- All `Noctalia` / `noctalia` identifiers in code → `Qdshell` /
+  `qdshell` to avoid identity confusion and search-result pollution.
+  This includes service files, asset filenames, color scheme
+  directory, font filename, settings paths, and translation strings.
+- Translations: kept (per qdistro project direction). User-facing
+  brand strings within them were rewritten alongside the codebase.
 
-### Media & Audio
-- **[gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/)** - Hardware-accelerated screen recording
-- **[Cava](https://github.com/karlstav/cava)** - Audio visualizer component
+## Credits
 
-### Utilities
-- **[cliphist](https://github.com/sentriz/cliphist)** - Clipboard history support
-
-## Icons
-- **[Tabler Icons](https://tabler.io/icons)** - Icon set used throughout the shell
-- **[Riyan Resdian on Noun Project](https://thenounproject.com/creator/yaicon/)** - Plug icon
-
-## Audio Assets
-- **[Universfield on Pixabay](https://pixabay.com/users/universfield-28281460/)** - Notification sound effect
-- **[DrNI on Freesound](https://freesound.org/people/DrNI/sounds/34562/)** - Timer's alarm sound effect
-- **[Lucas McCallister on Freesound](http://www.freesound.org/samplesViewSingle.php?id=67091)** - Volume change feedback sound effect
-
-
-## Special Thanks
-- The **Wayland** community for building the future of Linux desktop graphics
-- The **Niri**, **Hyprland**, **Sway**, **Labwc**, and **MangoWC** teams for their excellent Wayland compositors
-- All the contributors and users who have helped make Noctalia better
+- **Upstream Noctalia maintainers**:
+  - Lemmy (primary, ~42% commits)
+  - Ly-sec (~24% commits)
+  - All [Noctalia contributors](https://github.com/noctalia-dev/noctalia-shell/graphs/contributors)
+- **Quickshell framework**: [outfoxxed and contributors](https://github.com/outfoxxed/quickshell)
+- **Tabler Icons**: licensed under MIT, see
+  `Assets/Fonts/tabler/tabler-icons-license.txt`
 
 ## License
-Noctalia Shell is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
-Each dependency listed above is governed by its own respective license. Please refer to their individual projects for licensing information.
+This fork inherits Noctalia's license (see `LICENSE`). All
+contributions to `qdshell` retain the same license unless noted.

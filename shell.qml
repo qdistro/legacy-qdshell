@@ -1,5 +1,5 @@
 /*
-* Noctalia – made by https://github.com/noctalia-dev
+* Qdshell – made by https://github.com/qdshell-dev
 * Licensed under the MIT License.
 * Forks and modifications are allowed under the MIT License,
 * but proper credit must be given to the original author.
@@ -32,7 +32,7 @@ import qs.Services.Control
 import qs.Services.Hardware
 import qs.Services.Location
 import qs.Services.Networking
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.Power
 import qs.Services.System
 import qs.Services.Theming
@@ -47,7 +47,7 @@ ShellRoot {
 
   Component.onCompleted: {
     Logger.i("Shell", "---------------------------");
-    Logger.i("Shell", "Noctalia Hello!");
+    Logger.i("Shell", "Qdshell Hello!");
 
     // Initialize plugin system early so Settings can validate plugin widgets
     PluginRegistry.init();
@@ -111,8 +111,6 @@ ShellRoot {
           IdleInhibitorService.init();
           PowerProfileService.init();
           HostService.init();
-          GitHubService.init();
-          SupporterService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
         });
@@ -163,7 +161,7 @@ ShellRoot {
   }
 
   // ---------------------------------------------
-  // Delayed initialization and wizard/changelog
+  // Delayed initialization
   // ---------------------------------------------
   Timer {
     id: delayedInitTimer
@@ -171,82 +169,6 @@ ShellRoot {
     interval: 1500
     onTriggered: {
       FontService.init();
-      UpdateService.init();
-      showWizardOrChangelog();
     }
-  }
-
-  // Retry timer for when panel isn't ready yet
-  Timer {
-    id: wizardRetryTimer
-    running: false
-    interval: 500
-    property string pendingWizardType: "" // "setup", "telemetry", or ""
-    onTriggered: showWizardOrChangelog()
-  }
-
-  // Connect to telemetry wizard signal from UpdateService (for async state loading)
-  Connections {
-    target: UpdateService
-    function onTelemetryWizardNeeded() {
-      wizardRetryTimer.pendingWizardType = "telemetry";
-      showWizardOrChangelog();
-    }
-  }
-
-  property var telemetryWizardConnection: null
-
-  function showWizardOrChangelog() {
-    // Determine what to show: setup wizard > telemetry wizard > changelog
-    var wizardType = wizardRetryTimer.pendingWizardType;
-
-    if (wizardType === "") {
-      // First call - determine wizard type
-      if (Settings.shouldOpenSetupWizard) {
-        wizardType = "setup";
-      } else if (UpdateService.shouldShowTelemetryWizard()) {
-        wizardType = "telemetry";
-      } else {
-        // No wizard needed - init telemetry and show changelog
-        TelemetryService.init();
-        UpdateService.checkTelemetryWizardOrChangelog();
-        return;
-      }
-    }
-
-    var targetScreen = PanelService.findScreenForPanels();
-    if (!targetScreen) {
-      Logger.w("Shell", "No screen available to show wizard");
-      wizardRetryTimer.pendingWizardType = "";
-      return;
-    }
-
-    var setupPanel = PanelService.getPanel("setupWizardPanel", targetScreen);
-    if (!setupPanel) {
-      // Panel not ready, retry
-      wizardRetryTimer.pendingWizardType = wizardType;
-      wizardRetryTimer.restart();
-      return;
-    }
-
-    // Panel is ready, show it
-    wizardRetryTimer.pendingWizardType = "";
-
-    if (wizardType === "telemetry") {
-      setupPanel.telemetryOnlyMode = true;
-
-      // Connect to completion signal to show changelog afterward
-      if (telemetryWizardConnection) {
-        setupPanel.telemetryWizardCompleted.disconnect(telemetryWizardConnection);
-      }
-      telemetryWizardConnection = function () {
-        UpdateService.showLatestChangelog();
-      };
-      setupPanel.telemetryWizardCompleted.connect(telemetryWizardConnection);
-    } else {
-      setupPanel.telemetryOnlyMode = false;
-    }
-
-    setupPanel.open();
   }
 }

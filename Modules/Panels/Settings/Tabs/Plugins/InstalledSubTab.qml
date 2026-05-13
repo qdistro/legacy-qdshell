@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 import qs.Widgets
 
@@ -173,7 +173,7 @@ ColumnLayout {
               elide: Text.ElideRight
             }
 
-            // Official badge (Noctalia Team maintained)
+            // Official badge (Qdshell Team maintained)
             Rectangle {
               visible: modelData.official === true
               color: Color.mSecondary
@@ -231,7 +231,7 @@ ColumnLayout {
               tooltipText: I18n.tr("panels.plugins.open-plugin-page")
               baseSize: Style.baseWidgetSize * 0.7
               visible: modelData.isFromOfficialRepo
-              onClicked: Qt.openUrlExternally("https://noctalia.dev/plugins/" + modelData.id)
+              onClicked: Qt.openUrlExternally("https://qdshell.dev/plugins/" + modelData.id)
             }
 
             NIconButton {
@@ -327,7 +327,7 @@ ColumnLayout {
                   return I18n.tr("panels.plugins.update-pending", {
                                    "current": modelData.version,
                                    "new": modelData.pendingUpdateInfo.availableVersion,
-                                   "required": modelData.pendingUpdateInfo.minNoctaliaVersion
+                                   "required": modelData.pendingUpdateInfo.minQdshellVersion
                                  });
                 }
                 return "v" + modelData.version;

@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -175,11 +175,11 @@ ColumnLayout {
 
   NDivider {
     Layout.fillWidth: true
-    visible: CompositorService.isNiri
+    visible: Qdwin.isNiri
   }
 
   ColumnLayout {
-    visible: CompositorService.isNiri
+    visible: Qdwin.isNiri
     enabled: Settings.data.wallpaper.enabled
     spacing: Style.marginL
     Layout.fillWidth: true
@@ -197,7 +197,7 @@ ColumnLayout {
       enabled: Settings.data.wallpaper.overviewEnabled
       label: I18n.tr("panels.wallpaper.settings-overview-blur-strength-label")
       description: I18n.tr("panels.wallpaper.settings-overview-blur-strength-description")
-      visible: CompositorService.isNiri
+      visible: Qdwin.isNiri
       from: 0.0
       to: 1.0
       stepSize: 0.01
@@ -212,7 +212,7 @@ ColumnLayout {
       enabled: Settings.data.wallpaper.overviewEnabled
       label: I18n.tr("panels.wallpaper.settings-overview-tint-label")
       description: I18n.tr("panels.wallpaper.settings-overview-tint-description")
-      visible: CompositorService.isNiri
+      visible: Qdwin.isNiri
       from: 0.0
       to: 1.0
       stepSize: 0.01

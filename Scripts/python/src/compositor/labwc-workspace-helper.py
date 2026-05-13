@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LabWC Workspace Helper for Noctalia Shell
+LabWC Workspace Helper for Qdshell Shell
 
 This script connects to LabWC's ext-workspace-v1 protocol and outputs
 workspace state as JSON for the LabwcService to consume.
@@ -362,7 +362,7 @@ class LabwcWorkspaceClient:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='LabWC workspace helper for Noctalia Shell'
+        description='LabWC workspace helper for Qdshell Shell'
     )
     parser.add_argument(
         '--activate', '-a',

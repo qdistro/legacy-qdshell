@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Noctalia's Template processor - Wallpaper-based color extraction and theme generation.
+Qdshell's Template processor - Wallpaper-based color extraction and theme generation.
 
 A CLI tool that extracts dominant colors from wallpaper images and generates palettes with optional templating.
 
@@ -38,7 +38,7 @@ Example:
     python3 template-processor.py ~/wallpaper.png -r template.txt:output.txt
     python3 template-processor.py ~/wallpaper.png -c config.toml --mode dark
 
-Author: Noctalia Team
+Author: Qdshell Team
 License: MIT
 """
 

@@ -43,7 +43,7 @@ Singleton {
     adapter: JsonAdapter {
       id: adapter
 
-      // CompositorService: display scales
+      // Qdwin: display scales
       property var display: ({})
 
       // NotificationService: notification state
@@ -149,7 +149,7 @@ Singleton {
 
   // Convenience functions for each service
 
-  // Display state (CompositorService)
+  // Display state (Qdwin)
   function setDisplay(displayData) {
     adapter.display = displayData;
     save();
@@ -254,7 +254,7 @@ Singleton {
         settings: settingsData,
         state: {
           doNotDisturb: NotificationService.doNotDisturb,
-          noctaliaPerformanceMode: PowerProfileService.noctaliaPerformanceMode,
+          qdshellPerformanceMode: PowerProfileService.qdshellPerformanceMode,
           barVisible: BarService.isVisible,
           openedPanel: PanelService.openedPanel?.objectName || "",
           lockScreenActive: PanelService.lockScreen?.active || false,

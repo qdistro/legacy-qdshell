@@ -6,7 +6,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.System
 import qs.Services.UI
 import qs.Widgets
@@ -518,7 +518,7 @@ Loader {
           margins.left: dockPosition === "left" && barAtSameEdge && !showFrameIndicator ? (barHeight + (Settings.data.bar.floating ? Settings.data.bar.marginHorizontal : 0)) : 0
           margins.right: dockPosition === "right" && barAtSameEdge && !showFrameIndicator ? (barHeight + (Settings.data.bar.floating ? Settings.data.bar.marginHorizontal : 0)) : 0
 
-          WlrLayershell.namespace: "noctalia-dock-peek-" + (screen?.name || "unknown")
+          WlrLayershell.namespace: "qdshell-dock-peek-" + (screen?.name || "unknown")
           WlrLayershell.exclusionMode: ExclusionMode.Ignore
           // Larger peek area when bar is at same edge, normal 1px otherwise
           implicitHeight: showFrameIndicator ? (isVertical ? Math.round(modelData?.height || 0) : indicatorThickness) : (barAtSameEdge && !isVertical ? indicatorThickness : peekHeight)
@@ -606,7 +606,7 @@ Loader {
           focusable: false
           color: "transparent"
 
-          WlrLayershell.namespace: "noctalia-dock-" + (screen?.name || "unknown")
+          WlrLayershell.namespace: "qdshell-dock-" + (screen?.name || "unknown")
           WlrLayershell.exclusionMode: exclusive ? ExclusionMode.Auto : ExclusionMode.Ignore
 
           implicitWidth: dockContainerWrapper.width

@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Hardware
 import qs.Services.Keyboard
 import qs.Services.Location
@@ -77,19 +77,19 @@ Item {
     // Execute the action
     switch (action) {
     case "logout":
-      CompositorService.logout();
+      Qdwin.logout();
       break;
     case "suspend":
-      CompositorService.suspend();
+      Qdwin.suspend();
       break;
     case "hibernate":
-      CompositorService.hibernate();
+      Qdwin.hibernate();
       break;
     case "reboot":
-      CompositorService.reboot();
+      Qdwin.reboot();
       break;
     case "shutdown":
-      CompositorService.shutdown();
+      Qdwin.shutdown();
       break;
     }
 

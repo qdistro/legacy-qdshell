@@ -204,9 +204,9 @@ Singleton {
 
   function addWallpaperTheming(lines, mode) {
     const homeDir = Quickshell.env("HOME");
-    // Noctalia colors JSON
-    lines.push("[templates.noctalia]");
-    lines.push('input_path = "' + Quickshell.shellDir + '/Assets/Templates/noctalia.json"');
+    // Qdshell colors JSON
+    lines.push("[templates.qdshell]");
+    lines.push('input_path = "' + Quickshell.shellDir + '/Assets/Templates/qdshell.json"');
     lines.push('output_path = "' + Settings.configDir + 'colors.json"');
 
     // Terminal templates
@@ -237,7 +237,7 @@ Singleton {
                                                                                          lines.push(`\n[templates.discord_${themeSuffix}_${client.name}]`);
                                                                                          lines.push(`input_path = "${Quickshell.shellDir}/Assets/Templates/${inputFile}"`);
                                                                                          // First input uses legacy name for backward compatibility
-                                                                                         const outputFile = idx === 0 ? "noctalia.theme.css" : `noctalia-${themeSuffix}.theme.css`;
+                                                                                         const outputFile = idx === 0 ? "qdshell.theme.css" : `qdshell-${themeSuffix}.theme.css`;
                                                                                          const outputPath = client.path.replace("~", homeDir) + `/themes/${outputFile}`;
                                                                                          lines.push(`output_path = "${outputPath}"`);
                                                                                        }
@@ -265,7 +265,7 @@ Singleton {
                                                 ProgramCheckerService.availableEmacsClients.forEach(client => {
                                                                                                       lines.push(`\n[templates.emacs_${client.name}]`);
                                                                                                       lines.push(`input_path = "${Quickshell.shellDir}/Assets/Templates/${app.input}"`);
-                                                                                                      const expandedPath = client.path.replace("~", homeDir) + "/themes/noctalia-theme.el";
+                                                                                                      const expandedPath = client.path.replace("~", homeDir) + "/themes/qdshell-theme.el";
                                                                                                       lines.push(`output_path = "${expandedPath}"`);
                                                                                                     });
                                               }
@@ -442,8 +442,8 @@ Singleton {
 
   function getTerminalColorsTemplate(terminal, mode) {
     const schemeNameMap = ({
-                             "Noctalia (default)": "Noctalia-default",
-                             "Noctalia (legacy)": "Noctalia-legacy",
+                             "Qdshell (default)": "Qdshell-default",
+                             "Qdshell (legacy)": "Qdshell-legacy",
                              "Tokyo Night": "Tokyo-Night",
                              "Rose Pine": "Rosepine"
                            });

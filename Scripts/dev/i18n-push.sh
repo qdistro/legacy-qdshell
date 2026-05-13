@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Push translations to Noctalia Translate API
+# Push translations to Qdshell Translate API
 # Usage: TRANSLATION_PUSH_SECRET=your_secret ./push-translations.sh [--overwrite] [--lang <code>] [/path/to/Assets/Translations]
 # Or set the secret in environment and pass the path as argument
 #
@@ -33,12 +33,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Configuration
-API_URL="${TRANSLATION_API_URL:-https://i18n.noctalia.dev}"
-PROJECT_SLUG="${TRANSLATION_PROJECT:-noctalia-shell}"
+API_URL="${TRANSLATION_API_URL:-https://i18n.qdshell.dev}"
+PROJECT_SLUG="${TRANSLATION_PROJECT:-qdshell-shell}"
 
 # Check for secret
-if [ -z "$NOCTALIA_SHELL_TRANSLATION_PUSH_SECRET" ]; then
-    echo "Error: NOCTALIA_SHELL_TRANSLATION_PUSH_SECRET environment variable is required"
+if [ -z "$QDSHELL_SHELL_TRANSLATION_PUSH_SECRET" ]; then
+    echo "Error: QDSHELL_SHELL_TRANSLATION_PUSH_SECRET environment variable is required"
     exit 1
 fi
 
@@ -125,7 +125,7 @@ fi
 echo "Pushing to API..."
 RESPONSE=$(echo "$COMBINED_JSON" | curl -s -w "\n%{http_code}" -X POST \
     "$PUSH_URL" \
-    -H "Authorization: Bearer $NOCTALIA_SHELL_TRANSLATION_PUSH_SECRET" \
+    -H "Authorization: Bearer $QDSHELL_SHELL_TRANSLATION_PUSH_SECRET" \
     -H "Content-Type: application/json" \
     -d @-)
 

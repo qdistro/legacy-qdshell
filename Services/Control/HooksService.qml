@@ -91,8 +91,8 @@ Singleton {
 
   Connections {
     target: PowerProfileService
-    function onNoctaliaPerformanceModeChanged() {
-      const isEnabled = PowerProfileService.noctaliaPerformanceMode;
+    function onQdshellPerformanceModeChanged() {
+      const isEnabled = PowerProfileService.qdshellPerformanceMode;
 
       // Detect enabled: was disabled, now enabled
       if (!wasPerformanceModeEnabled && isEnabled) {
@@ -292,7 +292,7 @@ Singleton {
                      lockScreenActiveConnection.target = PanelService.lockScreen;
                    }
                    // Initialize performance mode state tracking
-                   wasPerformanceModeEnabled = PowerProfileService.noctaliaPerformanceMode;
+                   wasPerformanceModeEnabled = PowerProfileService.qdshellPerformanceMode;
                    // Execute startup hook
                    executeStartupHook();
                  });

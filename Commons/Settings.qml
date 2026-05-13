@@ -5,9 +5,8 @@ import Quickshell
 import Quickshell.Io
 import "../Helpers/QtObj2JS.js" as QtObj2JS
 import qs.Commons
-import qs.Commons.Migrations
 import qs.Modules.OSD
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 
 Singleton {
@@ -16,18 +15,23 @@ Singleton {
   property bool isLoaded: false
   property bool reloadSettings: false
   property bool directoriesCreated: false
-  property bool shouldOpenSetupWizard: false
+  // Setup wizard stripped in qdshell — kept as inert false so any
+  // residual references short-circuit harmlessly.
+  readonly property bool shouldOpenSetupWizard: false
   property bool isFreshInstall: false
 
   /*
   Shell directories.
-  - Default config directory: ~/.config/noctalia
-  - Default cache directory: ~/.cache/noctalia
+  - Default config directory: ~/.config/qdshell
+  - Default cache directory: ~/.cache/qdshell
   */
   readonly property alias data: adapter  // Used to access via Settings.data.xxx.yyy
-  readonly property int settingsVersion: 53
+  // qdshell ships fresh schema v1 — pre-fork Noctalia v27..v53 migration
+  // chain dropped (Commons/Migrations/ removed). qdshell uses its own
+  // ~/.config/qdshell/ dir so there's no upgrade path from Noctalia.
+  readonly property int settingsVersion: 1
   property bool isDebug: Quickshell.env("NOCTALIA_DEBUG") === "1"
-  readonly property string shellName: "noctalia"
+  readonly property string shellName: "qdshell"
   readonly property string configDir: Quickshell.env("NOCTALIA_CONFIG_DIR") || (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/" + shellName + "/"
   readonly property string cacheDir: Quickshell.env("NOCTALIA_CACHE_DIR") || (Quickshell.env("XDG_CACHE_HOME") || Quickshell.env("HOME") + "/.cache") + "/" + shellName + "/"
   readonly property string settingsFile: Quickshell.env("NOCTALIA_SETTINGS_FILE") || (configDir + "settings.json")
@@ -102,18 +106,8 @@ Singleton {
       if (!isLoaded) {
         Logger.i("Settings", "Settings loaded");
 
-        // Load raw JSON for migrations (adapter doesn't expose removed properties)
-        var rawJson = null;
-        try {
-          rawJson = JSON.parse(settingsFileView.text());
-        } catch (e) {
-          Logger.w("Settings", "Could not parse raw JSON for migrations");
-        }
-
-        // Run versioned migrations immediately, don't move it in upgradeSettings
-        runVersionedMigrations(rawJson);
-
-        // Finally, update our local settings version
+        // qdshell: migrations stripped (fresh schema v1). Just stamp
+        // the version so any future migration framework has a baseline.
         adapter.settingsVersion = settingsVersion;
 
         // Emit the signal
@@ -133,8 +127,7 @@ Singleton {
         root.isFreshInstall = true;
         writeAdapter();
 
-        // We started without settings, we should open the setupWizard
-        root.shouldOpenSetupWizard = true;
+        // qdshell: setup wizard stripped, no-op on fresh install.
       }
     }
   }
@@ -447,7 +440,7 @@ Singleton {
             "id": "WallpaperSelector"
           },
           {
-            "id": "NoctaliaPerformance"
+            "id": "QdshellPerformance"
           }
         ]
         property list<var> right: [
@@ -659,7 +652,7 @@ Singleton {
 
     property JsonObject colorSchemes: JsonObject {
       property bool useWallpaperColors: false
-      property string predefinedScheme: "Noctalia (default)"
+      property string predefinedScheme: "Qdshell (default)"
       property bool darkMode: true
       property string schedulingMode: "off"
       property string manualSunrise: "06:30"
@@ -1025,48 +1018,9 @@ Singleton {
   }
 
   // -----------------------------------------------------
-  // Run versioned migrations using MigrationRegistry
-  // rawJson is the parsed JSON file content (before adapter filtering)
-  function runVersionedMigrations(rawJson) {
-    // Skip migrations on fresh installs (no prior settings file)
-    if (!rawJson || root.isFreshInstall) {
-      Logger.i("Settings", "Fresh install detected, skipping migrations");
-      return;
-    }
-
-    const currentVersion = adapter.settingsVersion;
-    const migrations = MigrationRegistry.migrations;
-
-    Logger.i("Settings", "adapter.settingsVersion:", adapter.settingsVersion);
-
-    // Get all migration versions and sort them
-    const versions = Object.keys(migrations).map(v => parseInt(v)).sort((a, b) => a - b);
-
-    // Run migrations in order for versions newer than current
-    for (var i = 0; i < versions.length; i++) {
-      const version = versions[i];
-
-      if (currentVersion < version) {
-        // Create migration instance and run it
-        const migrationComponent = migrations[version];
-        const migration = migrationComponent.createObject(root);
-
-        if (migration && typeof migration.migrate === "function") {
-          const success = migration.migrate(adapter, Logger, rawJson);
-          if (!success) {
-            Logger.e("Settings", "Migration to v" + version + " failed");
-          }
-        } else {
-          Logger.e("Settings", "Invalid migration for v" + version);
-        }
-
-        // Clean up migration instance
-        if (migration) {
-          migration.destroy();
-        }
-      }
-    }
-  }
+  // qdshell: runVersionedMigrations() removed alongside Commons/Migrations/.
+  // If schema changes are needed in the future, add a fresh migration
+  // framework here keyed off settingsVersion=1 baseline.
 
   // -----------------------------------------------------
   // If the settings structure has changed, ensure

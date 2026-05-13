@@ -3,7 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 
 Singleton {
@@ -16,7 +16,7 @@ Singleton {
     if (!isVisible) {
       return false;
     }
-    if (Settings.data.bar.hideOnOverview && CompositorService.overviewActive) {
+    if (Settings.data.bar.hideOnOverview && Qdwin.overviewActive) {
       return false;
     }
     return true;

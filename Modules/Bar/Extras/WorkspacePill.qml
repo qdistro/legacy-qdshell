@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Widgets
 
 Item {
@@ -223,7 +223,7 @@ Item {
     cursorShape: Qt.PointingHandCursor
     hoverEnabled: true
     onClicked: {
-      CompositorService.switchToWorkspace(workspace);
+      Qdwin.switchToWorkspace(workspace);
     }
   }
 

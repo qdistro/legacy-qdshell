@@ -6,7 +6,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Modules.Bar.Extras
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Keyboard
 import qs.Services.UI
 import qs.Widgets
@@ -84,7 +84,7 @@ Item {
     // When icon is disabled, always show the layout text
     forceOpen: !root.showIcon || root.displayMode === "forceOpen"
     forceClose: root.showIcon && root.displayMode === "alwaysHide"
-    onClicked: CompositorService.cycleKeyboardLayout()
+    onClicked: Qdwin.cycleKeyboardLayout()
     onRightClicked: {
       PanelService.showContextMenu(contextMenu, pill, screen);
     }

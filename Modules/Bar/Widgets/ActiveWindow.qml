@@ -6,7 +6,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
 import qs.Modules.Bar.Extras
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -54,8 +54,8 @@ Item {
   readonly property real barHeight: Style.getBarHeightForScreen(screenName)
   readonly property real capsuleHeight: Style.getCapsuleHeightForScreen(screenName)
   readonly property real barFontSize: Style.getBarFontSizeForScreen(screenName)
-  readonly property bool hasFocusedWindow: CompositorService.getFocusedWindow() !== null
-  readonly property string windowTitle: CompositorService.getFocusedWindowTitle() || "No active window"
+  readonly property bool hasFocusedWindow: Qdwin.getFocusedWindow() !== null
+  readonly property string windowTitle: Qdwin.getFocusedWindowTitle() || "No active window"
   readonly property string fallbackIcon: "user-desktop"
 
   readonly property int iconSize: Style.toOdd(capsuleHeight * 0.75)
@@ -129,8 +129,8 @@ Item {
 
   function getAppIcon() {
     try {
-      // Try CompositorService first
-      const focusedWindow = CompositorService.getFocusedWindow();
+      // Try Qdwin first
+      const focusedWindow = Qdwin.getFocusedWindow();
       if (focusedWindow && focusedWindow.appId) {
         try {
           const idValue = focusedWindow.appId;
@@ -140,11 +140,11 @@ Item {
             return iconResult;
           }
         } catch (iconError) {
-          Logger.w("ActiveWindow", "Error getting icon from CompositorService:", iconError);
+          Logger.w("ActiveWindow", "Error getting icon from Qdwin:", iconError);
         }
       }
 
-      if (CompositorService.isHyprland) {
+      if (Qdwin.isHyprland) {
         // Fallback to ToplevelManager
         if (ToplevelManager && ToplevelManager.activeToplevel) {
           try {
@@ -358,7 +358,7 @@ Item {
   }
 
   Connections {
-    target: CompositorService
+    target: Qdwin
     function onActiveWindowChanged() {
       try {
         windowIcon.source = Qt.binding(getAppIcon);

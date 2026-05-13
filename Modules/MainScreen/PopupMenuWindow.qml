@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -35,9 +35,9 @@ PanelWindow {
   // Use Top layer for proper event handling, but on labwc use Bottom
   // to avoid stealing input from popups while still catching outside clicks.
   // However, when a dialog is open, always use Top so dialogs appear above apps.
-  WlrLayershell.layer: (CompositorService.isLabwc && !hasDialog) ? WlrLayer.Bottom : WlrLayer.Top
+  WlrLayershell.layer: (Qdwin.isLabwc && !hasDialog) ? WlrLayer.Bottom : WlrLayer.Top
   WlrLayershell.keyboardFocus: hasDialog ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-  WlrLayershell.namespace: "noctalia-" + windowType + "-" + (screen?.name || "unknown")
+  WlrLayershell.namespace: "qdshell-" + windowType + "-" + (screen?.name || "unknown")
   WlrLayershell.exclusionMode: ExclusionMode.Ignore
 
   // Track if a dialog is currently open (needed for keyboard focus)

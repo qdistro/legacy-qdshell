@@ -7,7 +7,7 @@ import Quickshell.Widgets
 import "Providers"
 import qs.Commons
 import qs.Services.Keyboard
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 import qs.Widgets
 

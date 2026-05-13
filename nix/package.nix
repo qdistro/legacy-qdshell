@@ -70,7 +70,7 @@ let
   ];
 in
 stdenvNoCC.mkDerivation {
-  pname = "noctalia-shell";
+  pname = "qdshell-shell";
   inherit version src;
 
   nativeBuildInputs = [
@@ -83,24 +83,24 @@ stdenvNoCC.mkDerivation {
   ];
 
   installPhase = ''
-    mkdir -p $out/share/noctalia-shell $out/bin
-    cp -r . $out/share/noctalia-shell
-    ln -s ${quickshell}/bin/qs $out/bin/noctalia-shell
+    mkdir -p $out/share/qdshell-shell $out/bin
+    cp -r . $out/share/qdshell-shell
+    ln -s ${quickshell}/bin/qs $out/bin/qdshell-shell
   '';
 
   preFixup = ''
     qtWrapperArgs+=(
       --prefix PATH : ${lib.makeBinPath (runtimeDeps ++ extraPackages)}
       --prefix XDG_DATA_DIRS : ${wayland-scanner}/share
-      --add-flags "-p $out/share/noctalia-shell"
+      --add-flags "-p $out/share/qdshell-shell"
       ${lib.optionalString calendarSupport "--prefix GI_TYPELIB_PATH : ${giTypelibPath}"}
     )
   '';
 
   meta = {
     description = "A sleek and minimal desktop shell thoughtfully crafted for Wayland, built with Quickshell.";
-    homepage = "https://github.com/noctalia-dev/noctalia-shell";
+    homepage = "https://github.com/qdshell-dev/qdshell-shell";
     license = lib.licenses.mit;
-    mainProgram = "noctalia-shell";
+    mainProgram = "qdshell-shell";
   };
 }

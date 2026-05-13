@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Modules.DesktopWidgets.Widgets
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 
 Singleton {
   id: root

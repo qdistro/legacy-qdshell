@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 
 /**
 * Detects which screen the cursor is currently on by creating a temporary
@@ -84,7 +84,7 @@ Item {
             }
 
               // Try compositor-specific focused monitor detection first
-              let screen = CompositorService.getFocusedScreen();
+              let screen = Qdwin.getFocusedScreen();
 
               if (screen) {
                 // Apply the bar check if configured (skip for overlay launcher etc.)
@@ -154,7 +154,7 @@ Item {
                         implicitHeight: 0
                         color: "transparent"
                         WlrLayershell.exclusionMode: ExclusionMode.Ignore
-                        WlrLayershell.namespace: "noctalia-screen-detector"
+                        WlrLayershell.namespace: "qdshell-screen-detector"
                         mask: Region {}
 
                         onScreenChanged: root.screenDetected(screen)

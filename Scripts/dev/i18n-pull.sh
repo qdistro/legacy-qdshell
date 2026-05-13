@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Pull translations from Noctalia Translate API
+# Pull translations from Qdshell Translate API
 # Usage: ./i18n-pull.sh <project-slug> <output-dir>
-# Example: ./i18n-pull.sh noctalia-shell ./Assets/Translations
+# Example: ./i18n-pull.sh qdshell-shell ./Assets/Translations
 
 set -e
 
 # Configuration
-API_BASE="${I18N_API_BASE:-https://i18n.noctalia.dev}"
-PROJECT_SLUG="${1:-noctalia-shell}"
+API_BASE="${I18N_API_BASE:-https://i18n.qdshell.dev}"
+PROJECT_SLUG="${1:-qdshell-shell}"
 OUTPUT_DIR="${2:-./Assets/Translations}"
 
 # Colors for output

@@ -3,7 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 
 Singleton {
   id: root
@@ -409,11 +409,11 @@ Singleton {
 
   // Close panels when compositor overview opens (if setting is enabled)
   Connections {
-    target: CompositorService
+    target: Qdwin
     enabled: Settings.data.bar.hideOnOverview
 
     function onOverviewActiveChanged() {
-      if (CompositorService.overviewActive && root.openedPanel) {
+      if (Qdwin.overviewActive && root.openedPanel) {
         root.openedPanel.close();
       }
     }

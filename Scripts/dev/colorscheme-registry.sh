@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate a registry.json from all color schemes in Assets/ColorScheme
-# Output format matches ~/Development/misc/noctalia/noctalia-colorschemes/registry.json
+# Output format matches ~/Development/misc/qdshell/qdshell-colorschemes/registry.json
 
 set -euo pipefail
 

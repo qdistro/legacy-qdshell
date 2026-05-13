@@ -16,7 +16,7 @@ case "$APP_NAME" in
 kitty)
     KITTY_CONF="$HOME/.config/kitty/kitty.conf"
     if [ -w "$KITTY_CONF" ]; then
-        kitty +kitten themes --reload-in=all noctalia
+        kitty +kitten themes --reload-in=all qdshell
     else
         kitty +runpy "from kitty.utils import *; reload_conf_in_all_kitties()"
     fi
@@ -26,15 +26,15 @@ ghostty)
     CONFIG_FILE="$HOME/.config/ghostty/config"
     # Check if the config file exists before trying to modify it.
     if [ -f "$CONFIG_FILE" ]; then
-        # Check if theme is already set to noctalia (flexible spacing)
-        if grep -qE "^theme\s*=\s*noctalia$" "$CONFIG_FILE"; then
+        # Check if theme is already set to qdshell (flexible spacing)
+        if grep -qE "^theme\s*=\s*qdshell$" "$CONFIG_FILE"; then
             : # Already correct
         elif grep -qE "^theme\s*=" "$CONFIG_FILE"; then
             # Replace existing theme line in-place
-            sed -i -E 's/^theme\s*=.*/theme = noctalia/' "$CONFIG_FILE"
+            sed -i -E 's/^theme\s*=.*/theme = qdshell/' "$CONFIG_FILE"
         else
             # Add the new theme line to the end of the file
-            echo "theme = noctalia" >>"$CONFIG_FILE"
+            echo "theme = qdshell" >>"$CONFIG_FILE"
         fi
         # Only signal if ghostty is running
         pgrep -f ghostty >/dev/null && pkill -SIGUSR2 ghostty || true
@@ -51,22 +51,22 @@ foot)
     if [ ! -f "$CONFIG_FILE" ]; then
         # Create the config directory if it doesn't exist
         mkdir -p "$(dirname "$CONFIG_FILE")"
-        # Create the config file with the noctalia theme
+        # Create the config file with the qdshell theme
         cat >"$CONFIG_FILE" <<'EOF'
 [main]
-include=~/.config/foot/themes/noctalia
+include=~/.config/foot/themes/qdshell
 EOF
     else
-        # Check if theme is already set to noctalia
-        if ! grep -q "include.*noctalia" "$CONFIG_FILE"; then
+        # Check if theme is already set to qdshell
+        if ! grep -q "include.*qdshell" "$CONFIG_FILE"; then
             # Remove any existing theme include line to prevent duplicates.
             sed -i '/include=.*themes/d' "$CONFIG_FILE"
             if grep -q '^\[main\]' "$CONFIG_FILE"; then
                 # Insert the include line after the existing [main] section header
-                sed -i '/^\[main\]/a include=~/.config/foot/themes/noctalia' "$CONFIG_FILE"
+                sed -i '/^\[main\]/a include=~/.config/foot/themes/qdshell' "$CONFIG_FILE"
             else
                 # If [main] doesn't exist, create it at the beginning with the include
-                sed -i '1i [main]\ninclude=~/.config/foot/themes/noctalia\n' "$CONFIG_FILE"
+                sed -i '1i [main]\ninclude=~/.config/foot/themes/qdshell\n' "$CONFIG_FILE"
             fi
         fi
     fi
@@ -74,29 +74,29 @@ EOF
 
 alacritty)
     CONFIG_FILE="$HOME/.config/alacritty/alacritty.toml"
-    NEW_THEME_PATH='~/.config/alacritty/themes/noctalia.toml'
+    NEW_THEME_PATH='~/.config/alacritty/themes/qdshell.toml'
 
     # Check if the config file exists, create it if it doesn't.
     if [ ! -f "$CONFIG_FILE" ]; then
         # Create the config directory if it doesn't exist
         mkdir -p "$(dirname "$CONFIG_FILE")"
-        # Create the config file with the noctalia theme import
+        # Create the config file with the qdshell theme import
         cat >"$CONFIG_FILE" <<'EOF'
 [general]
 import = [
-    "~/.config/alacritty/themes/noctalia.toml"
+    "~/.config/alacritty/themes/qdshell.toml"
 ]
 EOF
     else
-        # Check if noctalia theme is already imported (any path variant)
-        if grep -q 'noctalia\.toml' "$CONFIG_FILE"; then
+        # Check if qdshell theme is already imported (any path variant)
+        if grep -q 'qdshell\.toml' "$CONFIG_FILE"; then
             # Update old relative path to new absolute path if needed
-            if grep -q '"themes/noctalia.toml"' "$CONFIG_FILE"; then
-                sed -i 's|"themes/noctalia.toml"|"'"$NEW_THEME_PATH"'"|g' "$CONFIG_FILE"
+            if grep -q '"themes/qdshell.toml"' "$CONFIG_FILE"; then
+                sed -i 's|"themes/qdshell.toml"|"'"$NEW_THEME_PATH"'"|g' "$CONFIG_FILE"
             fi
-            # Already has noctalia import with correct path, nothing to do
+            # Already has qdshell import with correct path, nothing to do
         else
-            # No noctalia import found, add it
+            # No qdshell import found, add it
             if grep -q '^\[general\]' "$CONFIG_FILE"; then
                 # Check if import line already exists under [general]
                 if grep -q '^import\s*=' "$CONFIG_FILE"; then
@@ -116,17 +116,17 @@ EOF
 
 wezterm)
     CONFIG_FILE="$HOME/.config/wezterm/wezterm.lua"
-    WEZTERM_SCHEME_LINE='config.color_scheme = "Noctalia"'
+    WEZTERM_SCHEME_LINE='config.color_scheme = "Qdshell"'
 
     # Check if the config file exists.
     if [ -f "$CONFIG_FILE" ]; then
 
-        # Check if theme is already set to Noctalia (matches 'Noctalia' or "Noctalia")
-        if ! grep -q "^\s*config\.color_scheme\s*=\s*['\"]Noctalia['\"]\s*" "$CONFIG_FILE"; then
-            # Not set to Noctalia. Check if *any* color_scheme line exists.
+        # Check if theme is already set to Qdshell (matches 'Qdshell' or "Qdshell")
+        if ! grep -q "^\s*config\.color_scheme\s*=\s*['\"]Qdshell['\"]\s*" "$CONFIG_FILE"; then
+            # Not set to Qdshell. Check if *any* color_scheme line exists.
             if grep -q '^\s*config\.color_scheme\s*=' "$CONFIG_FILE"; then
                 # It exists, so we replace it with our desired line.
-                sed -i "s|^\(\s*config\.color_scheme\s*=\s*\).*$|\1\"Noctalia\"|" "$CONFIG_FILE"
+                sed -i "s|^\(\s*config\.color_scheme\s*=\s*\).*$|\1\"Qdshell\"|" "$CONFIG_FILE"
             else
                 # It doesn't exist, so we add it before the 'return config' line.
                 if grep -q '^\s*return\s*config' "$CONFIG_FILE"; then
@@ -155,20 +155,20 @@ fuzzel)
     if [ ! -f "$CONFIG_FILE" ]; then
         # Create the config directory if it doesn't exist
         mkdir -p "$(dirname "$CONFIG_FILE")"
-        # Create the config file with the noctalia theme
+        # Create the config file with the qdshell theme
         cat >"$CONFIG_FILE" <<'EOF'
-include=~/.config/fuzzel/themes/noctalia
+include=~/.config/fuzzel/themes/qdshell
 EOF
     else
-        # Check if theme is already set to noctalia
-        if grep -q "^include=~/.config/fuzzel/themes/noctalia$" "$CONFIG_FILE"; then
+        # Check if theme is already set to qdshell
+        if grep -q "^include=~/.config/fuzzel/themes/qdshell$" "$CONFIG_FILE"; then
             : # Already correct
         elif grep -q "^include=.*themes" "$CONFIG_FILE"; then
             # Replace existing theme include line in-place
-            sed -i 's|^include=.*themes.*|include=~/.config/fuzzel/themes/noctalia|' "$CONFIG_FILE"
+            sed -i 's|^include=.*themes.*|include=~/.config/fuzzel/themes/qdshell|' "$CONFIG_FILE"
         else
             # Add the new theme include line
-            echo "include=~/.config/fuzzel/themes/noctalia" >>"$CONFIG_FILE"
+            echo "include=~/.config/fuzzel/themes/qdshell" >>"$CONFIG_FILE"
         fi
     fi
     ;;
@@ -178,14 +178,14 @@ walker)
 
     # Check if the config file exists.
     if [ -f "$CONFIG_FILE" ]; then
-        # Check if theme is already set to noctalia (flexible spacing)
-        if grep -qE '^theme\s*=\s*"noctalia"' "$CONFIG_FILE"; then
+        # Check if theme is already set to qdshell (flexible spacing)
+        if grep -qE '^theme\s*=\s*"qdshell"' "$CONFIG_FILE"; then
             : # Already correct
         elif grep -qE '^theme\s*=' "$CONFIG_FILE"; then
             # Replace existing theme line in-place
-            sed -i -E 's/^theme\s*=.*/theme = "noctalia"/' "$CONFIG_FILE"
+            sed -i -E 's/^theme\s*=.*/theme = "qdshell"/' "$CONFIG_FILE"
         else
-            echo 'theme = "noctalia"' >>"$CONFIG_FILE"
+            echo 'theme = "qdshell"' >>"$CONFIG_FILE"
         fi
     else
         echo "Error: walker config file not found at $CONFIG_FILE" >&2
@@ -195,7 +195,7 @@ walker)
 
 vicinae)
     # Apply the theme
-    vicinae theme set noctalia
+    vicinae theme set qdshell
     ;;
 
 pywalfox)
@@ -219,23 +219,23 @@ cava)
     if [ -f "$CONFIG_FILE" ]; then
         # Check if [color] section exists
         if grep -q '^\[color\]' "$CONFIG_FILE"; then
-            # Check if theme is already set to noctalia under [color] (flexible spacing)
-            if sed -n '/^\[color\]/,/^\[/p' "$CONFIG_FILE" | grep -qE '^theme\s*=\s*"noctalia"'; then
+            # Check if theme is already set to qdshell under [color] (flexible spacing)
+            if sed -n '/^\[color\]/,/^\[/p' "$CONFIG_FILE" | grep -qE '^theme\s*=\s*"qdshell"'; then
                 : # Already correct
             elif sed -n '/^\[color\]/,/^\[/p' "$CONFIG_FILE" | grep -qE '^theme\s*='; then
                 # Replace existing theme line under [color]
-                sed -i -E '/^\[color\]/,/^\[/{s/^theme\s*=.*/theme = "noctalia"/}' "$CONFIG_FILE"
+                sed -i -E '/^\[color\]/,/^\[/{s/^theme\s*=.*/theme = "qdshell"/}' "$CONFIG_FILE"
                 THEME_MODIFIED=true
             else
                 # Add theme line after [color]
-                sed -i '/^\[color\]/a theme = "noctalia"' "$CONFIG_FILE"
+                sed -i '/^\[color\]/a theme = "qdshell"' "$CONFIG_FILE"
                 THEME_MODIFIED=true
             fi
         else
             # Add [color] section with theme at the end of file
             echo "" >>"$CONFIG_FILE"
             echo "[color]" >>"$CONFIG_FILE"
-            echo 'theme = "noctalia"' >>"$CONFIG_FILE"
+            echo 'theme = "qdshell"' >>"$CONFIG_FILE"
             THEME_MODIFIED=true
         fi
 
@@ -261,44 +261,44 @@ yazi)
     if [ ! -f "$CONFIG_FILE" ]; then
         cat >"$CONFIG_FILE" <<'EOF'
 [flavor]
-dark  = "noctalia"
-light = "noctalia"
+dark  = "qdshell"
+light = "qdshell"
 EOF
     else
         # Check if [flavor] section exists
         if grep -q '^\[flavor\]' "$CONFIG_FILE"; then
             # Update or add dark/light lines under [flavor]
             if sed -n '/^\[flavor\]/,/^\[/p' "$CONFIG_FILE" | grep -q '^dark\s*='; then
-                sed -i '/^\[flavor\]/,/^\[/{s/^dark\s*=.*/dark  = "noctalia"/}' "$CONFIG_FILE"
+                sed -i '/^\[flavor\]/,/^\[/{s/^dark\s*=.*/dark  = "qdshell"/}' "$CONFIG_FILE"
             else
-                sed -i '/^\[flavor\]/a dark  = "noctalia"' "$CONFIG_FILE"
+                sed -i '/^\[flavor\]/a dark  = "qdshell"' "$CONFIG_FILE"
             fi
             if sed -n '/^\[flavor\]/,/^\[/p' "$CONFIG_FILE" | grep -q '^light\s*='; then
-                sed -i '/^\[flavor\]/,/^\[/{s/^light\s*=.*/light = "noctalia"/}' "$CONFIG_FILE"
+                sed -i '/^\[flavor\]/,/^\[/{s/^light\s*=.*/light = "qdshell"/}' "$CONFIG_FILE"
             else
-                sed -i '/^\[flavor\]/,/^dark/a light = "noctalia"' "$CONFIG_FILE"
+                sed -i '/^\[flavor\]/,/^dark/a light = "qdshell"' "$CONFIG_FILE"
             fi
         else
             # Add [flavor] section at the end
             echo "" >>"$CONFIG_FILE"
             echo "[flavor]" >>"$CONFIG_FILE"
-            echo 'dark  = "noctalia"' >>"$CONFIG_FILE"
-            echo 'light = "noctalia"' >>"$CONFIG_FILE"
+            echo 'dark  = "qdshell"' >>"$CONFIG_FILE"
+            echo 'light = "qdshell"' >>"$CONFIG_FILE"
         fi
     fi
     ;;
 
 niri)
     CONFIG_FILE="$HOME/.config/niri/config.kdl"
-    INCLUDE_LINE='include "./noctalia.kdl"'
+    INCLUDE_LINE='include "./qdshell.kdl"'
 
     # Check if the config file exists.
     if [ ! -f "$CONFIG_FILE" ]; then
         mkdir -p "$(dirname "$CONFIG_FILE")"
         echo -e "\n$INCLUDE_LINE\n" >"$CONFIG_FILE"
     else
-        # Check if noctalia include already exists (flexible: quotes, ./ prefix)
-        if grep -qE 'include\s+["'"'"'](\./)?noctalia\.kdl["'"'"']' "$CONFIG_FILE"; then
+        # Check if qdshell include already exists (flexible: quotes, ./ prefix)
+        if grep -qE 'include\s+["'"'"'](\./)?qdshell\.kdl["'"'"']' "$CONFIG_FILE"; then
             : # Already included
         else
             # Add the include line to the end of the file
@@ -308,10 +308,10 @@ niri)
     ;;
 
 hyprland)
-    echo "🎨 Applying 'noctalia' theme to Hyprland..."
+    echo "🎨 Applying 'qdshell' theme to Hyprland..."
     CONFIG_DIR="$HOME/.config/hypr"
     CONFIG_FILE="$CONFIG_DIR/hyprland.conf"
-    THEME_FILE="$CONFIG_DIR/noctalia/noctalia-colors.conf"
+    THEME_FILE="$CONFIG_DIR/qdshell/qdshell-colors.conf"
 
     INCLUDE_LINE="source = $THEME_FILE"
 
@@ -320,7 +320,7 @@ hyprland)
         echo "Config file not found, creating $CONFIG_FILE..."
         mkdir -p "$(dirname "$CONFIG_FILE")"
         echo -e "\n$INCLUDE_LINE\n" >"$CONFIG_FILE"
-        echo "Created new config file with noctalia theme."
+        echo "Created new config file with qdshell theme."
     else
         if [ -L "$CONFIG_FILE" ] && [ ! -w "$CONFIG_FILE" ]; then
             echo "Detected read-only symlink, converting to local file..."
@@ -328,13 +328,13 @@ hyprland)
             chmod +w "$CONFIG_FILE"
         fi
 
-        # Check if noctalia theme source already exists (flexible matching)
-        if grep -qE 'source\s*=\s*.*noctalia.*\.conf' "$CONFIG_FILE"; then
+        # Check if qdshell theme source already exists (flexible matching)
+        if grep -qE 'source\s*=\s*.*qdshell.*\.conf' "$CONFIG_FILE"; then
             echo "Theme already included, skipping modification."
         else
             # Add the include line to the end of the file
             echo -e "\n$INCLUDE_LINE\n" >>"$CONFIG_FILE"
-            echo "✅ Added noctalia theme include to config."
+            echo "✅ Added qdshell theme include to config."
         fi
     fi
 
@@ -343,25 +343,25 @@ hyprland)
     ;;
 
 sway)
-    echo "🎨 Applying 'noctalia' theme to Sway..."
+    echo "🎨 Applying 'qdshell' theme to Sway..."
     CONFIG_DIR="$HOME/.config/sway"
     CONFIG_FILE="$CONFIG_DIR/config"
-    INCLUDE_LINE='include ~/.config/sway/noctalia'
+    INCLUDE_LINE='include ~/.config/sway/qdshell'
 
     # Check if the config file exists.
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "Config file not found, creating $CONFIG_FILE..."
         mkdir -p "$(dirname "$CONFIG_FILE")"
         echo -e "\n$INCLUDE_LINE\n" >"$CONFIG_FILE"
-        echo "Created new config file with noctalia theme."
+        echo "Created new config file with qdshell theme."
     else
-        # Check if noctalia include already exists (flexible matching)
-        if grep -qE 'include\s+.*noctalia' "$CONFIG_FILE"; then
+        # Check if qdshell include already exists (flexible matching)
+        if grep -qE 'include\s+.*qdshell' "$CONFIG_FILE"; then
             echo "Theme already included, skipping modification."
         else
             # Add the include line to the end of the file
             echo -e "\n$INCLUDE_LINE\n" >>"$CONFIG_FILE"
-            echo "✅ Added noctalia theme include to config."
+            echo "✅ Added qdshell theme include to config."
         fi
     fi
 
@@ -370,25 +370,25 @@ sway)
     ;;
 
 scroll)
-    echo "Applying 'noctalia' theme to Scroll..."
+    echo "Applying 'qdshell' theme to Scroll..."
     CONFIG_DIR="$HOME/.config/scroll"
     CONFIG_FILE="$CONFIG_DIR/config"
-    INCLUDE_LINE='include ~/.config/scroll/noctalia'
+    INCLUDE_LINE='include ~/.config/scroll/qdshell'
 
     # Check if the config file exists.
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "Config file not found, creating $CONFIG_FILE..."
         mkdir -p "$(dirname "$CONFIG_FILE")"
         echo -e "\n$INCLUDE_LINE\n" >"$CONFIG_FILE"
-        echo "Created new config file with noctalia theme."
+        echo "Created new config file with qdshell theme."
     else
-        # Check if noctalia include already exists (flexible matching)
-        if grep -qE 'include\s+.*noctalia' "$CONFIG_FILE"; then
+        # Check if qdshell include already exists (flexible matching)
+        if grep -qE 'include\s+.*qdshell' "$CONFIG_FILE"; then
             echo "Theme already included, skipping modification."
         else
             # Add the include line to the end of the file
             echo -e "\n$INCLUDE_LINE\n" >>"$CONFIG_FILE"
-            echo "Added noctalia theme include to config."
+            echo "Added qdshell theme include to config."
         fi
     fi
 
@@ -399,9 +399,9 @@ scroll)
 mango)
     CONFIG_DIR="$HOME/.config/mango"
     MAIN_CONFIG="$CONFIG_DIR/config.conf"
-    THEME_FILE="$CONFIG_DIR/noctalia.conf"
+    THEME_FILE="$CONFIG_DIR/qdshell.conf"
     BACKUP_FILE="$CONFIG_DIR/theme.conf.bak"
-    # This sources the noctalia theme file
+    # This sources the qdshell theme file
     SOURCE_LINE="source = $THEME_FILE"
 
     # Color variables that should be moved to theme file
@@ -435,10 +435,10 @@ mango)
         # Add source line to main config
         if [ -f "$MAIN_CONFIG" ]; then
             echo "" >>"$MAIN_CONFIG"
-            echo "# This sources the noctalia theme" >>"$MAIN_CONFIG"
+            echo "# This sources the qdshell theme" >>"$MAIN_CONFIG"
             echo -e "\n$SOURCE_LINE\n" >>"$MAIN_CONFIG"
         else
-            echo "# This sources the noctalia theme" >"$MAIN_CONFIG"
+            echo "# This sources the qdshell theme" >"$MAIN_CONFIG"
             echo -e "\n$SOURCE_LINE\n" >>"$MAIN_CONFIG"
         fi
     fi
@@ -455,14 +455,14 @@ btop)
     CONFIG_FILE="$HOME/.config/btop/btop.conf"
 
     if [ -f "$CONFIG_FILE" ]; then
-        # Check if theme is already set to noctalia (flexible spacing)
-        if grep -qE '^color_theme\s*=\s*"noctalia"' "$CONFIG_FILE"; then
+        # Check if theme is already set to qdshell (flexible spacing)
+        if grep -qE '^color_theme\s*=\s*"qdshell"' "$CONFIG_FILE"; then
             : # Already correct
         elif grep -qE '^color_theme\s*=' "$CONFIG_FILE"; then
             # Replace existing color_theme line in-place
-            sed -i -E 's/^color_theme\s*=.*/color_theme = "noctalia"/' "$CONFIG_FILE"
+            sed -i -E 's/^color_theme\s*=.*/color_theme = "qdshell"/' "$CONFIG_FILE"
         else
-            echo 'color_theme = "noctalia"' >>"$CONFIG_FILE"
+            echo 'color_theme = "qdshell"' >>"$CONFIG_FILE"
         fi
 
         if pgrep -x btop >/dev/null; then

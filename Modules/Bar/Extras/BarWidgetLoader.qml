@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 
 Item {

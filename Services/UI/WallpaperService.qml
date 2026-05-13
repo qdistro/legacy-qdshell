@@ -38,8 +38,8 @@ Singleton {
   property string wallpaperCacheFile: ""
 
   readonly property bool scanning: (scanningCount > 0)
-  readonly property string noctaliaDefaultWallpaper: Quickshell.shellDir + "/Assets/Wallpaper/noctalia.png"
-  property string defaultWallpaper: noctaliaDefaultWallpaper
+  readonly property string qdshellDefaultWallpaper: Quickshell.shellDir + "/Assets/Wallpaper/qdshell.png"
+  property string defaultWallpaper: qdshellDefaultWallpaper
 
   // Signals for reactive UI updates
   signal wallpaperChanged(string screenName, string path)
@@ -1087,7 +1087,7 @@ Singleton {
     adapter: JsonAdapter {
       id: wallpaperCacheAdapter
       property var wallpapers: ({})
-      property string defaultWallpaper: root.noctaliaDefaultWallpaper
+      property string defaultWallpaper: root.qdshellDefaultWallpaper
       property var usedRandomWallpapers: ({})
     }
 
@@ -1096,13 +1096,13 @@ Singleton {
       root.currentWallpapers = wallpaperCacheAdapter.wallpapers || {};
       root.usedRandomWallpapers = wallpaperCacheAdapter.usedRandomWallpapers || {};
 
-      // Load default wallpaper from cache if it exists, otherwise use Noctalia default
+      // Load default wallpaper from cache if it exists, otherwise use Qdshell default
       if (wallpaperCacheAdapter.defaultWallpaper && wallpaperCacheAdapter.defaultWallpaper !== "") {
         root.defaultWallpaper = wallpaperCacheAdapter.defaultWallpaper;
         Logger.d("Wallpaper", "Loaded default wallpaper from cache:", wallpaperCacheAdapter.defaultWallpaper);
       } else {
-        root.defaultWallpaper = root.noctaliaDefaultWallpaper;
-        Logger.d("Wallpaper", "Using Noctalia default wallpaper");
+        root.defaultWallpaper = root.qdshellDefaultWallpaper;
+        Logger.d("Wallpaper", "Using Qdshell default wallpaper");
       }
 
       Logger.d("Wallpaper", "Loaded wallpapers from cache file:", Object.keys(root.currentWallpapers).length, "screens");

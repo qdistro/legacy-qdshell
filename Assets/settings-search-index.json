@@ -766,8 +766,8 @@
     "subTabLabel": "common.general"
   },
   {
-    "labelKey": "panels.hooks.noctalia-started-label",
-    "descriptionKey": "panels.hooks.noctalia-started-description",
+    "labelKey": "panels.hooks.qdshell-started-label",
+    "descriptionKey": "panels.hooks.qdshell-started-description",
     "widget": "HookRow",
     "tab": 19,
     "tabLabel": "panels.hooks.title",

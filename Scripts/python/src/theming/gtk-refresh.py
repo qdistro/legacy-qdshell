@@ -42,11 +42,11 @@ def theme_exists(theme_name: str) -> bool:
 
 async def apply_gtk3_colors(config_dir: Path):
     gtk3_dir = config_dir / "gtk-3.0"
-    colors_file = gtk3_dir / "noctalia.css"
+    colors_file = gtk3_dir / "qdshell.css"
     gtk_css = gtk3_dir / "gtk.css"
 
     if not colors_file.exists():
-        print(f"Error: noctalia.css not found at {colors_file}", file=sys.stderr)
+        print(f"Error: qdshell.css not found at {colors_file}", file=sys.stderr)
         return False
 
     if gtk_css.is_symlink():
@@ -56,19 +56,19 @@ async def apply_gtk3_colors(config_dir: Path):
         gtk_css.rename(gtk3_dir / backup_name)
         print(f"Backed up existing gtk.css to {backup_name}")
 
-    gtk_css.symlink_to("noctalia.css")
-    print(f"Created symlink: {gtk_css} -> noctalia.css")
+    gtk_css.symlink_to("qdshell.css")
+    print(f"Created symlink: {gtk_css} -> qdshell.css")
     return True
 
 
 async def apply_gtk4_colors(config_dir: Path):
     gtk4_dir = config_dir / "gtk-4.0"
-    colors_file = gtk4_dir / "noctalia.css"
+    colors_file = gtk4_dir / "qdshell.css"
     gtk_css = gtk4_dir / "gtk.css"
-    gtk4_import = '@import url("noctalia.css");'
+    gtk4_import = '@import url("qdshell.css");'
 
     if not colors_file.exists():
-        print(f"Error: GTK4 noctalia.css not found at {colors_file}", file=sys.stderr)
+        print(f"Error: GTK4 qdshell.css not found at {colors_file}", file=sys.stderr)
         return False
 
     gtk_css.write_text(gtk4_import)
@@ -109,7 +109,7 @@ async def refresh_theme():
 
 async def get_config_dir() -> Path:
     # 1. project-specific override
-    if value := os.environ.get("NOCTALIA_CONFIG_DIR"):
+    if value := os.environ.get("QDSHELL_CONFIG_DIR"):
         return Path(value).expanduser()
 
     # 2. XDG standard

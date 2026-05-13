@@ -28,7 +28,7 @@ PanelWindow {
   }
 
   // Wayland layer configuration
-  WlrLayershell.namespace: "noctalia-bar-content-" + (barWindow.screen?.name || "unknown")
+  WlrLayershell.namespace: "qdshell-bar-content-" + (barWindow.screen?.name || "unknown")
   WlrLayershell.layer: WlrLayer.Top
   WlrLayershell.exclusionMode: ExclusionMode.Ignore // Don't reserve space - BarExclusionZone in MainScreen handles that
 

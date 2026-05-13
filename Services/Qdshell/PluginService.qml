@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Modules.Panels.Settings
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 
 Singleton {
@@ -36,7 +36,7 @@ Singleton {
   // Plugin updates available: { pluginId: { currentVersion, availableVersion } }
   property var pluginUpdates: ({})
 
-  // Plugin updates that require a newer Noctalia version: { pluginId: { currentVersion, availableVersion, minNoctaliaVersion } }
+  // Plugin updates that require a newer Qdshell version: { pluginId: { currentVersion, availableVersion, minQdshellVersion } }
   property var pluginUpdatesPending: ({})
 
   // Plugin load errors: { pluginId: { error: string, entryPoint: string, timestamp: date } }
@@ -409,13 +409,13 @@ Singleton {
         return;
       }
 
-      // Check Noctalia version compatibility (skip when updating - that's handled in performUpdateCheck)
-      if (pluginMetadata.minNoctaliaVersion) {
-        var noctaliaVersion = UpdateService.baseVersion;
-        if (compareVersions(pluginMetadata.minNoctaliaVersion, noctaliaVersion) > 0) {
+      // Check Qdshell version compatibility (skip when updating - that's handled in performUpdateCheck)
+      if (pluginMetadata.minQdshellVersion) {
+        var qdshellVersion = "1.0.0"; // qdshell: UpdateService stripped
+        if (compareVersions(pluginMetadata.minQdshellVersion, qdshellVersion) > 0) {
           var incompatibleMsg = I18n.tr("panels.plugins.install-incompatible", {
                                           "plugin": pluginMetadata.name,
-                                          "version": pluginMetadata.minNoctaliaVersion
+                                          "version": pluginMetadata.minQdshellVersion
                                         });
           Logger.w("PluginService", "Plugin incompatible:", incompatibleMsg);
           if (callback)
@@ -1410,15 +1410,15 @@ Singleton {
 
         // Compare versions
         if (compareVersions(availableVersion, currentVersion) > 0) {
-          // Check if the available version requires a higher Noctalia version
-          if (availablePlugin.minNoctaliaVersion) {
-            var noctaliaVersion = UpdateService.baseVersion;
-            if (compareVersions(availablePlugin.minNoctaliaVersion, noctaliaVersion) > 0) {
-              Logger.d("PluginService", "Pending update for", pluginId + ": requires Noctalia v" + availablePlugin.minNoctaliaVersion + " (current: v" + noctaliaVersion + ")");
+          // Check if the available version requires a higher Qdshell version
+          if (availablePlugin.minQdshellVersion) {
+            var qdshellVersion = "1.0.0"; // qdshell: UpdateService stripped
+            if (compareVersions(availablePlugin.minQdshellVersion, qdshellVersion) > 0) {
+              Logger.d("PluginService", "Pending update for", pluginId + ": requires Qdshell v" + availablePlugin.minQdshellVersion + " (current: v" + qdshellVersion + ")");
               pendingUpdates[pluginId] = {
                 currentVersion: currentVersion,
                 availableVersion: availableVersion,
-                minNoctaliaVersion: availablePlugin.minNoctaliaVersion
+                minQdshellVersion: availablePlugin.minQdshellVersion
               };
               continue;
             }
@@ -1465,7 +1465,7 @@ Singleton {
         }
       });
     } else if (pendingCount > 0) {
-      Logger.i("PluginService", pendingCount, "plugin update(s) pending (require newer Noctalia)");
+      Logger.i("PluginService", pendingCount, "plugin update(s) pending (require newer Qdshell)");
     } else {
       Logger.i("PluginService", "All installed plugins are up to date");
     }
@@ -1540,10 +1540,10 @@ Singleton {
       return;
     }
 
-    // Check Noctalia compatibility
-    if (availablePlugin.minNoctaliaVersion) {
+    // Check Qdshell compatibility
+    if (availablePlugin.minQdshellVersion) {
       // Simple check: just warn, don't block (UpdateService would have more sophisticated logic)
-      Logger.d("PluginService", "Plugin requires Noctalia v" + availablePlugin.minNoctaliaVersion);
+      Logger.d("PluginService", "Plugin requires Qdshell v" + availablePlugin.minQdshellVersion);
     }
 
     // Backup entire bar layout (global + screen overrides)

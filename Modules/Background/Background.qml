@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 
 Variants {
@@ -95,7 +95,7 @@ Variants {
       }
 
       Connections {
-        target: CompositorService
+        target: Qdwin
         function onDisplayScalesChanged() {
           if (!WallpaperService.isInitialized) {
             return;
@@ -108,7 +108,7 @@ Variants {
 
           if (isStartupTransition) {
             // During startup, just ensure the correct cache exists without visual changes
-            const compositorScale = CompositorService.getDisplayScale(modelData.name);
+            const compositorScale = Qdwin.getDisplayScale(modelData.name);
             const targetWidth = Math.round(modelData.width * compositorScale);
             const targetHeight = Math.round(modelData.height * compositorScale);
             ImageCacheService.getLarge(currentPath, targetWidth, targetHeight, function (cachedPath, success) {
@@ -125,7 +125,7 @@ Variants {
       screen: modelData
       WlrLayershell.layer: WlrLayer.Background
       WlrLayershell.exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.namespace: "noctalia-wallpaper-" + (screen?.name || "unknown")
+      WlrLayershell.namespace: "qdshell-wallpaper-" + (screen?.name || "unknown")
 
       anchors {
         bottom: true
@@ -495,7 +495,7 @@ Variants {
           return;
         }
 
-        const compositorScale = CompositorService.getDisplayScale(modelData.name);
+        const compositorScale = Qdwin.getDisplayScale(modelData.name);
         const targetWidth = Math.round(modelData.width * compositorScale);
         const targetHeight = Math.round(modelData.height * compositorScale);
 
@@ -530,7 +530,7 @@ Variants {
           return;
         }
 
-        const compositorScale = CompositorService.getDisplayScale(modelData.name);
+        const compositorScale = Qdwin.getDisplayScale(modelData.name);
         const targetWidth = Math.round(modelData.width * compositorScale);
         const targetHeight = Math.round(modelData.height * compositorScale);
 

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Widgets
 
 ColumnLayout {
@@ -183,7 +183,7 @@ ColumnLayout {
 
   NToggle {
     Layout.fillWidth: true
-    visible: CompositorService.isNiri
+    visible: Qdwin.isNiri
     label: I18n.tr("panels.bar.appearance-hide-on-overview-label")
     description: I18n.tr("panels.bar.appearance-hide-on-overview-description")
     checked: Settings.data.bar.hideOnOverview

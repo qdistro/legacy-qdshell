@@ -60,10 +60,10 @@ Singleton {
     var filename = chunks[chunks.length - 1];
     var schemeName = filename.replace(".json", "");
     // Convert back to display names for special cases
-    if (schemeName === "Noctalia-default") {
-      return "Noctalia (default)";
-    } else if (schemeName === "Noctalia-legacy") {
-      return "Noctalia (legacy)";
+    if (schemeName === "Qdshell-default") {
+      return "Qdshell (default)";
+    } else if (schemeName === "Qdshell-legacy") {
+      return "Qdshell (legacy)";
     } else if (schemeName === "Tokyo-Night") {
       return "Tokyo Night";
     } else if (schemeName === "Rosepine") {
@@ -78,12 +78,12 @@ Singleton {
     if (nameOrPath.indexOf("/") !== -1) {
       return nameOrPath;
     }
-    // Handle special cases for Noctalia schemes
+    // Handle special cases for Qdshell schemes
     var schemeName = nameOrPath.replace(".json", "");
-    if (schemeName === "Noctalia (default)") {
-      schemeName = "Noctalia-default";
-    } else if (schemeName === "Noctalia (legacy)") {
-      schemeName = "Noctalia-legacy";
+    if (schemeName === "Qdshell (default)") {
+      schemeName = "Qdshell-default";
+    } else if (schemeName === "Qdshell (legacy)") {
+      schemeName = "Qdshell-legacy";
     } else if (schemeName === "Tokyo Night") {
       schemeName = "Tokyo-Night";
     } else if (schemeName === "Rose Pine") {

@@ -181,16 +181,9 @@ SmartPanel {
 
     color: "transparent"
 
-    // Wallhaven settings popup
-    Loader {
-      id: wallhavenSettingsPopup
-      source: "WallhavenSettingsPopup.qml"
-      onLoaded: {
-        if (item) {
-          item.screen = screen;
-        }
-      }
-    }
+    // qdshell: Wallhaven settings popup stripped (WallhavenService is
+    // a no-op stub; the wallhaven UI surface above will be cleaned up
+    // in a later strip pass — see todo/noctalia-impl-plan.md).
 
     // Solid color picker dialog
     NColorPickerDialog {

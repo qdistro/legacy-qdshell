@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 
 Item {
   id: root
@@ -61,9 +61,9 @@ Item {
 
     var items = [];
 
-    // Collect all windows from CompositorService
-    for (var i = 0; i < CompositorService.windows.count; i++) {
-      var win = CompositorService.windows.get(i);
+    // Collect all windows from Qdwin
+    for (var i = 0; i < Qdwin.windows.count; i++) {
+      var win = Qdwin.windows.get(i);
       items.push({
                    "id": win.id,
                    "title": win.title || "",
@@ -112,8 +112,8 @@ Item {
   function getAllWindows() {
     var launcherItems = [];
 
-    for (var i = 0; i < CompositorService.windows.count; i++) {
-      var win = CompositorService.windows.get(i);
+    for (var i = 0; i < Qdwin.windows.count; i++) {
+      var win = Qdwin.windows.get(i);
 
       var iconName = win.appId;
       var appEntry = ThemeIcons.findAppEntry(win.appId);
@@ -146,10 +146,10 @@ Item {
 
       Qt.callLater(() => {
                      // Find the actual window object to pass to focusWindow
-                     for (var i = 0; i < CompositorService.windows.count; i++) {
-                       var win = CompositorService.windows.get(i);
+                     for (var i = 0; i < Qdwin.windows.count; i++) {
+                       var win = Qdwin.windows.get(i);
                        if (win.id === windowEntry.id) {
-                         CompositorService.focusWindow(win);
+                         Qdwin.focusWindow(win);
                          break;
                        }
                      }

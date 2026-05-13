@@ -8,11 +8,11 @@ import Quickshell.Widgets
 
 import qs.Commons
 import qs.Modules.Panels.Settings
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Hardware
 import qs.Services.Media
 import qs.Services.Networking
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.Power
 import qs.Services.System
 import qs.Services.Theming
@@ -441,7 +441,7 @@ Singleton {
     }
 
     function lockAndSuspend() {
-      CompositorService.lockAndSuspend();
+      Qdwin.lockAndSuspend();
     }
   }
 
@@ -579,16 +579,16 @@ Singleton {
       }
     }
 
-    function toggleNoctaliaPerformance() {
-      PowerProfileService.toggleNoctaliaPerformance();
+    function toggleQdshellPerformance() {
+      PowerProfileService.toggleQdshellPerformance();
     }
 
-    function enableNoctaliaPerformance() {
-      PowerProfileService.setNoctaliaPerformance(true);
+    function enableQdshellPerformance() {
+      PowerProfileService.setQdshellPerformance(true);
     }
 
-    function disableNoctaliaPerformance() {
-      PowerProfileService.setNoctaliaPerformance(false);
+    function disableQdshellPerformance() {
+      PowerProfileService.setQdshellPerformance(false);
     }
   }
 

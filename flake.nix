@@ -1,5 +1,5 @@
 {
-  description = "Noctalia shell - a Wayland desktop shell built with Quickshell";
+  description = "Qdshell shell - a Wayland desktop shell built with Quickshell";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -21,12 +21,12 @@
       formatter = eachSystem (system: pkgsFor.${system}.nixfmt);
 
       packages = eachSystem (system: {
-        default = pkgsFor.${system}.noctalia-shell;
+        default = pkgsFor.${system}.qdshell-shell;
       });
 
       overlays = {
         default = final: prev: {
-          noctalia-shell = final.callPackage ./nix/package.nix {
+          qdshell-shell = final.callPackage ./nix/package.nix {
             version =
               let
                 mkDate =
@@ -54,7 +54,7 @@
         }:
         {
           imports = [ ./nix/home-module.nix ];
-          programs.noctalia-shell.package =
+          programs.qdshell-shell.package =
             lib.mkDefault
               self.packages.${pkgs.stdenv.hostPlatform.system}.default;
         };
@@ -67,7 +67,7 @@
         }:
         {
           imports = [ ./nix/nixos-module.nix ];
-          services.noctalia-shell.package =
+          services.qdshell-shell.package =
             lib.mkDefault
               self.packages.${pkgs.stdenv.hostPlatform.system}.default;
         };

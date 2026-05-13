@@ -6,7 +6,7 @@ import Quickshell.Io
 import qs.Commons
 
 /*
-Noctalia is not strictly a Material Design project, it supports both some predefined
+Qdshell is not strictly a Material Design project, it supports both some predefined
 color schemes and dynamic color generation from the wallpaper.
 
 We ultimately decided to use a restricted set of colors that follows the
@@ -348,7 +348,7 @@ Singleton {
   ]
 
   // --------------------------------
-  // Default colors: Noctalia (default) dark — must match Assets/ColorScheme/Noctalia-default
+  // Default colors: Qdshell (default) dark — must match Assets/ColorScheme/Qdshell-default
   QtObject {
     id: defaultColors
 

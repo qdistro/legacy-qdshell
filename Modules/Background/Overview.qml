@@ -3,12 +3,12 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Power
 import qs.Services.UI
 
 Loader {
-  active: CompositorService.isNiri && Settings.data.wallpaper.enabled && Settings.data.wallpaper.overviewEnabled
+  active: Qdwin.isNiri && Settings.data.wallpaper.enabled && Settings.data.wallpaper.overviewEnabled
 
   sourceComponent: Variants {
     model: Quickshell.screens
@@ -67,7 +67,7 @@ Loader {
       screen: modelData
       WlrLayershell.layer: WlrLayer.Background
       WlrLayershell.exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.namespace: "noctalia-overview-" + (screen?.name || "unknown")
+      WlrLayershell.namespace: "qdshell-overview-" + (screen?.name || "unknown")
 
       anchors {
         top: true
@@ -104,7 +104,7 @@ Loader {
         layer.enabled: true
         layer.smooth: false
         layer.effect: MultiEffect {
-          blurEnabled: !PowerProfileService.noctaliaPerformanceMode && (Settings.data.wallpaper.overviewBlur > 0)
+          blurEnabled: !PowerProfileService.qdshellPerformanceMode && (Settings.data.wallpaper.overviewBlur > 0)
           blur: Settings.data.wallpaper.overviewBlur
           blurMax: 48
         }

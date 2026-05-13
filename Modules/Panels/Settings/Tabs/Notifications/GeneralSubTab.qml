@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.System
 import qs.Widgets
 
@@ -119,7 +119,7 @@ ColumnLayout {
       Layout.fillWidth: true
       label: modelData.name || I18n.tr("common.unknown")
       description: {
-        const compositorScale = CompositorService.getDisplayScale(modelData.name);
+        const compositorScale = Qdwin.getDisplayScale(modelData.name);
         I18n.tr("system.monitor-description", {
                   "model": modelData.model,
                   "width": modelData.width * compositorScale,

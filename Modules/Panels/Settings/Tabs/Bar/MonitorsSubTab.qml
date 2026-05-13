@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import "../../Bar" as BarSettings
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -67,7 +67,7 @@ ColumnLayout {
 
             NText {
               text: {
-                const compositorScale = CompositorService.getDisplayScale(monitorCard.screenName);
+                const compositorScale = Qdwin.getDisplayScale(monitorCard.screenName);
                 return I18n.tr("system.monitor-description", {
                                  "model": monitorCard.modelData.model || I18n.tr("common.unknown"),
                                  "width": Math.round(monitorCard.modelData.width * compositorScale),

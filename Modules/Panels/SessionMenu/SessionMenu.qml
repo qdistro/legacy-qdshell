@@ -8,7 +8,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
 import qs.Modules.MainScreen
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -216,33 +216,33 @@ SmartPanel {
     // Stop timer but don't reset other properties yet
     countdownTimer.stop();
 
-    // Use default behavior or custom command handled by CompositorService
+    // Use default behavior or custom command handled by Qdwin
     switch (action) {
     case "lock":
-      CompositorService.lock();
+      Qdwin.lock();
       break;
     case "suspend":
       // Check if we should lock before suspending
       if (Settings.data.general.lockOnSuspend) {
-        CompositorService.lockAndSuspend();
+        Qdwin.lockAndSuspend();
       } else {
-        CompositorService.suspend();
+        Qdwin.suspend();
       }
       break;
     case "hibernate":
-      CompositorService.hibernate();
+      Qdwin.hibernate();
       break;
     case "reboot":
-      CompositorService.reboot();
+      Qdwin.reboot();
       break;
     case "rebootToUefi":
-      CompositorService.rebootToUefi();
+      Qdwin.rebootToUefi();
       break;
     case "logout":
-      CompositorService.logout();
+      Qdwin.logout();
       break;
     case "shutdown":
-      CompositorService.shutdown();
+      Qdwin.shutdown();
       break;
     }
 

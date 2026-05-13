@@ -1,4 +1,4 @@
-;;; noctalia-theme.el --- Theme using Template SCSS variables -*- lexical-binding: t -*-
+;;; qdshell-theme.el --- Theme using Template SCSS variables -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2025 
 
@@ -18,7 +18,7 @@
 
 ;;; Code:
 
-(deftheme noctalia "Theme using Template variables with quality of life improvements.")
+(deftheme qdshell "Theme using Template variables with quality of life improvements.")
 
 ;; Define all the color variables (replaced by template processor)
 (let* ((bg "{{colors.background.default.hex}}")
@@ -92,7 +92,7 @@
       (term15 "{{colors.on_surface.default.hex}}"))
 
   (custom-theme-set-faces
-   'noctalia
+   'qdshell
    ;; Basic faces
    `(default ((t (:background ,bg :foreground ,on-background))))
    `(cursor ((t (:background ,primary))))
@@ -356,6 +356,6 @@
   (add-to-list 'custom-theme-load-path
                (file-name-as-directory (file-name-directory load-file-name))))
 
-(provide-theme 'noctalia)
-;;; noctalia-theme.el ends here
+(provide-theme 'qdshell)
+;;; qdshell-theme.el ends here
 

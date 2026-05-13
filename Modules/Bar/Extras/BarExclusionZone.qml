@@ -26,7 +26,7 @@ PanelWindow {
 
   // Wayland layer shell configuration
   WlrLayershell.layer: WlrLayer.Top
-  WlrLayershell.namespace: "noctalia-bar-exclusion-" + (screen?.name || "unknown")
+  WlrLayershell.namespace: "qdshell-bar-exclusion-" + (screen?.name || "unknown")
   WlrLayershell.exclusionMode: ExclusionMode.Auto
 
   // Anchor based on bar position

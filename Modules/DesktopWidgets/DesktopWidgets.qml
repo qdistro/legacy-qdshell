@@ -5,8 +5,8 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Modules.Panels.Settings
-import qs.Services.Compositor
-import qs.Services.Noctalia
+import qs.Services.Qdwin
+import qs.Services.Qdshell
 import qs.Services.Power
 import qs.Services.UI
 import qs.Widgets
@@ -50,7 +50,7 @@ Variants {
     }
 
     // Only create PanelWindow if enabled AND (screen has widgets OR in edit mode)
-    active: modelData && Settings.data.desktopWidgets.enabled && (screenWidgets.length > 0 || DesktopWidgetRegistry.editMode) && !PowerProfileService.noctaliaPerformanceMode && !PanelService.lockScreen?.active
+    active: modelData && Settings.data.desktopWidgets.enabled && (screenWidgets.length > 0 || DesktopWidgetRegistry.editMode) && !PowerProfileService.qdshellPerformanceMode && !PanelService.lockScreen?.active
 
     sourceComponent: PanelWindow {
       id: window
@@ -59,7 +59,7 @@ Variants {
 
       WlrLayershell.layer: WlrLayer.Bottom
       WlrLayershell.exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.namespace: "noctalia-desktop-widgets-" + (screen?.name || "unknown")
+      WlrLayershell.namespace: "qdshell-desktop-widgets-" + (screen?.name || "unknown")
 
       anchors {
         top: true

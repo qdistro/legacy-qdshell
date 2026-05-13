@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 
 Item {
@@ -148,7 +148,7 @@ Item {
   }
 
   function executeAction(action) {
-    // Default behavior or custom command handled by CompositorService
+    // Default behavior or custom command handled by Qdwin
     switch (action) {
     case "lock":
       if (PanelService.lockScreen && !PanelService.lockScreen.active) {
@@ -157,22 +157,22 @@ Item {
       break;
     case "suspend":
       if (Settings.data.general.lockOnSuspend) {
-        CompositorService.lockAndSuspend();
+        Qdwin.lockAndSuspend();
       } else {
-        CompositorService.suspend();
+        Qdwin.suspend();
       }
       break;
     case "hibernate":
-      CompositorService.hibernate();
+      Qdwin.hibernate();
       break;
     case "reboot":
-      CompositorService.reboot();
+      Qdwin.reboot();
       break;
     case "logout":
-      CompositorService.logout();
+      Qdwin.logout();
       break;
     case "shutdown":
-      CompositorService.shutdown();
+      Qdwin.shutdown();
       break;
     }
   }

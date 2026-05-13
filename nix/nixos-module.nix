@@ -4,29 +4,29 @@
   ...
 }:
 let
-  cfg = config.services.noctalia-shell;
+  cfg = config.services.qdshell-shell;
 in
 {
-  options.services.noctalia-shell = {
-    enable = lib.mkEnableOption "Noctalia shell systemd service";
+  options.services.qdshell-shell = {
+    enable = lib.mkEnableOption "Qdshell shell systemd service";
 
     package = lib.mkOption {
       type = lib.types.package;
-      description = "The noctalia-shell package to use";
+      description = "The qdshell-shell package to use";
     };
 
     target = lib.mkOption {
       type = lib.types.str;
       default = "graphical-session.target";
       example = "hyprland-session.target";
-      description = "The systemd target for the noctalia-shell service.";
+      description = "The systemd target for the qdshell-shell service.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.user.services.noctalia-shell = {
-      description = "Noctalia Shell - Wayland desktop shell";
-      documentation = [ "https://docs.noctalia.dev" ];
+    systemd.user.services.qdshell-shell = {
+      description = "Qdshell Shell - Wayland desktop shell";
+      documentation = [ "https://docs.qdshell.dev" ];
       after = [ cfg.target ];
       partOf = [ cfg.target ];
       wantedBy = [ cfg.target ];

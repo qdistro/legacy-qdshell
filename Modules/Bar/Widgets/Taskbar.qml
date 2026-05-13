@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.System
 import qs.Services.UI
 import qs.Widgets
@@ -310,13 +310,13 @@ Item {
 
     // First pass: Add all running windows
     try {
-      const total = CompositorService.windows.count || 0;
-      const activeIds = CompositorService.getActiveWorkspaces().map(function (ws) {
+      const total = Qdwin.windows.count || 0;
+      const activeIds = Qdwin.getActiveWorkspaces().map(function (ws) {
         return ws.id;
       });
 
       for (var i = 0; i < total; i++) {
-        var w = CompositorService.windows.get(i);
+        var w = Qdwin.windows.get(i);
         if (!w)
           continue;
         var passOutput = (!onlySameOutput) || (w.output == screen?.name);
@@ -395,9 +395,9 @@ Item {
           Logger.d("Taskbar", "Executing terminal app manually: " + app.name);
           const terminal = Settings.data.appLauncher.terminalCommand.split(" ");
           const command = terminal.concat(app.command);
-          CompositorService.spawn(command);
+          Qdwin.spawn(command);
         } else if (app.command && app.command.length > 0) {
-          CompositorService.spawn(app.command);
+          Qdwin.spawn(app.command);
         } else if (app.execute) {
           app.execute();
         } else {
@@ -469,11 +469,11 @@ Item {
                    const selectedWindow = root.getSelectedWindow();
 
                    if (action === "focus" && selectedWindow) {
-                     CompositorService.focusWindow(selectedWindow);
+                     Qdwin.focusWindow(selectedWindow);
                    } else if (action === "pin" && root.selectedAppId) {
                      root.toggleAppPin(root.selectedAppId);
                    } else if (action === "close" && selectedWindow) {
-                     CompositorService.closeWindow(selectedWindow);
+                     Qdwin.closeWindow(selectedWindow);
                    } else if (action === "widget-settings") {
                      BarService.openWidgetSettings(root.screen, root.section, root.sectionWidgetIndex, root.widgetId, root.widgetSettings);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
@@ -494,7 +494,7 @@ Item {
   }
 
   Connections {
-    target: CompositorService
+    target: Qdwin
     function onActiveWindowChanged() {
       updateCombinedModel();
     }
@@ -567,7 +567,7 @@ Item {
           var nextItem = root.combinedModel[nextIndex];
           if (nextItem && nextItem.window) {
             try {
-              CompositorService.focusWindow(nextItem.window);
+              Qdwin.focusWindow(nextItem.window);
             } catch (error) {
               Logger.e("Taskbar", "Failed to focus window: " + error);
             }
@@ -903,7 +903,7 @@ Item {
                            if (isRunning && modelData.window) {
                              // Running app - focus it
                              try {
-                               CompositorService.focusWindow(modelData.window);
+                               Qdwin.focusWindow(modelData.window);
                              } catch (error) {
                                Logger.e("Taskbar", "Failed to activate toplevel: " + error);
                              }

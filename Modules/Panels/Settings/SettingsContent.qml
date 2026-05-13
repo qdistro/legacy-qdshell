@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Modules.Panels.Settings.Tabs
-import qs.Modules.Panels.Settings.Tabs.About
+// qdshell: About tab stripped (Noctalia phone-home/supporters/version)
 import qs.Modules.Panels.Settings.Tabs.Audio
 import qs.Modules.Panels.Settings.Tabs.Bar
 import qs.Modules.Panels.Settings.Tabs.ColorScheme
@@ -438,10 +438,7 @@ Item {
     id: wallpaperTab
     WallpaperTab {}
   }
-  Component {
-    id: aboutTab
-    AboutTab {}
-  }
+  // qdshell: aboutTab Component stripped.
   Component {
     id: hooksTab
     HooksTab {}
@@ -605,12 +602,7 @@ Item {
             "icon": "settings-hooks",
             "source": hooksTab
           },
-          {
-            "id": SettingsPanel.Tab.About,
-            "label": "panels.about.title",
-            "icon": "settings-about",
-            "source": aboutTab
-          }
+          // qdshell: About tab entry stripped.
         ];
 
     root.tabsModel = newTabs;

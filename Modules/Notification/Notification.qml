@@ -44,7 +44,7 @@ Variants {
       id: notifWindow
       screen: modelData
 
-      WlrLayershell.namespace: "noctalia-notifications-" + (screen?.name || "unknown")
+      WlrLayershell.namespace: "qdshell-notifications-" + (screen?.name || "unknown")
       WlrLayershell.layer: (Settings.data.notifications?.overlayLayer) ? WlrLayer.Overlay : WlrLayer.Top
       WlrLayershell.exclusionMode: ExclusionMode.Ignore
 

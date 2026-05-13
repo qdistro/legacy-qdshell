@@ -20,7 +20,7 @@ ColumnLayout {
   property string valueDisplayMode: widgetData.displayMode !== undefined ? widgetData.displayMode : widgetMetadata.displayMode
   property string valueDeviceNativePath: widgetData.deviceNativePath !== undefined ? widgetData.deviceNativePath : "__default__"
   property bool valueShowPowerProfiles: widgetData.showPowerProfiles !== undefined ? widgetData.showPowerProfiles : widgetMetadata.showPowerProfiles
-  property bool valueShowNoctaliaPerformance: widgetData.showNoctaliaPerformance !== undefined ? widgetData.showNoctaliaPerformance : widgetMetadata.showNoctaliaPerformance
+  property bool valueShowQdshellPerformance: widgetData.showQdshellPerformance !== undefined ? widgetData.showQdshellPerformance : widgetMetadata.showQdshellPerformance
   property bool valueHideIfNotDetected: widgetData.hideIfNotDetected !== undefined ? widgetData.hideIfNotDetected : widgetMetadata.hideIfNotDetected
   property bool valueHideIfIdle: widgetData.hideIfIdle !== undefined ? widgetData.hideIfIdle : widgetMetadata.hideIfIdle
 
@@ -31,7 +31,7 @@ ColumnLayout {
     }
     settings.displayMode = valueDisplayMode;
     settings.showPowerProfiles = valueShowPowerProfiles;
-    settings.showNoctaliaPerformance = valueShowNoctaliaPerformance;
+    settings.showQdshellPerformance = valueShowQdshellPerformance;
     settings.hideIfNotDetected = valueHideIfNotDetected;
     settings.hideIfIdle = valueHideIfIdle;
     settings.deviceNativePath = valueDeviceNativePath;
@@ -121,11 +121,11 @@ ColumnLayout {
   }
 
   NToggle {
-    label: I18n.tr("bar.battery.show-noctalia-performance-label")
-    description: I18n.tr("bar.battery.show-noctalia-performance-description")
-    checked: valueShowNoctaliaPerformance
+    label: I18n.tr("bar.battery.show-qdshell-performance-label")
+    description: I18n.tr("bar.battery.show-qdshell-performance-description")
+    checked: valueShowQdshellPerformance
     onToggled: checked => {
-                 valueShowNoctaliaPerformance = checked;
+                 valueShowQdshellPerformance = checked;
                  saveSettings();
                }
   }

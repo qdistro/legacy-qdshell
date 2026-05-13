@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Noctalia
+import qs.Services.Qdshell
 import qs.Services.UI
 import qs.Widgets
 

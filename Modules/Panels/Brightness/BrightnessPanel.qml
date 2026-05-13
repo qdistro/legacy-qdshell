@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Modules.MainScreen
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.Hardware
 import qs.Services.UI
 import qs.Widgets
@@ -231,7 +231,7 @@ SmartPanel {
                   label: modelData.name || "Unknown"
                   labelColor: Color.mPrimary
                   description: {
-                    const compositorScale = CompositorService.getDisplayScale(modelData.name);
+                    const compositorScale = Qdwin.getDisplayScale(modelData.name);
                     I18n.tr("system.monitor-description", {
                               "model": modelData.model,
                               "width": modelData.width * compositorScale,

@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Compositor
-import qs.Services.Noctalia
+import qs.Services.Qdwin
+import qs.Services.Qdshell
 import qs.Services.UI
 import qs.Widgets
 
@@ -100,7 +100,7 @@ ColumnLayout {
       Layout.fillWidth: true
       sectionName: modelData.name
       sectionSubtitle: {
-        var compositorScale = CompositorService.getDisplayScale(modelData.name);
+        var compositorScale = Qdwin.getDisplayScale(modelData.name);
         // Format scale to 2 decimal places to prevent overly long text
         var formattedScale = compositorScale.toFixed(2);
         return "(" + modelData.width + "x" + modelData.height + " @ " + formattedScale + "x)";
