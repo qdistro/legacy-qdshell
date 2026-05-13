@@ -7,7 +7,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Modules.Bar.Extras
 import qs.Modules.Notification
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -307,14 +307,14 @@ Item {
         }
 
         function switchWorkspaceByOffset(offset) {
-          if (!root.screen || CompositorService.workspaces.count === 0)
+          if (!root.screen || Qdwin.workspaces.count === 0)
             return;
 
           var screenName = root.screen.name.toLowerCase();
           var candidates = [];
-          for (var i = 0; i < CompositorService.workspaces.count; i++) {
-            var ws = CompositorService.workspaces.get(i);
-            var matchesScreen = CompositorService.globalWorkspaces || (ws.output && ws.output.toLowerCase() === screenName);
+          for (var i = 0; i < Qdwin.workspaces.count; i++) {
+            var ws = Qdwin.workspaces.get(i);
+            var matchesScreen = Qdwin.globalWorkspaces || (ws.output && ws.output.toLowerCase() === screenName);
             if (matchesScreen)
               candidates.push(ws);
           }
@@ -342,7 +342,7 @@ Item {
               return;
           }
 
-          CompositorService.switchToWorkspace(candidates[next]);
+          Qdwin.switchToWorkspace(candidates[next]);
         }
 
         MouseArea {

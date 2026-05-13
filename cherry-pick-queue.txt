@@ -90,6 +90,26 @@ dd22f7bc3  fix(blur): force flush wayland state, to avoid stuck blur regions
 # 5f45191d7  feat(perf): 100% opacity in performance mode — branded "noctalia
 #            performance mode"; reconsider after a Phase-7 polish pass with
 #            our own naming.
+# Run-record (2026-05-03): 24 of 26 picks landed clean (with ~5 conflicts
+# auto-resolved via `git checkout --theirs` for refactor-style fixes:
+# NGraph/NButton/BarBackground/WallpaperPanel/SoundSubTab/BarWidgetLoader).
+# Skipped:
+# 4f523301c — fix(bar): harden AudioVisualizer when ShellScreen is null —
+#             upstream migrated this widget from CavaService → SpectrumService
+#             (noctalia-qs C++ extension). qdshell stays on CavaService.
+# 7b29c11d7 — fix(bar): guard grouped workspace window delegates when
+#             modelData is stale — the underlying liveWindows model came from
+#             stripped compositor adapters; the guard is moot for our Qdwin path.
+#
+# Required follow-ups after the run, committed alongside:
+# - Modules/Bar/Bar.qml + BehaviorSubTab.qml: rewire qs.Services.Compositor →
+#   qs.Services.Qdwin (cherry-picks landed upstream's Compositor import path).
+# - Modules/Bar/Extras/BarWidgetLoader.qml: rewire qs.Services.Noctalia →
+#   qs.Services.Qdshell (the --theirs strategy bypassed the fork rename).
+# - SoundSubTab.qml: drop a stray `showReset: true` line — the property
+#   itself was added in upstream b54971e97 which we didn't pick (touches too
+#   many SubTabs to be worth porting). Reset-button missing on volume slider.
+#
 # All flake.nix / .github/ / fix(ci:*) / chore(flake:*) commits — tooling we
 # don't share.
 # All hyprland/sway/niri/labwc/mango/ext-workspace adapter fixes — adapters

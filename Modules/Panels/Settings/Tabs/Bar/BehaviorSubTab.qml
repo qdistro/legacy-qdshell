@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Services.Compositor
+import qs.Services.Qdwin
 import qs.Widgets
 
 ColumnLayout {
@@ -31,7 +31,7 @@ ColumnLayout {
           "name": "Workspace"
         }
       ];
-      if (CompositorService.isNiri) {
+      if (Qdwin.isNiri) {
         items.push({
                     "key": "content",
                     "name": "Content"
