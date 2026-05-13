@@ -17,9 +17,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VM="${QDISTRO_VM:-noctalia-vis-260503-1021}"
+VM="${QDISTRO_VM:?set QDISTRO_VM to the libvirt domain name}"
 QDISTRO_DIR="${QDISTRO_DIR:-../qdistro}"
-VME="$QDISTRO_DIR/optjan/usr/bin/vm-exec"
+VME="$QDISTRO_DIR/scripts/vm/vm-exec"
 HTTP_PORT="${HTTP_PORT:-8765}"
 
 if [ ! -x "$VME" ]; then
@@ -39,10 +39,11 @@ done
 TMPTAR="$(mktemp -t qdshell-tests.XXXXXX.tar)"
 tar -cf "$TMPTAR" Tests/ Helpers/
 
-# Stage on the http-server qdistro is using; if it's not running,
-# start it pointed at the qdistro/compositor dir (the path matches
-# what vm-exec deploys land at).
-STAGE_DIR="$QDISTRO_DIR/compositor"
+# Stage on the http-server qdistro uses for in-VM file pickup; if it's
+# not running, start it pointed at a scratch dir the VM bootstrap knows
+# to fetch from.
+STAGE_DIR="${QDSHELL_HTTP_STAGE:-/tmp/qdshell-stage}"
+mkdir -p "$STAGE_DIR"
 cp "$TMPTAR" "$STAGE_DIR/qdshell-tests.tar"
 
 if ! ss -tln 2>/dev/null | grep -q ":$HTTP_PORT "; then
@@ -107,8 +108,8 @@ RC=$?
 # 4. Optional bats run.
 if [ "$RUN_BATS" = 1 ]; then
     echo
-    echo "==> running phase9-qdshell-broker.bats inside qdistro repo"
-    BATS_FILE="$QDISTRO_DIR/phase1/compositor/vm-tests/phase9-qdshell-broker.bats"
+    echo "==> running broker-e2e.bats inside qdistro repo"
+    BATS_FILE="$QDISTRO_DIR/tests/integration/vm/broker-e2e.bats"
     if [ -f "$BATS_FILE" ]; then
         (cd "$QDISTRO_DIR" && QDISTRO_VM="$VM" bats "$BATS_FILE")
     else
