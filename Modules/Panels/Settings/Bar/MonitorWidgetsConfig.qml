@@ -133,7 +133,7 @@ NBox {
     }
   }
 
-  Component.onCompleted: updateAvailableWidgetsModel()
+  Component.onCompleted: Qt.callLater(updateAvailableWidgetsModel)
 
   ListModel {
     id: availableWidgetsModel

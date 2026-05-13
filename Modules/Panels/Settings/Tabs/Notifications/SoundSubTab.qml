@@ -10,6 +10,7 @@ ColumnLayout {
   id: root
   spacing: Style.marginL
   Layout.fillWidth: true
+  enabled: Settings.data.notifications.enabled
 
   signal openUnifiedPicker
   signal openLowPicker
@@ -20,7 +21,7 @@ ColumnLayout {
   NBox {
     Layout.fillWidth: true
     visible: !SoundService.multimediaAvailable
-    implicitHeight: unavailableContent.implicitHeight + Style.marginL * 2
+    implicitHeight: unavailableContent.implicitHeight + Style.margin2L
 
     RowLayout {
       id: unavailableContent
@@ -61,6 +62,7 @@ ColumnLayout {
     from: 0
     to: 1
     stepSize: 0.01
+    showReset: true
     value: Settings.data.notifications?.sounds?.volume ?? 0.5
     onMoved: value => Settings.data.notifications.sounds.volume = value
     text: Math.round((Settings.data.notifications?.sounds?.volume ?? 0.5) * 100) + "%"
@@ -97,12 +99,18 @@ ColumnLayout {
       text: Settings.data.notifications?.sounds?.normalSoundFile ?? ""
       buttonIcon: "folder-open"
       buttonTooltip: I18n.tr("panels.notifications.sounds-files-select-file")
-      onInputEditingFinished: {
-        const soundPath = text;
-        Settings.data.notifications.sounds.normalSoundFile = soundPath;
-        Settings.data.notifications.sounds.lowSoundFile = soundPath;
-        Settings.data.notifications.sounds.criticalSoundFile = soundPath;
-      }
+      onInputTextChanged: text => {
+                            // When separate sounds are enabled, this row is hidden but still
+                            // bound to normalSoundFile; user edits to normal still update that
+                            // key and would re-trigger this handler and wipe low/critical.
+                            if (Settings.data.notifications.sounds.separateSounds) {
+                              return;
+                            }
+                            const soundPath = text;
+                            Settings.data.notifications.sounds.normalSoundFile = soundPath;
+                            Settings.data.notifications.sounds.lowSoundFile = soundPath;
+                            Settings.data.notifications.sounds.criticalSoundFile = soundPath;
+                          }
       onButtonClicked: root.openUnifiedPicker()
     }
   }
@@ -130,7 +138,7 @@ ColumnLayout {
         text: Settings.data.notifications?.sounds?.lowSoundFile ?? ""
         buttonIcon: "folder-open"
         buttonTooltip: I18n.tr("panels.notifications.sounds-files-select-file")
-        onInputEditingFinished: Settings.data.notifications.sounds.lowSoundFile = text
+        onInputTextChanged: text => Settings.data.notifications.sounds.lowSoundFile = text
         onButtonClicked: root.openLowPicker()
       }
     }
@@ -152,7 +160,7 @@ ColumnLayout {
         text: Settings.data.notifications?.sounds?.normalSoundFile ?? ""
         buttonIcon: "folder-open"
         buttonTooltip: I18n.tr("panels.notifications.sounds-files-select-file")
-        onInputEditingFinished: Settings.data.notifications.sounds.normalSoundFile = text
+        onInputTextChanged: text => Settings.data.notifications.sounds.normalSoundFile = text
         onButtonClicked: root.openNormalPicker()
       }
     }
@@ -174,7 +182,7 @@ ColumnLayout {
         text: Settings.data.notifications?.sounds?.criticalSoundFile ?? ""
         buttonIcon: "folder-open"
         buttonTooltip: I18n.tr("panels.notifications.sounds-files-select-file")
-        onInputEditingFinished: Settings.data.notifications.sounds.criticalSoundFile = text
+        onInputTextChanged: text => Settings.data.notifications.sounds.criticalSoundFile = text
         onButtonClicked: root.openCriticalPicker()
       }
     }
@@ -196,7 +204,7 @@ ColumnLayout {
       Layout.fillWidth: true
       placeholderText: I18n.tr("panels.notifications.sounds-excluded-apps-placeholder")
       text: Settings.data.notifications?.sounds?.excludedApps ?? ""
-      onEditingFinished: Settings.data.notifications.sounds.excludedApps = text
+      onTextChanged: Settings.data.notifications.sounds.excludedApps = text
     }
   }
 }

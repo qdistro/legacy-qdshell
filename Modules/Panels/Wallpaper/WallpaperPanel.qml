@@ -15,7 +15,7 @@ SmartPanel {
   preferredWidth: 800 * Style.uiScaleRatio
   preferredHeight: 600 * Style.uiScaleRatio
   preferredWidthRatio: 0.5
-  preferredHeightRatio: 0.45
+  preferredHeightRatio: 0.7
 
   // Positioning
   readonly property string screenBarPosition: Settings.getBarPositionForScreen(screen?.name)
@@ -181,9 +181,16 @@ SmartPanel {
 
     color: "transparent"
 
-    // qdshell: Wallhaven settings popup stripped (WallhavenService is
-    // a no-op stub; the wallhaven UI surface above will be cleaned up
-    // in a later strip pass — see todo/noctalia-impl-plan.md).
+    // Wallhaven settings popup
+    Loader {
+      id: wallhavenSettingsPopup
+      source: "WallhavenSettingsPopup.qml"
+      onLoaded: {
+        if (item) {
+          item.screen = screen;
+        }
+      }
+    }
 
     // Solid color picker dialog
     NColorPickerDialog {
@@ -257,7 +264,7 @@ SmartPanel {
       // Header
       NBox {
         Layout.fillWidth: true
-        Layout.preferredHeight: headerColumn.implicitHeight + Style.marginL * 2
+        Layout.preferredHeight: headerColumn.implicitHeight + Style.margin2L
         color: Color.mSurfaceVariant
 
         ColumnLayout {
@@ -943,14 +950,14 @@ SmartPanel {
           }
           tooltipText: {
             if (sortOrder === "date_desc")
-              return "Sort: Newest First";
+              return I18n.tr("wallpaper.panel.sort-date-desc");
             if (sortOrder === "date_asc")
-              return "Sort: Oldest First";
+              return I18n.tr("wallpaper.panel.sort-date-asc");
             if (sortOrder === "name_desc")
-              return "Sort: Name (Z-A)";
+              return I18n.tr("wallpaper.panel.sort-name-desc");
             if (sortOrder === "random")
-              return "Sort: Random";
-            return "Sort: Name (A-Z)";
+              return I18n.tr("wallpaper.panel.sort-random");
+            return I18n.tr("wallpaper.panel.sort-name-asc");
           }
           baseSize: Style.baseWidgetSize * 0.8
           onClicked: {
@@ -1044,19 +1051,8 @@ SmartPanel {
         bottomMargin: Style.marginS
 
         onCurrentIndexChanged: {
-          // Synchronize scroll with current item position
           if (currentIndex >= 0) {
-            let row = Math.floor(currentIndex / columns);
-            let itemY = row * cellHeight;
-            let viewportTop = contentY;
-            let viewportBottom = viewportTop + height;
-
-            // If item is out of view, scroll
-            if (itemY < viewportTop) {
-              contentY = Math.max(0, itemY - cellHeight);
-            } else if (itemY + cellHeight > viewportBottom) {
-              contentY = itemY + cellHeight - height + cellHeight;
-            }
+            positionViewAtIndex(currentIndex, GridView.Contain);
           }
         }
 
@@ -1517,16 +1513,7 @@ SmartPanel {
 
           onCurrentIndexChanged: {
             if (currentIndex >= 0) {
-              let row = Math.floor(currentIndex / columns);
-              let itemY = row * cellHeight;
-              let viewportTop = contentY;
-              let viewportBottom = viewportTop + height;
-
-              if (itemY < viewportTop) {
-                contentY = Math.max(0, itemY - cellHeight);
-              } else if (itemY + cellHeight > viewportBottom) {
-                contentY = itemY + cellHeight - height + cellHeight;
-              }
+              positionViewAtIndex(currentIndex, GridView.Contain);
             }
           }
 
@@ -1829,7 +1816,6 @@ SmartPanel {
             }
 
             onEditingFinished: submitPage()
-            onAccepted: submitPage()
           }
 
           NText {
