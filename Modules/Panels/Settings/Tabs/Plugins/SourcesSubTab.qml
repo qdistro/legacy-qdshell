@@ -91,6 +91,9 @@ ColumnLayout {
   }
 
   // Add source dialog
+  // qmllint disable Quick.layout-positioning Quick.attached-property-type
+  // (Popup is reparented to Overlay.overlay at runtime so the static
+  //  layout-child heuristic doesn't apply here.)
   Popup {
     id: addSourceDialog
     parent: Overlay.overlay

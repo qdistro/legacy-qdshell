@@ -644,6 +644,9 @@ Loader {
             width: dockContent.dockContainer.width + extraLeft + extraRight
             height: dockContent.dockContainer.height + extraTop + extraBottom
 
+            // qmllint disable Quick.anchor-combinations
+            // (Conditional `: undefined` pattern — at runtime only the
+            //  matching dockPosition anchor is set.)
             anchors.horizontalCenter: isVertical ? undefined : parent.horizontalCenter
             anchors.verticalCenter: isVertical ? parent.verticalCenter : undefined
 
@@ -651,6 +654,7 @@ Loader {
             anchors.bottom: dockPosition === "bottom" ? parent.bottom : undefined
             anchors.left: dockPosition === "left" ? parent.left : undefined
             anchors.right: dockPosition === "right" ? parent.right : undefined
+            // qmllint enable Quick.anchor-combinations
 
             opacity: hidden ? 0 : 1
             scale: hidden ? 0.85 : 1

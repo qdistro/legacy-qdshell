@@ -195,7 +195,7 @@ SmartPanel {
                     spacing: Style.marginS
                     Rectangle {
                       Layout.fillWidth: true
-                      height: Math.round(8 * Style.uiScaleRatio)
+                      Layout.preferredHeight: Math.round(8 * Style.uiScaleRatio)
                       radius: Math.min(Style.radiusL, height / 2)
                       color: Color.mSurface
 
@@ -259,7 +259,7 @@ SmartPanel {
 
                 Rectangle {
                   Layout.fillWidth: true
-                  height: Math.round(8 * Style.uiScaleRatio)
+                  Layout.preferredHeight: Math.round(8 * Style.uiScaleRatio)
                   radius: Math.min(Style.radiusL, height / 2)
                   color: Color.mSurface
 

@@ -187,6 +187,10 @@ Variants {
       ColumnLayout {
         id: notificationStack
 
+        // qmllint disable Quick.anchor-combinations
+        // (At runtime exactly one of left/right/horizontalCenter is set
+        //  via the conditional `: undefined` pattern — qmllint can't
+        //  tell so it flags the static union.)
         anchors {
           top: parent.isTop ? parent.top : undefined
           bottom: parent.isBottom ? parent.bottom : undefined
@@ -194,6 +198,7 @@ Variants {
           right: parent.isRight ? parent.right : undefined
           horizontalCenter: parent.isCentered ? parent.horizontalCenter : undefined
         }
+        // qmllint enable Quick.anchor-combinations
 
         spacing: -notifWindow.shadowPadding * 2 + Style.marginM
 

@@ -349,7 +349,7 @@ NBox {
             id: progressWrapper
             visible: (MediaService.currentPlayer && MediaService.trackLength > 0)
             Layout.fillWidth: true
-            height: Style.baseWidgetSize * 0.5
+            Layout.preferredHeight: Style.baseWidgetSize * 0.5
 
             property real localSeekRatio: -1
             property real lastSentSeekRatio: -1

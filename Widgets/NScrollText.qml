@@ -65,7 +65,7 @@ Item {
     Resetting = 2
   }
 
-  property int state: NScrollText.ScrollState.None
+  property int scrollState: NScrollText.ScrollState.None
 
   onTextChanged: {
     if (titleText.item)
@@ -81,7 +81,7 @@ Item {
   onForcedHoverChanged: updateState()
 
   function resetState() {
-    root.state = NScrollText.ScrollState.None;
+    root.scrollState = NScrollText.ScrollState.None;
     scrollContainer.x = 0;
     scrollTimer.restart();
     root.updateState();
@@ -91,7 +91,7 @@ Item {
     id: scrollTimer
     interval: root.waitBeforeScrolling
     onTriggered: {
-      root.state = NScrollText.ScrollState.Scrolling;
+      root.scrollState = NScrollText.ScrollState.Scrolling;
       root.updateState();
     }
   }
@@ -107,13 +107,13 @@ Item {
   }
 
   function ensureReset() {
-    if (state === NScrollText.ScrollState.Scrolling)
-      state = NScrollText.ScrollState.Resetting;
+    if (root.scrollState === NScrollText.ScrollState.Scrolling)
+      root.scrollState = NScrollText.ScrollState.Resetting;
   }
 
   function updateState() {
     if (contentWidth <= root.maxWidth || scrollMode === NScrollText.ScrollMode.Never) {
-      state = NScrollText.ScrollState.None;
+      root.scrollState = NScrollText.ScrollState.None;
       return;
     }
     if (scrollMode === NScrollText.ScrollMode.Always) {
@@ -124,7 +124,7 @@ Item {
       }
     } else if (scrollMode === NScrollText.ScrollMode.Hover) {
       if (hoverArea.containsMouse || forcedHover)
-        state = NScrollText.ScrollState.Scrolling;
+        root.scrollState = NScrollText.ScrollState.Scrolling;
       else
         ensureReset();
     }
@@ -151,7 +151,7 @@ Item {
       id: loopingText
       sourceComponent: root.delegate
       Layout.fillHeight: true
-      visible: root.state !== NScrollText.ScrollState.None
+      visible: root.scrollState !== NScrollText.ScrollState.None
       onLoaded: {
         this.item.text = root.text;
         this.item.height = Qt.binding(() => loopingText.height);
@@ -159,18 +159,18 @@ Item {
     }
 
     NumberAnimation on x {
-      running: root.state === NScrollText.ScrollState.Resetting
+      running: root.scrollState === NScrollText.ScrollState.Resetting
       to: 0
       duration: root.resettingDuration
       easing.type: Easing.OutQuad
       onFinished: {
-        root.state = NScrollText.ScrollState.None;
+        root.scrollState = NScrollText.ScrollState.None;
         root.updateState();
       }
     }
 
     NumberAnimation on x {
-      running: root.state === NScrollText.ScrollState.Scrolling
+      running: root.scrollState === NScrollText.ScrollState.Scrolling
       to: -(titleText.width + scrollContainer.spacing)
       duration: root.scrollCycleDuration
       loops: Animation.Infinite

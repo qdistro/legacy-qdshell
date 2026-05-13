@@ -23,6 +23,7 @@ import qs.Modules.Panels.Settings.Tabs.Region
 import qs.Modules.Panels.Settings.Tabs.SessionMenu
 import qs.Modules.Panels.Settings.Tabs.SystemMonitor
 import qs.Modules.Panels.Settings.Tabs.UserInterface
+import qs.Modules.Panels.Settings.Tabs.Vault
 import qs.Modules.Panels.Settings.Tabs.Wallpaper
 import qs.Services.System
 import qs.Services.UI
@@ -444,6 +445,10 @@ Item {
     HooksTab {}
   }
   Component {
+    id: vaultTab
+    VaultTab {}
+  }
+  Component {
     id: dockTab
     DockTab {}
   }
@@ -601,6 +606,12 @@ Item {
             "label": "panels.hooks.title",
             "icon": "settings-hooks",
             "source": hooksTab
+          },
+          {
+            "id": SettingsPanel.Tab.Vault,
+            "label": "panels.vault.title",
+            "icon": "lock",
+            "source": vaultTab
           },
           // qdshell: About tab entry stripped.
         ];

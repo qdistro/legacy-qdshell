@@ -90,6 +90,7 @@ SmartPanel {
     SessionMenu,
     SystemMonitor,
     UserInterface,
+    Vault,
     Wallpaper
   }
 

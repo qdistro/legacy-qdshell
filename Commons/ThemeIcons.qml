@@ -104,17 +104,17 @@ Singleton {
 
     let result = null;
 
-    if (result = checkHeuristic(str))
+    if ((result = checkHeuristic(str)) !== null)
       return result;
-    if (result = checkSubstitutions(str))
+    if ((result = checkSubstitutions(str)) !== null)
       return result;
-    if (result = checkRegex(str))
+    if ((result = checkRegex(str)) !== null)
       return result;
-    if (result = checkSimpleTransforms(str))
+    if ((result = checkSimpleTransforms(str)) !== null)
       return result;
-    if (result = checkFuzzySearch(str))
+    if ((result = checkFuzzySearch(str)) !== null)
       return result;
-    if (result = checkCleanMatch(str))
+    if ((result = checkCleanMatch(str)) !== null)
       return result;
 
     return null;

@@ -154,8 +154,8 @@ NBox {
                   visible: modelData.connected && NetworkService.disconnectingFrom !== modelData.ssid
                   color: NetworkService.internetConnectivity ? Color.mPrimary : Color.mError
                   radius: height * 0.5
-                  width: Math.round(connectedText.implicitWidth + (Style.marginS * 2))
-                  height: Math.round(connectedText.implicitHeight + (Style.marginXS))
+                  Layout.preferredWidth: Math.round(connectedText.implicitWidth + (Style.marginS * 2))
+                  Layout.preferredHeight: Math.round(connectedText.implicitHeight + (Style.marginXS))
 
                   NText {
                     id: connectedText
@@ -184,8 +184,8 @@ NBox {
                   visible: NetworkService.disconnectingFrom === modelData.ssid
                   color: Color.mError
                   radius: height * 0.5
-                  width: Math.round(disconnectingText.implicitWidth + (Style.marginS * 2))
-                  height: Math.round(disconnectingText.implicitHeight + (Style.marginXS))
+                  Layout.preferredWidth: Math.round(disconnectingText.implicitWidth + (Style.marginS * 2))
+                  Layout.preferredHeight: Math.round(disconnectingText.implicitHeight + (Style.marginXS))
 
                   NText {
                     id: disconnectingText
@@ -200,8 +200,8 @@ NBox {
                   visible: NetworkService.forgettingNetwork === modelData.ssid
                   color: Color.mError
                   radius: height * 0.5
-                  width: Math.round(forgettingText.implicitWidth + (Style.marginS * 2))
-                  height: Math.round(forgettingText.implicitHeight + (Style.marginXS))
+                  Layout.preferredWidth: Math.round(forgettingText.implicitWidth + (Style.marginS * 2))
+                  Layout.preferredHeight: Math.round(forgettingText.implicitHeight + (Style.marginXS))
 
                   NText {
                     id: forgettingText
@@ -218,8 +218,8 @@ NBox {
                   border.color: Color.mOutline
                   border.width: Style.borderS
                   radius: height * 0.5
-                  width: savedText.implicitWidth + (Style.marginS * 2)
-                  height: savedText.implicitHeight + (Style.marginXS)
+                  Layout.preferredWidth: savedText.implicitWidth + (Style.marginS * 2)
+                  Layout.preferredHeight: savedText.implicitHeight + (Style.marginXS)
 
                   NText {
                     id: savedText
@@ -587,7 +587,7 @@ NBox {
           Rectangle {
             visible: root.passwordSsid === modelData.ssid && NetworkService.disconnectingFrom !== modelData.ssid && NetworkService.forgettingNetwork !== modelData.ssid
             Layout.fillWidth: true
-            height: passwordRow.implicitHeight + Style.marginS * 2
+            Layout.preferredHeight: passwordRow.implicitHeight + Style.marginS * 2
             color: Color.mSurfaceVariant
             border.color: Color.mOutline
             border.width: Style.borderS
@@ -660,7 +660,7 @@ NBox {
           Rectangle {
             visible: root.expandedSsid === modelData.ssid && NetworkService.disconnectingFrom !== modelData.ssid && NetworkService.forgettingNetwork !== modelData.ssid
             Layout.fillWidth: true
-            height: forgetRow.implicitHeight + Style.marginS * 2
+            Layout.preferredHeight: forgetRow.implicitHeight + Style.marginS * 2
             color: Color.mSurfaceVariant
             radius: Style.radiusS
             border.width: Style.borderS

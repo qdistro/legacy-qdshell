@@ -601,8 +601,8 @@ SmartPanel {
         columns: Settings.data.sessionMenu.largeButtonsLayout === "single-row" ? powerOptions.length : Math.min(3, Math.ceil(Math.sqrt(powerOptions.length)))
         rowSpacing: Style.marginXL
         columnSpacing: Style.marginXL
-        width: columns * 200 * Style.uiScaleRatio + (columns - 1) * Style.marginXL
-        height: Math.ceil(powerOptions.length / columns) * 200 * Style.uiScaleRatio + (Math.ceil(powerOptions.length / columns) - 1) * Style.marginXL
+        Layout.preferredWidth: columns * 200 * Style.uiScaleRatio + (columns - 1) * Style.marginXL
+        Layout.preferredHeight: Math.ceil(powerOptions.length / columns) * 200 * Style.uiScaleRatio + (Math.ceil(powerOptions.length / columns) - 1) * Style.marginXL
 
         Repeater {
           model: powerOptions

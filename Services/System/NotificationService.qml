@@ -10,6 +10,7 @@ import "../../Helpers/sha256.js" as Checksum
 import qs.Commons
 import qs.Services.Media
 import qs.Services.Power
+import qs.Services.Qdshell
 import qs.Services.UI
 
 Singleton {
@@ -137,6 +138,10 @@ Singleton {
   function handleNotification(notification) {
     const quickshellId = notification.id;
     const data = createData(notification);
+
+    // Phase-5 hook: forward a one-line summary to the qdistro broker
+    // for the admin audit log. Fire-and-forget; broker absence is OK.
+    Notifications.audit(notification);
 
     // Check if we should save to history based on urgency
     const saveToHistorySettings = Settings.data.notifications?.saveToHistory;

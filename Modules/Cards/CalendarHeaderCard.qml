@@ -38,7 +38,7 @@ Rectangle {
     // Combined layout for date, month year, location and time-zone
     RowLayout {
       Layout.fillWidth: true
-      height: 60 * Style.uiScaleRatio
+      Layout.preferredHeight: 60 * Style.uiScaleRatio
       clip: true
       spacing: Style.marginS
 

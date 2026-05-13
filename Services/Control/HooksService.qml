@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Services.Power
+import qs.Services.Qdshell
 import qs.Services.Theming
 import qs.Services.UI
 
@@ -117,14 +118,16 @@ Singleton {
       return;
     }
 
-    try {
-      let command = script.replace(/\$1/g, wallpaperPath);
-      command = command.replace(/\$2/g, screenName || "");
-      Quickshell.execDetached(["sh", "-lc", command]);
-      Logger.d("HooksService", `Executed wallpaper hook: ${command}`);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute wallpaper hook: ${e}`);
-    }
+    let command = script.replace(/\$1/g, wallpaperPath);
+    command = command.replace(/\$2/g, screenName || "");
+    HooksGate.gate("wallpaperChange", command, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", command]);
+        Logger.d("HooksService", `Executed wallpaper hook: ${command}`);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute wallpaper hook: ${e}`);
+      }
+    });
   }
 
   // Execute dark mode change hook
@@ -138,13 +141,15 @@ Singleton {
       return;
     }
 
-    try {
-      const command = script.replace(/\$1/g, isDarkMode ? "true" : "false");
-      Quickshell.execDetached(["sh", "-lc", command]);
-      Logger.d("HooksService", `Executed dark mode hook: ${command}`);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute dark mode hook: ${e}`);
-    }
+    const command = script.replace(/\$1/g, isDarkMode ? "true" : "false");
+    HooksGate.gate("darkModeChange", command, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", command]);
+        Logger.d("HooksService", `Executed dark mode hook: ${command}`);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute dark mode hook: ${e}`);
+      }
+    });
   }
 
   // Execute screen lock hook
@@ -158,12 +163,14 @@ Singleton {
       return;
     }
 
-    try {
-      Quickshell.execDetached(["sh", "-lc", script]);
-      Logger.d("HooksService", `Executed screen lock hook: ${script}`);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute screen lock hook: ${e}`);
-    }
+    HooksGate.gate("screenLock", script, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", script]);
+        Logger.d("HooksService", `Executed screen lock hook: ${script}`);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute screen lock hook: ${e}`);
+      }
+    });
   }
 
   // Execute screen unlock hook
@@ -177,12 +184,14 @@ Singleton {
       return;
     }
 
-    try {
-      Quickshell.execDetached(["sh", "-lc", script]);
-      Logger.d("HooksService", `Executed screen unlock hook: ${script}`);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute screen unlock hook: ${e}`);
-    }
+    HooksGate.gate("screenUnlock", script, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", script]);
+        Logger.d("HooksService", `Executed screen unlock hook: ${script}`);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute screen unlock hook: ${e}`);
+      }
+    });
   }
 
   // Execute performance mode enabled hook
@@ -196,11 +205,13 @@ Singleton {
       return;
     }
 
-    try {
-      Quickshell.execDetached(["sh", "-lc", script]);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute performance mode enabled hook: ${e}`);
-    }
+    HooksGate.gate("performanceModeEnabled", script, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", script]);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute performance mode enabled hook: ${e}`);
+      }
+    });
   }
 
   // Execute performance mode disabled hook
@@ -214,11 +225,13 @@ Singleton {
       return;
     }
 
-    try {
-      Quickshell.execDetached(["sh", "-lc", script]);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute performance mode disabled hook: ${e}`);
-    }
+    HooksGate.gate("performanceModeDisabled", script, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", script]);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute performance mode disabled hook: ${e}`);
+      }
+    });
   }
 
   // Blocking power hook infrastructure
@@ -259,8 +272,11 @@ Singleton {
       return;
     }
 
-    Logger.i("HooksService", `Executing session hook for ${action}`);
-    runPowerHook(`${script} ${action}`, callback);
+    const command = `${script} ${action}`;
+    HooksGate.gate("session", command, () => {
+      Logger.i("HooksService", `Executing session hook for ${action}`);
+      runPowerHook(command, callback);
+    });
   }
 
   // Execute startup hook
@@ -274,12 +290,14 @@ Singleton {
       return;
     }
 
-    try {
-      Quickshell.execDetached(["sh", "-lc", script]);
-      Logger.d("HooksService", `Executed startup hook: ${script}`);
-    } catch (e) {
-      Logger.e("HooksService", `Failed to execute startup hook: ${e}`);
-    }
+    HooksGate.gate("startup", script, () => {
+      try {
+        Quickshell.execDetached(["sh", "-lc", script]);
+        Logger.d("HooksService", `Executed startup hook: ${script}`);
+      } catch (e) {
+        Logger.e("HooksService", `Failed to execute startup hook: ${e}`);
+      }
+    });
   }
 
   // Initialize the service

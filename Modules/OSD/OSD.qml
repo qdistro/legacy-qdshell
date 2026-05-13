@@ -610,7 +610,7 @@ Variants {
               visible: root.currentOSDType !== OSD.Type.LockKey
               Layout.fillWidth: true
               Layout.alignment: Qt.AlignVCenter
-              height: panel.barThickness
+              Layout.preferredHeight: panel.barThickness
               radius: Math.min(Style.iRadiusL, panel.barThickness / 2)
               color: Color.mSurfaceVariant
 

@@ -59,11 +59,10 @@ Item {
       name: "active"
       when: workspace.isActive
       PropertyChanges {
-        target: pillContainer
-        width: isVertical ? barHeight : getWorkspaceWidth(workspace, true)
-        height: isVertical ? getWorkspaceHeight(workspace, true) : barHeight
-        pillWidth: isVertical ? fixedDimension : getWorkspaceWidth(workspace, true)
-        pillHeight: isVertical ? getWorkspaceHeight(workspace, true) : fixedDimension
+        pillContainer.width: isVertical ? barHeight : getWorkspaceWidth(workspace, true)
+        pillContainer.height: isVertical ? getWorkspaceHeight(workspace, true) : barHeight
+        pillContainer.pillWidth: isVertical ? fixedDimension : getWorkspaceWidth(workspace, true)
+        pillContainer.pillHeight: isVertical ? getWorkspaceHeight(workspace, true) : fixedDimension
       }
     }
   ]

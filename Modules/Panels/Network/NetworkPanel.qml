@@ -408,7 +408,7 @@ SmartPanel {
             ColumnLayout {
               id: networksList
               visible: panelViewMode === "wifi" && Settings.data.network.wifiEnabled && Object.keys(NetworkService.networks).length > 0
-              width: parent.width
+              Layout.preferredWidth: parent.width
               spacing: Style.marginM
 
               WiFiNetworksList {
@@ -460,7 +460,7 @@ SmartPanel {
             ColumnLayout {
               id: ethernetSection
               visible: panelViewMode === "ethernet"
-              width: parent.width
+              Layout.preferredWidth: parent.width
               spacing: Style.marginM
 
               // Section label
@@ -510,7 +510,7 @@ SmartPanel {
               ColumnLayout {
                 id: ethIfacesList
                 visible: NetworkService.ethernetInterfaces && NetworkService.ethernetInterfaces.length > 0
-                width: parent.width
+                Layout.preferredWidth: parent.width
                 spacing: Style.marginXS
 
                 Repeater {
@@ -570,8 +570,8 @@ SmartPanel {
                               visible: modelData.connected
                               color: Color.mPrimary
                               radius: height * 0.5
-                              width: ethConnectedText.implicitWidth + (Style.marginS * 2)
-                              height: ethConnectedText.implicitHeight + (Style.marginXS)
+                              Layout.preferredWidth: ethConnectedText.implicitWidth + (Style.marginS * 2)
+                              Layout.preferredHeight: ethConnectedText.implicitHeight + (Style.marginXS)
 
                               NText {
                                 id: ethConnectedText

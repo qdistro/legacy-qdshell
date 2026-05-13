@@ -130,6 +130,7 @@ Variants {
         }
 
         // Horizontal positioning
+        // qmllint disable Quick.anchor-combinations
         anchors.horizontalCenter: (panelPosition === "center" || panelPosition.endsWith("_center")) ? parent.horizontalCenter : undefined
         anchors.left: panelPosition.endsWith("_left") ? parent.left : undefined
         anchors.right: panelPosition.endsWith("_right") ? parent.right : undefined
@@ -138,6 +139,7 @@ Variants {
         anchors.verticalCenter: (panelPosition === "center" || panelPosition.startsWith("center_")) ? parent.verticalCenter : undefined
         anchors.top: panelPosition.startsWith("top_") ? parent.top : undefined
         anchors.bottom: panelPosition.startsWith("bottom_") ? parent.bottom : undefined
+        // qmllint enable Quick.anchor-combinations
 
         // Margins - only add bar clearance on the bar's edge
         anchors.leftMargin: barPosition === "left" ? barThickness : 0

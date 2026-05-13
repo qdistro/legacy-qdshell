@@ -363,29 +363,29 @@ ColumnLayout {
             property int diameter: 16 * Style.uiScaleRatio
 
             Rectangle {
-              width: scheme.diameter
-              height: scheme.diameter
+              Layout.preferredWidth: scheme.diameter
+              Layout.preferredHeight: scheme.diameter
               radius: scheme.diameter * 0.5
               color: root.getSchemeColor(schemeItem.schemeName, "mPrimary")
             }
 
             Rectangle {
-              width: scheme.diameter
-              height: scheme.diameter
+              Layout.preferredWidth: scheme.diameter
+              Layout.preferredHeight: scheme.diameter
               radius: scheme.diameter * 0.5
               color: root.getSchemeColor(schemeItem.schemeName, "mSecondary")
             }
 
             Rectangle {
-              width: scheme.diameter
-              height: scheme.diameter
+              Layout.preferredWidth: scheme.diameter
+              Layout.preferredHeight: scheme.diameter
               radius: scheme.diameter * 0.5
               color: root.getSchemeColor(schemeItem.schemeName, "mTertiary")
             }
 
             Rectangle {
-              width: scheme.diameter
-              height: scheme.diameter
+              Layout.preferredWidth: scheme.diameter
+              Layout.preferredHeight: scheme.diameter
               radius: scheme.diameter * 0.5
               color: root.getSchemeColor(schemeItem.schemeName, "mError")
             }

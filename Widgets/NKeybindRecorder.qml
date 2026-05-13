@@ -199,8 +199,8 @@ Item {
     // Hidden Item to capture keys
     Item {
       id: keybindInput
-      width: 0
-      height: 0
+      Layout.preferredWidth: 0
+      Layout.preferredHeight: 0
       focus: true
 
       Keys.onPressed: event => {

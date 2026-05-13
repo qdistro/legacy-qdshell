@@ -1566,6 +1566,31 @@
       "tooltips-description": "Enable or disable tooltips throughout the interface.",
       "tooltips-label": "Show tooltips"
     },
+    "vault": {
+      "daemon": {
+        "absent": "qdistro-pwd daemon not available — vault unlock is disabled on this system.",
+        "present": "qdistro-pwd daemon connected. Vaults below."
+      },
+      "empty": "No vaults configured.",
+      "rotate": {
+        "fail": "{name}: rotate failed — {error}",
+        "ok": "{name}: secret rotated."
+      },
+      "secret": {
+        "placeholder": "Vault secret"
+      },
+      "status": {
+        "locked": "locked",
+        "unlocked": "unlocked"
+      },
+      "title": "Vault",
+      "unlock": {
+        "button": "Unlock",
+        "fail": "{name}: unlock failed — {error}",
+        "fprint": "Fingerprint",
+        "ok": "{name}: unlocked."
+      }
+    },
     "wallpaper": {
       "automation-change-mode-alphabetical": "Alphabetical",
       "automation-change-mode-description": "Choose how wallpapers are selected when changing automatically.",

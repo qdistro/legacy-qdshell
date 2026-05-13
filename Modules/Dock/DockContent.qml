@@ -28,6 +28,7 @@ Item {
     color: Qt.alpha(Color.mSurface, (isStaticMode ? 0 : Settings.data.dock.backgroundOpacity))
 
     // Anchor based on padding to achieve centering shift
+    // qmllint disable Quick.anchor-combinations
     anchors.horizontalCenter: extraLeft > 0 || extraRight > 0 ? undefined : parent.horizontalCenter
     anchors.right: extraLeft > 0 ? parent.right : undefined
     anchors.left: extraRight > 0 ? parent.left : undefined
@@ -35,6 +36,7 @@ Item {
     anchors.verticalCenter: extraTop > 0 || extraBottom > 0 ? undefined : parent.verticalCenter
     anchors.bottom: extraTop > 0 ? parent.bottom : undefined
     anchors.top: extraBottom > 0 ? parent.top : undefined
+    // qmllint enable Quick.anchor-combinations
 
     radius: Style.radiusL
     border.width: Style.borderS
@@ -238,7 +240,7 @@ Item {
 
               // Visual shifting logic
               readonly property bool isDragged: dockRoot.dragSourceIndex === index
-              property real shiftOffset: 0
+              property real shiftOffset
 
               Binding on shiftOffset {
                 value: {
@@ -505,6 +507,7 @@ Item {
               radius: Style.radiusXS
 
               // Anchor to the edge facing the screen center
+              // qmllint disable Quick.anchor-combinations
               anchors.bottom: !dockRoot.isVertical && dockRoot.dockPosition === "bottom" ? parent.bottom : undefined
               anchors.top: !dockRoot.isVertical && dockRoot.dockPosition === "top" ? parent.top : undefined
               anchors.left: dockRoot.isVertical && dockRoot.dockPosition === "left" ? parent.left : undefined
@@ -512,6 +515,7 @@ Item {
 
               anchors.horizontalCenter: dockRoot.isVertical ? undefined : parent.horizontalCenter
               anchors.verticalCenter: dockRoot.isVertical ? parent.verticalCenter : undefined
+              // qmllint enable Quick.anchor-combinations
 
               // Offset slightly from the edge
               anchors.bottomMargin: !dockRoot.isVertical && dockRoot.dockPosition === "bottom" ? 2 : 0

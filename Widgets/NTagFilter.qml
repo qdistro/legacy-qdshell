@@ -10,9 +10,8 @@ NCollapsible {
   // Public API
   property var tags: []  // Array of tag strings
   property string selectedTag: ""
-  property alias label: root.label
-  property alias description: root.description
-  property alias expanded: root.expanded
+  // label / description / expanded are inherited from NCollapsible —
+  // no need to re-alias (and a self-referential alias is a cycle).
 
   // Formatting function for tag display (optional override)
   property var formatTag: function (tag) {
