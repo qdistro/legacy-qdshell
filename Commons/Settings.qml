@@ -196,6 +196,13 @@ Singleton {
       property int autoHideDelay: 500 // ms before hiding after mouse leaves
       property int autoShowDelay: 150 // ms before showing when mouse enters
 
+      // When true, exclusion zone is shrunk by 1 physical pixel so the bar bleeds
+      // over the top of windows by 1px (avoids a visible subpixel gap on
+      // fractional-scale displays). Defaults to false because on integer-scale
+      // displays the bleed shows up as the bar's bottom row painting into the
+      // maximized work area (see todo/qdshell-bar-pixel-mismatch.md).
+      property bool exclusionZoneBleed: false
+
       // Widget configuration for modular bar system
       property JsonObject widgets
       widgets: JsonObject {

@@ -23,8 +23,13 @@ PanelWindow {
   readonly property bool barFloating: Settings.data.bar.floating || false
   readonly property real barMarginH: (barFloating && edge === Settings.getBarPositionForScreen(screen?.name)) ? Math.ceil(Settings.data.bar.marginHorizontal) : 0
   readonly property real barMarginV: (barFloating && edge === Settings.getBarPositionForScreen(screen?.name)) ? Math.ceil(Settings.data.bar.marginVertical) : 0
-  // Reduce exclusion zone by 1 physical pixel so app windows blend flush against the bar edge
-  readonly property real bleedInset: 1.0 / (Qdwin.getDisplayScale(screen?.name) || 1.0)
+  // Optionally reduce exclusion zone by 1 physical pixel so the bar bleeds
+  // over the top of app windows by 1px. Helps avoid a visible subpixel gap on
+  // fractional-scale displays, but on integer-scale displays it's just visible
+  // overdraw (see todo/qdshell-bar-pixel-mismatch.md). Defaults off.
+  readonly property real bleedInset: (Settings.data.bar.exclusionZoneBleed === true)
+    ? (1.0 / (Qdwin.getDisplayScale(screen?.name) || 1.0))
+    : 0.0
 
   // Invisible - just reserves space
   color: "transparent"
