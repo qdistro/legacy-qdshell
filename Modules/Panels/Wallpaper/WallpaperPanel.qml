@@ -124,8 +124,36 @@ SmartPanel {
     onReturnPressed();
   }
 
-  panelContent: Rectangle {
+  panelContent: PanelShell {
     id: panelContent
+
+    title: I18n.tr("wallpaper.panel.title")
+    icon: "settings-wallpaper-selector"
+    onCloseRequested: root.close()
+
+    // Body uses Layout.fillHeight all the way down; pin so it has room.
+    contentPreferredHeight: root.preferredHeight
+
+    headerActions: [
+      NIconButton {
+        icon: "palette"
+        tooltipText: I18n.tr("wallpaper.panel.solid-color-tooltip")
+        baseSize: Style.baseWidgetSize * 0.8
+        colorBg: Settings.data.wallpaper.useSolidColor ? Color.mPrimary : Color.mSurfaceVariant
+        colorFg: Settings.data.wallpaper.useSolidColor ? Color.mOnPrimary : Color.mPrimary
+        onClicked: solidColorPicker.open()
+      },
+      NIconButton {
+        icon: "settings"
+        tooltipText: I18n.tr("panels.wallpaper.settings-title")
+        baseSize: Style.baseWidgetSize * 0.8
+        onClicked: {
+          var settingsPanel = PanelService.getPanel("settingsPanel", screen);
+          settingsPanel.requestedTab = SettingsPanel.Tab.Wallpaper;
+          settingsPanel.open();
+        }
+      }
+    ]
 
     property alias wallhavenView: wallhavenView
     property int currentScreenIndex: {
@@ -178,8 +206,6 @@ SmartPanel {
         WallhavenService.search(Settings.data.wallpaper.wallhavenQuery || "", 1);
       }
     }
-
-    color: "transparent"
 
     // Wallhaven settings popup
     Loader {
@@ -273,55 +299,8 @@ SmartPanel {
           anchors.margins: Style.marginL
           spacing: Style.marginM
 
-          RowLayout {
-            Layout.fillWidth: true
-            spacing: Style.marginM
-
-            NIcon {
-              icon: "settings-wallpaper-selector"
-              pointSize: Style.fontSizeXXL
-              color: Color.mPrimary
-            }
-
-            NText {
-              text: I18n.tr("wallpaper.panel.title")
-              pointSize: Style.fontSizeL
-              font.weight: Style.fontWeightBold
-              color: Color.mOnSurface
-              Layout.fillWidth: true
-            }
-
-            NIconButton {
-              icon: "palette"
-              tooltipText: I18n.tr("wallpaper.panel.solid-color-tooltip")
-              baseSize: Style.baseWidgetSize * 0.8
-              colorBg: Settings.data.wallpaper.useSolidColor ? Color.mPrimary : Color.mSurfaceVariant
-              colorFg: Settings.data.wallpaper.useSolidColor ? Color.mOnPrimary : Color.mPrimary
-              onClicked: solidColorPicker.open()
-            }
-
-            NIconButton {
-              icon: "settings"
-              tooltipText: I18n.tr("panels.wallpaper.settings-title")
-              baseSize: Style.baseWidgetSize * 0.8
-              onClicked: {
-                var settingsPanel = PanelService.getPanel("settingsPanel", screen);
-                settingsPanel.requestedTab = SettingsPanel.Tab.Wallpaper;
-                settingsPanel.open();
-              }
-            }
-
-            NIconButton {
-              icon: "close"
-              tooltipText: I18n.tr("common.close")
-              baseSize: Style.baseWidgetSize * 0.8
-              onClicked: root.close()
-            }
-          }
-
-          NDivider {
-            Layout.fillWidth: true
-          }
+          // Note: title row + close button moved into PanelShell chrome.
+          // palette + settings buttons moved into PanelShell headerActions.
 
           NToggle {
             label: I18n.tr("wallpaper.panel.apply-all-monitors-label")
