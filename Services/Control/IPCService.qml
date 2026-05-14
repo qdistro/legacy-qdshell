@@ -333,6 +333,32 @@ Singleton {
 
       BrightnessService.setBrightness(val);
     }
+    function togglePanel() {
+      root.screenDetector.withCurrentScreen(screen => {
+                                              var panel = PanelService.getPanel("brightnessPanel", screen);
+                                              panel?.toggle(null, "Brightness");
+                                            });
+    }
+  }
+
+  IpcHandler {
+    target: "audio"
+    function togglePanel() {
+      root.screenDetector.withCurrentScreen(screen => {
+                                              var panel = PanelService.getPanel("audioPanel", screen);
+                                              panel?.toggle(null, "Volume");
+                                            });
+    }
+  }
+
+  IpcHandler {
+    target: "tray"
+    function togglePanel() {
+      root.screenDetector.withCurrentScreen(screen => {
+                                              var panel = PanelService.getPanel("trayDrawerPanel", screen);
+                                              panel?.toggle(null, "Tray");
+                                            });
+    }
   }
 
   IpcHandler {
