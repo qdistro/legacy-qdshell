@@ -1,0 +1,106 @@
+// qdwin-binding — Qt6 QML plugin that exposes qdwin_shell_v1 to QML.
+//
+// Loaded by qs / noctalia-qs via QML_IMPORT_PATH; consumed from
+// qdshell/Services/Qdwin/Qdwin.qml as `import Qdistro.Qdwin 1.0`
+// then `QdwinBinding { id: binding; ... }`. On construction the
+// binding wl_registry_binds qdwin_shell_v1 at v14, calls bind_as_shell,
+// and starts dispatching events on a QSocketNotifier attached to the
+// wl_display fd — so all wayland traffic flows through the host Qt
+// event loop without a worker thread.
+//
+// MVP scope: observable bind state, focus events, toplevel adds/
+// removes, and the imperative methods qdshell's existing
+// Services/Qdwin/Qdwin.qml TODO stubs need (focusWindow/closeWindow/
+// requestMaximize/requestMinimize). Anything in qdwin-shell-v1.xml
+// beyond that (workspaces, seats lifecycle, outputs, view streams,
+// activation tokens, clipboard mirror, nested) is reserved for phase
+// 2 — add signals/methods one at a time as consumers grow.
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <QObject>
+#include <QString>
+#include <QSocketNotifier>
+#include <cstdint>
+
+struct wl_display;
+struct wl_registry;
+struct qdwin_shell_v1;
+
+class QdwinBinding : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool bound READ bound NOTIFY boundChanged)
+    Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(quint32 shellVersion READ shellVersion NOTIFY boundChanged)
+    Q_PROPERTY(quint32 focusedHandle READ focusedHandle NOTIFY focusedHandleChanged)
+    Q_PROPERTY(QString focusedSeat READ focusedSeat NOTIFY focusedHandleChanged)
+
+public:
+    explicit QdwinBinding(QObject *parent = nullptr);
+    ~QdwinBinding() override;
+
+    bool bound() const { return bound_; }
+    QString lastError() const { return lastError_; }
+    quint32 shellVersion() const { return shellVersion_; }
+    quint32 focusedHandle() const { return focusedHandle_; }
+    QString focusedSeat() const { return focusedSeat_; }
+
+    Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
+    Q_INVOKABLE void closeWindow(quint32 handle);
+    Q_INVOKABLE void requestMaximize(quint32 handle, bool maximized);
+    Q_INVOKABLE void requestMinimize(quint32 handle);
+    Q_INVOKABLE void setBorderColor(quint32 handle, quint32 argb);
+
+signals:
+    void boundChanged();
+    void lastErrorChanged();
+    void focusedHandleChanged();
+
+    void hello(quint32 uid);
+    void toplevelAdded(quint32 handle, quint32 ownerUid, const QString &appId,
+                       const QString &title, bool isXwayland);
+    void toplevelRemoved(quint32 handle);
+    void toplevelTitle(quint32 handle, const QString &title);
+    void toplevelGeometry(quint32 handle, int x, int y, quint32 width, quint32 height);
+    void toplevelState(quint32 handle, quint32 state);
+    void seatFocusChanged(const QString &seat, quint32 handle);
+    void launcherRequested();
+    void switcherNext(int dir);
+    void switcherCommit();
+    void lockRequested();
+    void idleLockHint(quint32 reason);
+
+    // Emitted whenever the dispatch loop hits an unrecoverable error
+    // and the binding tears itself down (display closed, bind_as_shell
+    // rejected, etc.). lastError carries the human-readable reason.
+    void disconnected();
+
+private slots:
+    void onWaylandReadable();
+
+private:
+    void connectAndBind();
+    void teardown(const QString &reason);
+    void setLastError(const QString &s);
+    void setBound(bool b);
+    void setFocused(const QString &seat, quint32 handle);
+
+    // Event entry points invoked from the C wayland listeners. Public-
+    // to-the-file via a friend struct rather than method-on-class to
+    // keep the C callback signatures clean.
+    friend struct QdwinBindingDispatch;
+    friend struct QdwinRegistry;
+
+    wl_display *display_ = nullptr;
+    wl_registry *registry_ = nullptr;
+    qdwin_shell_v1 *shell_ = nullptr;
+    QSocketNotifier *readNotifier_ = nullptr;
+
+    bool bound_ = false;
+    QString lastError_;
+    quint32 shellVersion_ = 0;
+    quint32 focusedHandle_ = UINT32_MAX;
+    QString focusedSeat_;
+};

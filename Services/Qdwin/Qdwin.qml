@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Qdistro.Qdwin 1.0
 import qs.Commons
 import qs.Services.Control
 import qs.Services.UI
@@ -17,10 +18,13 @@ import qs.Services.UI
 ///
 /// The QML interface (workspaces ListModel, isHyprland flag, focus
 /// helpers, session controls, spawn) is preserved so the ~50 consumer
-/// .qml files compile unchanged. Workspace / window data stays empty
-/// for now — qdwin will wire real data via qdwin_shell_v1 when
-/// Phase 5+ adds the binding. Session controls (lock/suspend/etc.)
-/// shell out to `loginctl` / `systemctl` directly, no compositor IPC.
+/// .qml files compile unchanged. As of 2026-05-14 the `windows`
+/// ListModel + focus driving are populated via `Qdistro.Qdwin`
+/// (libqdistro-qdwin.so QML plugin) which binds qdwin_shell_v1 at v14
+/// and exposes toplevel events + imperative requests to QML. Workspace
+/// data stays empty (qdwin doesn't expose workspaces yet). Session
+/// controls (lock/suspend/etc.) still shell out to `loginctl`/
+/// `systemctl` — those don't need compositor IPC.
 Singleton {
     id: root
 
@@ -34,12 +38,113 @@ Singleton {
     readonly property bool isScroll: false
     readonly property bool isQdwin: true
 
-    // Workspace + window state (empty until qdwin_shell_v1 wiring).
+    // Workspace state stays empty — qdwin has no workspace concept yet.
     property ListModel workspaces: ListModel {}
+    // Window state is populated from qdwin_shell_v1 events via the
+    // Qdistro.Qdwin plugin (see QdwinBinding below).
     property ListModel windows: ListModel {}
     property int focusedWindowIndex: -1
     readonly property bool overviewActive: false
     readonly property bool globalWorkspaces: true
+
+    // Alt+Tab switcher state. Once we bind qdwin_shell_v1 at v14+,
+    // qdwin stops driving alt+tab focus itself — it emits
+    // `switcher_next(dir)` to the bound shell on each Tab press while
+    // Alt is held, then `switcher_commit` on Alt release. The shell
+    // is expected to walk a candidate list and call set_keyboard_focus
+    // on the commit. We keep a tiny ring-buffer position; nothing
+    // fancier than wrap-around is required for parity with the v0
+    // qdwin-internal switcher.
+    property int _switcherIndex: -1
+
+    // qdwin_shell_v1 binding. Constructed eagerly so the v14 bind
+    // happens at qdshell startup — needed for the qdwin focus-emit /
+    // keybinding branches to fire (their fallback "unbound" log path
+    // runs while no shell is bound). The binding takes no QML
+    // properties; we drive it via signal handlers + Q_INVOKABLE
+    // methods.
+    QdwinBinding {
+        id: qdwinBinding
+
+        onBoundChanged: {
+            if (bound) {
+                Logger.i("Qdwin", "qdwin_shell_v1 bound v" + shellVersion);
+            } else if (lastError.length > 0) {
+                Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
+            }
+        }
+        onLastErrorChanged: {
+            if (lastError.length > 0)
+                Logger.w("Qdwin", "binding error: " + lastError);
+        }
+
+        onToplevelAdded: (handle, ownerUid, appId, title, isXwayland) => {
+            root.windows.append({
+                handle: handle,
+                ownerUid: ownerUid,
+                appId: appId || "",
+                title: title || "",
+                isXwayland: isXwayland,
+                workspaceId: 0,
+            });
+            root.windowListChanged();
+        }
+        onToplevelRemoved: (handle) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.remove(i);
+                    if (root.focusedWindowIndex === i) {
+                        root.focusedWindowIndex = -1;
+                        root.activeWindowChanged();
+                    } else if (root.focusedWindowIndex > i) {
+                        root.focusedWindowIndex -= 1;
+                    }
+                    root.windowListChanged();
+                    return;
+                }
+            }
+        }
+        onToplevelTitle: (handle, title) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "title", title || "");
+                    if (i === root.focusedWindowIndex)
+                        root.activeWindowChanged();
+                    return;
+                }
+            }
+        }
+        onSeatFocusChanged: (seat, handle) => {
+            // Match on handle; UINT32_MAX (=4294967295) means "no focus".
+            let next = -1;
+            if (handle !== 4294967295) {
+                for (let i = 0; i < root.windows.count; i++) {
+                    if (root.windows.get(i).handle === handle) { next = i; break; }
+                }
+            }
+            if (next !== root.focusedWindowIndex) {
+                root.focusedWindowIndex = next;
+                root.activeWindowChanged();
+            }
+        }
+
+        onSwitcherNext: (dir) => {
+            if (root.windows.count === 0) return;
+            if (root._switcherIndex < 0)
+                root._switcherIndex = root.focusedWindowIndex;
+            const n = root.windows.count;
+            root._switcherIndex =
+                ((root._switcherIndex + dir) % n + n) % n;
+        }
+        onSwitcherCommit: () => {
+            if (root._switcherIndex >= 0
+                && root._switcherIndex < root.windows.count) {
+                qdwinBinding.focusWindow(
+                    root.windows.get(root._switcherIndex).handle);
+            }
+            root._switcherIndex = -1;
+        }
+    }
 
     // Display scales: persisted via ShellState. qdwin will publish
     // updates over qdwin_shell_v1.output_*; until then we just load
@@ -124,12 +229,45 @@ Singleton {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
-    // -- workspace + window actions (no-op until qdwin wiring) -- //
+    // -- workspace + window actions -- //
+    // Wired through Qdistro.Qdwin → qdwin_shell_v1. `window` is either
+    // a row from the `windows` ListModel (has .handle) or a bare
+    // numeric handle; we accept both so callers don't have to wrap.
 
-    function switchToWorkspace(workspace) { /* qdwin: TODO */ }
-    function focusWindow(window)         { /* qdwin: TODO */ }
-    function closeWindow(window)         { /* qdwin: TODO */ }
-    function cycleKeyboardLayout()       { /* qdwin: TODO */ }
+    function switchToWorkspace(workspace) { /* qdwin: no workspaces yet */ }
+
+    function _handleOf(w) {
+        if (w === null || w === undefined) return -1;
+        if (typeof w === "number") return w;
+        if (typeof w === "object" && "handle" in w) return w.handle;
+        return -1;
+    }
+
+    function focusWindow(window) {
+        const h = _handleOf(window);
+        if (h < 0) return;
+        qdwinBinding.focusWindow(h);
+    }
+
+    function closeWindow(window) {
+        const h = _handleOf(window);
+        if (h < 0) return;
+        qdwinBinding.closeWindow(h);
+    }
+
+    function requestMaximize(window, maximized) {
+        const h = _handleOf(window);
+        if (h < 0) return;
+        qdwinBinding.requestMaximize(h, !!maximized);
+    }
+
+    function requestMinimize(window) {
+        const h = _handleOf(window);
+        if (h < 0) return;
+        qdwinBinding.requestMinimize(h);
+    }
+
+    function cycleKeyboardLayout() { /* qdwin: not in qdwin_shell_v1 */ }
 
     // -- spawning + session control (compositor-agnostic) -- //
 
