@@ -100,122 +100,81 @@ SmartPanel {
     return available;
   }
 
-  panelContent: Rectangle {
-    color: "transparent"
+  panelContent: PanelShell {
+    id: panelContent
 
-    property real contentPreferredHeight: Math.min(root.preferredHeight, mainColumn.implicitHeight + Style.marginL * 2)
+    title: panelViewMode === "wifi" ? I18n.tr("common.wifi") : I18n.tr("common.ethernet")
+    icon: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled ? "wifi" : "wifi-off") : (NetworkService.hasEthernet() ? (NetworkService.ethernetConnected ? "ethernet" : "ethernet") : "ethernet-off")
+    iconColor: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled ? Color.mPrimary : Color.mOnSurfaceVariant) : (NetworkService.ethernetConnected ? Color.mPrimary : Color.mOnSurfaceVariant)
+    onCloseRequested: root.close()
 
-    ColumnLayout {
-      id: mainColumn
-      anchors.fill: parent
-      anchors.margins: Style.marginL
-      spacing: Style.marginM
+    // Body uses Layout.fillHeight; pin to declared height so NScrollView has room.
+    contentPreferredHeight: root.preferredHeight
 
-      // Header
-      NBox {
-        Layout.fillWidth: true
-        Layout.preferredHeight: Math.round(header.implicitHeight + Style.marginM * 2 + 1)
+    // Note: original wrapped the header icon in a MouseArea that toggled
+    // wifi↔ethernet on click. PanelShell renders the icon as a plain NIcon
+    // (no click slot), so that affordance is dropped — the NTabBar below
+    // provides the same mode switch.
+    headerActions: [
+      NIconButton {
+        icon: "refresh"
+        tooltipText: I18n.tr("common.refresh")
+        baseSize: Style.baseWidgetSize * 0.8
+        enabled: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled && !NetworkService.scanning) : true
+        onClicked: {
+          if (panelViewMode === "wifi")
+            NetworkService.scan();
+          else
+            NetworkService.refreshEthernet();
+        }
+      },
+      NToggle {
+        id: wifiSwitch
+        visible: panelViewMode === "wifi"
+        checked: Settings.data.network.wifiEnabled
+        enabled: !Settings.data.network.airplaneModeEnabled && NetworkService.wifiAvailable
+        onToggled: checked => NetworkService.setWifiEnabled(checked)
+        baseSize: Style.baseWidgetSize * 0.7
+      },
+      NIconButton {
+        icon: "settings"
+        tooltipText: I18n.tr("tooltips.open-settings")
+        baseSize: Style.baseWidgetSize * 0.8
+        onClicked: SettingsPanelService.openToTab(SettingsPanel.Tab.Connections, 0, screen)
+      }
+    ]
 
-        ColumnLayout {
-          id: header
-          anchors.fill: parent
-          anchors.margins: Style.marginM
-          spacing: Style.marginM
+    // Mode switch (Wi-Fi / Ethernet) — lifted out of the header NBox.
+    NBox {
+      Layout.fillWidth: true
+      visible: modeTabBar.visible
+      implicitHeight: modeTabBar.implicitHeight + Style.marginM * 2
 
-          RowLayout {
-            NIcon {
-              id: modeIcon
-              icon: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled ? "wifi" : "wifi-off") : (NetworkService.hasEthernet() ? (NetworkService.ethernetConnected ? "ethernet" : "ethernet") : "ethernet-off")
-              pointSize: Style.fontSizeXXL
-              color: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled ? Color.mPrimary : Color.mOnSurfaceVariant) : (NetworkService.ethernetConnected ? Color.mPrimary : Color.mOnSurfaceVariant)
-              MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: {
-                  if (panelViewMode === "wifi") {
-                    if (NetworkService.hasEthernet()) {
-                      panelViewMode = "ethernet";
-                    } else {
-                      TooltipService.show(parent, I18n.tr("wifi.panel.no-ethernet-devices"));
-                    }
-                  } else {
-                    panelViewMode = "wifi";
-                  }
-                }
-                onEntered: TooltipService.show(parent, panelViewMode === "wifi" ? I18n.tr("common.ethernet") : I18n.tr("common.wifi"))
-                onExited: TooltipService.hide()
-              }
-            }
+      NTabBar {
+        id: modeTabBar
+        anchors.fill: parent
+        anchors.margins: Style.marginM
+        visible: NetworkService.hasEthernet()
+        spacing: Style.marginM
+        distributeEvenly: true
+        currentIndex: root.panelViewMode === "wifi" ? 0 : 1
+        onCurrentIndexChanged: {
+          root.panelViewMode = (currentIndex === 0) ? "wifi" : "ethernet";
+        }
 
-            NLabel {
-              label: panelViewMode === "wifi" ? I18n.tr("common.wifi") : I18n.tr("common.ethernet")
-              Layout.fillWidth: true
-            }
+        NTabButton {
+          text: I18n.tr("common.wifi")
+          tabIndex: 0
+          checked: modeTabBar.currentIndex === 0
+        }
 
-            NIconButton {
-              icon: "refresh"
-              tooltipText: I18n.tr("common.refresh")
-              baseSize: Style.baseWidgetSize * 0.8
-              enabled: panelViewMode === "wifi" ? (Settings.data.network.wifiEnabled && !NetworkService.scanning) : true
-              onClicked: {
-                if (panelViewMode === "wifi")
-                  NetworkService.scan();
-                else
-                  NetworkService.refreshEthernet();
-              }
-            }
-
-            NToggle {
-              id: wifiSwitch
-              visible: panelViewMode === "wifi"
-              checked: Settings.data.network.wifiEnabled
-              enabled: !Settings.data.network.airplaneModeEnabled && NetworkService.wifiAvailable
-              onToggled: checked => NetworkService.setWifiEnabled(checked)
-              baseSize: Style.baseWidgetSize * 0.7 // Slightly smaller
-            }
-
-            NIconButton {
-              icon: "settings"
-              tooltipText: I18n.tr("tooltips.open-settings")
-              baseSize: Style.baseWidgetSize * 0.8
-              onClicked: SettingsPanelService.openToTab(SettingsPanel.Tab.Connections, 0, screen)
-            }
-
-            NIconButton {
-              icon: "close"
-              tooltipText: I18n.tr("common.close")
-              baseSize: Style.baseWidgetSize * 0.8
-              onClicked: root.close()
-            }
-          }
-
-          // Mode switch (Wi‑Fi / Ethernet)
-          NTabBar {
-            id: modeTabBar
-            visible: NetworkService.hasEthernet()
-            margins: Style.marginS
-            Layout.fillWidth: true
-            spacing: Style.marginM
-            distributeEvenly: true
-            currentIndex: root.panelViewMode === "wifi" ? 0 : 1
-            onCurrentIndexChanged: {
-              root.panelViewMode = (currentIndex === 0) ? "wifi" : "ethernet";
-            }
-
-            NTabButton {
-              text: I18n.tr("common.wifi")
-              tabIndex: 0
-              checked: modeTabBar.currentIndex === 0
-            }
-
-            NTabButton {
-              text: I18n.tr("common.ethernet")
-              tabIndex: 1
-              checked: modeTabBar.currentIndex === 1
-            }
-          }
+        NTabButton {
+          text: I18n.tr("common.ethernet")
+          tabIndex: 1
+          checked: modeTabBar.currentIndex === 1
         }
       }
+    }
 
       // Unified scrollable content (Wi‑Fi or Ethernet view)
       ColumnLayout {
@@ -913,6 +872,5 @@ SmartPanel {
           }
         }
       }
-    }
   }
 }
