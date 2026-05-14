@@ -1,0 +1,593 @@
+"""Primitives for the agent-assisted UI test harness.
+
+Boots a nested headless weston, runs qdshell against it, exposes IPC + screenshot
++ vision-LLM + LLM-judge helpers.
+
+Design notes:
+  * Headless weston is a wlroots-independent path that works on any
+    distro that ships weston; it does not require a real GPU or seat,
+    so this whole rig can run in a CI container too.
+  * `weston-screenshooter` is shipped with weston and uses weston's
+    debug screenshot protocol — it only works when weston is started
+    with `--debug`. We always pass `--debug`.
+  * The vision step is gated on ANTHROPIC_API_KEY. With no key, the
+    harness still boots, screenshots, and writes them under artifacts/
+    so a human reviewer can compare manually.
+"""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import dataclasses
+import os
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Iterator, Optional
+
+QDSHELL_ROOT = Path(__file__).resolve().parents[2]
+UI_TESTS_ROOT = Path(__file__).resolve().parent
+EXPECTATIONS_DIR = UI_TESTS_ROOT / "expectations"
+ARTIFACTS_DIR = UI_TESTS_ROOT / "artifacts"
+
+VISION_MODEL = "claude-opus-4-7"      # vision + judge
+DESCRIBE_MAX_TOKENS = 600
+JUDGE_MAX_TOKENS = 400
+
+
+# ---------------------------------------------------------------------------
+# Nested headless compositor
+#
+# qdshell uses wlr-layer-shell for every panel/bar surface. Weston deliberately
+# does not implement layer-shell, so we must use a wlroots-based compositor.
+# We probe for one in priority order.
+#
+# Recommended installs (any one is sufficient):
+#   sudo zypper in sway        # openSUSE
+#   sudo zypper in labwc
+#   sudo zypper in cage
+# ---------------------------------------------------------------------------
+
+# (compositor name on PATH, layer-shell support?, weston-screenshooter compatible?)
+# weston is included as a fallback for non-layer-shell sanity checks only.
+_COMPOSITOR_CANDIDATES = ["sway", "labwc", "cage", "wayfire", "river", "weston"]
+
+
+@dataclasses.dataclass
+class Compositor:
+    name: str                          # "sway" | "labwc" | ...
+    socket_name: str
+    proc: subprocess.Popen
+    runtime_dir: str
+    log_path: Path
+
+    @property
+    def supports_layer_shell(self) -> bool:
+        return self.name != "weston"
+
+    def env(self) -> dict[str, str]:
+        e = os.environ.copy()
+        e["WAYLAND_DISPLAY"] = self.socket_name
+        e["XDG_RUNTIME_DIR"] = self.runtime_dir
+        e.pop("DISPLAY", None)
+        return e
+
+
+# Back-compat alias for callers that imported the old name.
+Weston = Compositor
+
+
+def _free_socket_name(runtime_dir: str) -> str:
+    for i in range(10, 99):
+        name = f"wayland-qdshell-test-{i}"
+        if not Path(runtime_dir, name).exists():
+            return name
+    raise RuntimeError("no free wayland socket name")
+
+
+def _pick_compositor() -> str:
+    for c in _COMPOSITOR_CANDIDATES:
+        if shutil.which(c):
+            return c
+    raise RuntimeError(
+        "No nested compositor binary on PATH. qdshell needs wlr-layer-shell; "
+        "install one of: sway, labwc, cage. Tried: "
+        + ", ".join(_COMPOSITOR_CANDIDATES)
+    )
+
+
+_MINIMAL_SWAY_CONFIG = """\
+# Minimal sway config for qdshell UI tests — no bar, no autostart.
+default_border none
+default_floating_border none
+exec_always true
+"""
+
+
+def _make_solid_png(width: int, height: int, rgba: tuple[int, int, int, int]) -> bytes:
+    """Produce a valid PNG of (width × height) filled with rgba."""
+    import struct
+    import zlib
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    pixel = bytes(rgba)
+    raw = b"".join(b"\x00" + pixel * width for _ in range(height))
+    idat_data = zlib.compress(raw, 9)
+
+    def chunk(name: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(name + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + name + data + struct.pack(">I", crc)
+
+    return sig + chunk(b"IHDR", ihdr_data) + chunk(b"IDAT", idat_data) + chunk(b"IEND", b"")
+
+
+def _write_minimal_config(name: str, runtime_dir: str) -> Optional[str]:
+    """Some compositors will autostart waybar/swaync/etc. from the system
+    config unless we hand them a minimal one. Returns the path or None.
+    """
+    if name == "sway":
+        p = Path(runtime_dir, "sway.config")
+        p.write_text(_MINIMAL_SWAY_CONFIG)
+        return str(p)
+    # labwc reads ~/.config/labwc/{rc.xml,autostart,environment}; we set
+    # XDG_CONFIG_HOME to a scratch dir elsewhere, so no override needed here.
+    return None
+
+
+def _compositor_cmd(name: str, width: int, height: int,
+                    config_path: Optional[str]) -> tuple[list[str], dict]:
+    """Return (argv, extra_env) for the chosen compositor's headless mode.
+
+    For wlroots compositors we DO NOT preset WAYLAND_DISPLAY — they pick their
+    own socket name. Caller detects it by polling runtime_dir.
+    """
+    wlroots_env = {
+        "WLR_BACKENDS": "headless",
+        "WLR_LIBINPUT_NO_DEVICES": "1",
+        "WLR_HEADLESS_OUTPUTS": "1",
+        "WLR_RENDERER": "pixman",       # no GPU needed
+        # Stop wlroots from inheriting the host's session bus / pid1 stuff.
+        "DBUS_SESSION_BUS_ADDRESS": "",
+    }
+    if name == "sway":
+        argv = ["sway", "--unsupported-gpu"]
+        if config_path:
+            argv += ["-c", config_path]
+        return (argv, wlroots_env)
+    if name == "labwc":
+        return (["labwc"], wlroots_env)
+    if name == "cage":
+        # cage requires a child program; we use a no-op holder.
+        return (["cage", "--", "sleep", "infinity"], wlroots_env)
+    if name == "wayfire":
+        return (["wayfire"], wlroots_env)
+    if name == "river":
+        return (["river"], wlroots_env)
+    if name == "weston":
+        # weston honors --socket; pre-pick its name.
+        return ([], {})  # handled separately
+    raise RuntimeError(f"unknown compositor {name}")
+
+
+def _detect_wayland_socket(runtime_dir: str, before: set[str], deadline: float) -> Optional[str]:
+    """Poll runtime_dir for a freshly-created wayland-* socket."""
+    while time.time() < deadline:
+        now = set(p.name for p in Path(runtime_dir).glob("wayland-*")
+                  if not p.name.endswith(".lock"))
+        new = now - before
+        if new:
+            # Pick the lexicographically smallest new one (usually wayland-1).
+            return sorted(new)[0]
+        time.sleep(0.1)
+    return None
+
+
+def start_compositor(width: int = 1920, height: int = 1200,
+                     prefer: Optional[str] = None) -> Compositor:
+    """Start a nested headless compositor. Returns when its socket is live."""
+    name = prefer or _pick_compositor()
+    runtime_dir = tempfile.mkdtemp(prefix="qdshell-uitest-")
+    os.chmod(runtime_dir, 0o700)
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Snapshot current sockets so we can spot the new one.
+    before = set(p.name for p in Path(runtime_dir).glob("wayland-*")
+                 if not p.name.endswith(".lock"))
+
+    config_path = _write_minimal_config(name, runtime_dir)
+
+    if name == "weston":
+        # weston gets a pre-picked socket.
+        sock = _free_socket_name(runtime_dir)
+        argv = ["weston", "--backend=headless", "--renderer=pixman",
+                "--shell=desktop", "--debug",
+                f"--width={width}", f"--height={height}",
+                f"--socket={sock}", "--idle-time=0"]
+        extra_env: dict[str, str] = {}
+    else:
+        argv, extra_env = _compositor_cmd(name, width, height, config_path)
+        sock = None  # detected after launch
+
+    log_path = ARTIFACTS_DIR / f"{name}.log"
+    env = os.environ.copy()
+    env["XDG_RUNTIME_DIR"] = runtime_dir
+    # Scratch XDG_CONFIG_HOME so labwc / wayfire / etc. don't load user config.
+    scratch_cfg = Path(runtime_dir, "xdg-config")
+    scratch_cfg.mkdir()
+    env["XDG_CONFIG_HOME"] = str(scratch_cfg)
+    env.update(extra_env)
+    if sock is not None:
+        env["WAYLAND_DISPLAY"] = sock
+    else:
+        env.pop("WAYLAND_DISPLAY", None)
+
+    log_f = open(log_path, "wb")
+    proc = subprocess.Popen(
+        argv, env=env, stdout=log_f, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    deadline = time.time() + 15
+    if sock is not None:
+        socket_path = Path(runtime_dir, sock)
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                raise RuntimeError(
+                    f"{name} exited early (rc={proc.returncode}); see {log_path}"
+                )
+            if socket_path.exists():
+                return Compositor(name, sock, proc, runtime_dir, log_path)
+            time.sleep(0.1)
+        proc.terminate()
+        raise RuntimeError(f"{name} did not create socket within 15s; see {log_path}")
+    else:
+        detected = _detect_wayland_socket(runtime_dir, before, deadline)
+        if detected is None:
+            if proc.poll() is not None:
+                proc_rc = proc.returncode
+            else:
+                proc.terminate()
+                proc_rc = None
+            raise RuntimeError(
+                f"{name} did not create a wayland socket within 15s "
+                f"(proc_rc={proc_rc}); see {log_path}"
+            )
+        return Compositor(name, detected, proc, runtime_dir, log_path)
+
+
+# Back-compat alias.
+def start_weston(width: int = 1920, height: int = 1200) -> Compositor:
+    return start_compositor(width=width, height=height)
+
+
+def stop(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+
+
+def stop_compositor(c: Compositor) -> None:
+    stop(c.proc)
+    shutil.rmtree(c.runtime_dir, ignore_errors=True)
+
+
+# Back-compat alias.
+def stop_weston(w: Compositor) -> None:
+    stop_compositor(w)
+
+
+# ---------------------------------------------------------------------------
+# qdshell instance
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class Qdshell:
+    proc: subprocess.Popen
+    weston: Compositor                 # name kept for back-compat; any compositor
+    config_home: str
+    log_path: Path
+
+
+def start_qdshell(weston: Compositor, *, settle_seconds: float = 4.0) -> Qdshell:
+    """Launch qs against the given nested compositor.
+
+    A scratch HOME is used so the test never reads/writes the user's real
+    qdshell config. We also seed Pictures/Wallpapers/ with a 1×1 placeholder
+    image so the Wallpaper panel renders its grid instead of an empty
+    file-browser state.
+    """
+    home = tempfile.mkdtemp(prefix="qdshell-uitest-home-")
+    config_home = str(Path(home, ".config"))
+    Path(config_home).mkdir()
+    wallpapers = Path(home, "Pictures", "Wallpapers")
+    wallpapers.mkdir(parents=True)
+    # Generate a real 256×256 solid-color PNG so qdshell's wallpaper panel
+    # actually produces a thumbnail. A 1×1 placeholder gets rendered as the
+    # "no preview" icon, which makes the panel look broken in screenshots.
+    (wallpapers / "seed.png").write_bytes(_make_solid_png(256, 256, (76, 86, 160, 255)))
+
+    log_path = ARTIFACTS_DIR / "qdshell.log"
+    env = weston.env()
+    env["HOME"] = home
+    env["XDG_CONFIG_HOME"] = config_home
+    env["QT_QPA_PLATFORM"] = "wayland"
+    env.setdefault("QS_LOG_LEVEL", "info")
+    cmd = ["qs", "--path", str(QDSHELL_ROOT), "--allow-duplicate"]
+    log_f = open(log_path, "wb")
+    proc = subprocess.Popen(
+        cmd, env=env, stdout=log_f, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    # qdshell needs a moment to load its 102K LOC of QML + register IPC.
+    deadline = time.time() + settle_seconds
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"qs exited early (rc={proc.returncode}); see {log_path}"
+            )
+        time.sleep(0.2)
+    return Qdshell(proc, weston, config_home, log_path)
+
+
+def stop_qdshell(q: Qdshell) -> None:
+    stop(q.proc)
+    # config_home is now under a scratch HOME; clean the whole HOME.
+    home = str(Path(q.config_home).parent)
+    shutil.rmtree(home, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# IPC
+# ---------------------------------------------------------------------------
+
+def ipc(q: Qdshell, *args: str, timeout: float = 5.0) -> subprocess.CompletedProcess:
+    """Send a `qs ipc call` to the nested qdshell.
+
+    We target by --pid because qs launched via --path has no config name and
+    the default `qs ipc` lookup would otherwise try $XDG_CONFIG_HOME/quickshell/default.
+    """
+    cmd = ["qs", "ipc", "--pid", str(q.proc.pid), "call", *args]
+    res = subprocess.run(
+        cmd, env=q.weston.env(), capture_output=True, text=True, timeout=timeout,
+    )
+    if res.returncode != 0:
+        # Surface IPC failures loudly; silent IPC = silent test corruption.
+        raise RuntimeError(
+            f"qs ipc call {' '.join(args)} failed (rc={res.returncode})\n"
+            f"  stdout: {res.stdout.strip()}\n"
+            f"  stderr: {res.stderr.strip()}"
+        )
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Screenshot
+# ---------------------------------------------------------------------------
+
+def screenshot(q: Qdshell, out_path: Path) -> Path:
+    """Capture the compositor's framebuffer to a PNG.
+
+    wlroots-based compositors expose wlr-screencopy → use `grim`.
+    Weston exposes its own debug screenshot protocol → use
+    `weston-screenshooter`.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if q.weston.supports_layer_shell:
+        # wlroots family: grim
+        if not shutil.which("grim"):
+            raise RuntimeError(
+                "grim not installed (needed to screenshot wlroots compositors). "
+                "Install with your package manager (e.g. `sudo zypper in grim`)."
+            )
+        res = subprocess.run(
+            ["grim", str(out_path)],
+            env=q.weston.env(),
+            capture_output=True, text=True, timeout=10,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(
+                f"grim failed (rc={res.returncode}): {res.stderr}"
+            )
+        return out_path
+
+    # weston fallback
+    res = subprocess.run(
+        ["weston-screenshooter"],
+        env=q.weston.env(),
+        cwd=str(out_path.parent),
+        capture_output=True, text=True, timeout=10,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"weston-screenshooter failed (rc={res.returncode}): {res.stderr}"
+        )
+    candidates = sorted(
+        out_path.parent.glob("wayland-screenshot-*.png"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if not candidates:
+        raise RuntimeError(
+            "weston-screenshooter reported success but produced no PNG"
+        )
+    candidates[-1].rename(out_path)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
+# Vision: describe(image) -> bullet list of what's visible
+# ---------------------------------------------------------------------------
+
+_DESCRIBE_PROMPT = """You are looking at a screenshot of a desktop shell UI.
+
+Describe ONLY what is actually visible. Do NOT speculate about what a similar
+UI might typically contain.
+
+Cover, as bullet points:
+  - The header/title text shown at the top of the visible panel or tab.
+  - Visible labelled controls: button labels, toggle states (on/off),
+    slider values if numeric values are shown, dropdown current values.
+  - Visible section headings inside the panel.
+  - Notable icons (by their general subject: "battery icon", "wifi icon", etc.).
+  - Approximate layout: tabs along which side; content arranged in rows/cards/columns.
+
+Constraints:
+  - Be concise. Under ~150 words total.
+  - Do not invent text you cannot read.
+  - If the panel appears empty / shell still loading, say so explicitly.
+"""
+
+
+def describe(image_path: Path) -> str:
+    """Send PNG to Claude vision; return the textual description.
+
+    Returns empty string when ANTHROPIC_API_KEY is unset — callers should treat
+    that as "describe step skipped" rather than "panel is empty".
+    """
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return ""
+    try:
+        import anthropic
+    except ImportError:
+        return ""
+    client = anthropic.Anthropic()
+    data = image_path.read_bytes()
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    resp = client.messages.create(
+        model=VISION_MODEL,
+        max_tokens=DESCRIBE_MAX_TOKENS,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png", "data": b64,
+                }},
+                {"type": "text", "text": _DESCRIBE_PROMPT},
+            ],
+        }],
+    )
+    return resp.content[0].text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Judge: compare observed description vs golden expectation
+# ---------------------------------------------------------------------------
+
+_JUDGE_PROMPT_TEMPLATE = """A UI regression test captured a description of a
+qdshell surface. Compare it against the reference description authored by a
+developer. The reference lists what MUST be visible; the actual description
+is what the screenshot-describer reported.
+
+REFERENCE (what must be present):
+---
+{reference}
+---
+
+ACTUAL (what was observed in the latest screenshot):
+---
+{actual}
+---
+
+Decide: do all the load-bearing reference elements appear in the actual? Cosmetic
+phrasing differences are fine. A reference bullet is satisfied if its meaning is
+present in the actual, even with different wording. A reference bullet is
+violated if its element is clearly absent or contradicted.
+
+Reply in this exact format:
+  MISSING: <bullet, or 'none'>
+  MISSING: <bullet, or 'none'>
+  ...
+  EXTRA:   <bullet, or 'none'>     (only flag if it suggests a real regression)
+  VERDICT: PASS or FAIL
+"""
+
+
+@dataclasses.dataclass
+class JudgeResult:
+    verdict: str          # "PASS" / "FAIL" / "SKIP"
+    raw: str              # full judge response
+    missing: list[str]
+    extra: list[str]
+
+
+def judge(reference: str, actual: str) -> JudgeResult:
+    """LLM-as-judge: does `actual` cover everything `reference` requires?"""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return JudgeResult("SKIP", "(no ANTHROPIC_API_KEY set)", [], [])
+    if not actual.strip():
+        return JudgeResult("SKIP", "(empty actual description)", [], [])
+    try:
+        import anthropic
+    except ImportError:
+        return JudgeResult("SKIP", "(anthropic SDK not installed)", [], [])
+    client = anthropic.Anthropic()
+    resp = client.messages.create(
+        model=VISION_MODEL,
+        max_tokens=JUDGE_MAX_TOKENS,
+        messages=[{
+            "role": "user",
+            "content": _JUDGE_PROMPT_TEMPLATE.format(
+                reference=reference.strip(), actual=actual.strip(),
+            ),
+        }],
+    )
+    raw = resp.content[0].text.strip()
+    verdict = "FAIL"
+    missing, extra = [], []
+    for line in raw.splitlines():
+        s = line.strip()
+        if s.upper().startswith("VERDICT:"):
+            verdict = s.split(":", 1)[1].strip().upper()
+        elif s.upper().startswith("MISSING:"):
+            v = s.split(":", 1)[1].strip()
+            if v and v.lower() != "none":
+                missing.append(v)
+        elif s.upper().startswith("EXTRA:"):
+            v = s.split(":", 1)[1].strip()
+            if v and v.lower() != "none":
+                extra.append(v)
+    return JudgeResult(verdict, raw, missing, extra)
+
+
+# ---------------------------------------------------------------------------
+# Convenience: one-shot capture for a surface
+# ---------------------------------------------------------------------------
+
+def capture_surface(q: Qdshell, surface, *, settle: float = 0.8) -> tuple[Path, str]:
+    """Open the surface via IPC, wait, screenshot, describe. Returns (png_path, description)."""
+    from .manifests import NO_IPC
+
+    png_path = ARTIFACTS_DIR / f"{surface.id}.png"
+
+    if surface.open_cmd is NO_IPC:
+        raise RuntimeError(
+            f"{surface.id} has no IPC handle; cannot drive automatically"
+        )
+    if surface.open_cmd is not None:
+        ipc(q, *surface.open_cmd)
+        time.sleep(settle)
+
+    screenshot(q, png_path)
+    description = describe(png_path)
+
+    # Cleanup: close panel so next test starts clean. Best-effort.
+    if surface.close_cmd is not None and surface.close_cmd is not NO_IPC:
+        with contextlib.suppress(Exception):
+            ipc(q, *surface.close_cmd)
+            time.sleep(0.3)
+
+    return png_path, description
