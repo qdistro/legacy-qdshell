@@ -88,8 +88,14 @@ struct QdwinBindingDispatch {
     }
     static void nested_proxy_pending(void *, qdwin_shell_v1 *,
                                      uint32_t, const char *, uint32_t) {}
-    static void nested_proxy_pixel_source(void *, qdwin_shell_v1 *,
-                                          uint32_t, const char *, const char *) {}
+    static void nested_proxy_pixel_source(void *d, qdwin_shell_v1 *,
+                                          uint32_t handle,
+                                          const char *pw_node,
+                                          const char *input_sink) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->nestedProxyPixelSource(handle,
+                                       qstr(pw_node), qstr(input_sink));
+    }
     static void selection_set(void *, qdwin_shell_v1 *,
                               const char *, uint32_t, const char *, uint32_t) {}
     static void activation_pending(void *, qdwin_shell_v1 *,

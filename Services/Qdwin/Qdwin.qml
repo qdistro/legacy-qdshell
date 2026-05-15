@@ -111,6 +111,23 @@ Singleton {
                 }
             }
         }
+        onNestedProxyPixelSource: (handle, pwNode, inputSink) => {
+            // qdwin is asking for a pixel-consumer process. Spawn
+            // qdistro-nested-pixelfeed; it connects back to the outer
+            // wayland, creates a wl_surface, and calls bind_proxy_pixels.
+            // Until it does, the proxy view stays on the placeholder
+            // curtain (see qdwin-shell-v1.xml nested_proxy_pixel_source).
+            // The consumer process self-detaches; we don't track it.
+            if (!pwNode || pwNode.length === 0) {
+                Logger.w("Qdwin", "nested_proxy_pixel_source: empty pw_node for handle " + handle);
+                return;
+            }
+            const argv = ["qdistro-nested-pixelfeed", String(handle), pwNode];
+            if (inputSink && inputSink.length > 0) argv.push(inputSink);
+            Logger.i("Qdwin", "spawning pixelfeed for handle " + handle
+                              + " pw_node=" + pwNode);
+            Quickshell.execDetached(argv);
+        }
         onToplevelRemoved: (handle) => {
             for (let i = 0; i < root.windows.count; i++) {
                 if (root.windows.get(i).handle === handle) {

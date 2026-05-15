@@ -77,6 +77,17 @@ signals:
                                  const QString &appId,
                                  const QString &instanceId);
 
+    // qdwin_shell_v1.nested_proxy_pixel_source — the compositor is
+    // asking the shell to spawn a pixel-consumer process for a nested
+    // (tier-2) proxy toplevel. pwNode is the PipeWire node name the
+    // consumer should attach to; inputSink is forwarded for shells
+    // that fold input + pixels into one consumer (we don't). Until
+    // this signal is handled the proxy stays on the placeholder
+    // curtain. Consumed in QML by spawning qdistro-nested-pixelfeed.
+    void nestedProxyPixelSource(quint32 handle,
+                                const QString &pwNode,
+                                const QString &inputSink);
+
     void launcherRequested();
     void switcherNext(int dir);
     void switcherCommit();

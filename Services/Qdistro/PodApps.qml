@@ -195,36 +195,49 @@ Singleton {
         proc.running = true;
     }
 
-    // Internal helper Process component. One per launch — Process is
-    // a transient state holder, not a singleton.
+    // Internal helper Process component. One per launch.
+    //
+    // Lifecycle subtlety: spawn-tier2.sh stays in the foreground for
+    // the container's lifetime (per its own header comment — backgrounding
+    // the helper would tear down the wp_security_context_v1 tag before
+    // the inner weston connects). That means stdout stays open the whole
+    // time, so we cannot wait for streamFinished to read LAUNCH_TOKEN.
+    // SplitParser delivers lines as they arrive; we register the
+    // placeholder on the first LAUNCH_TOKEN line, then leave the Process
+    // alive until the container exits (onExited destroys it).
     Component {
         id: launchProcessComp
         Process {
-            property var _tokenSlot
+            id: launchProc
             property string _appId
             property string _name
             property string _iconName
             property string _silo
-            stdout: StdioCollector {
-                onStreamFinished: {
-                    // Parse LAUNCH_TOKEN=... from helper stdout.
-                    const m = (this.text || "").match(/^LAUNCH_TOKEN=([0-9a-fA-F]+)/m);
-                    if (m) {
-                        const token = m[1];
-                        root._registerPlaceholder(token, parent._appId,
-                                                  parent._name, parent._iconName,
-                                                  parent._silo);
-                    } else {
-                        Logger.w("PodApps", "launch: no LAUNCH_TOKEN in spawn stdout for " + parent._appId);
+            property bool   _tokenSeen: false
+            stdout: SplitParser {
+                onRead: data => {
+                    const m = String(data).match(/^LAUNCH_TOKEN=([0-9a-fA-F]+)/);
+                    if (m && !launchProc._tokenSeen) {
+                        launchProc._tokenSeen = true;
+                        root._registerPlaceholder(m[1], launchProc._appId,
+                                                  launchProc._name,
+                                                  launchProc._iconName,
+                                                  launchProc._silo);
                     }
-                    parent.destroy();
                 }
             }
-            stderr: StdioCollector {
-                onStreamFinished: {
-                    if (this.text && this.text.length > 0)
-                        Logger.w("PodApps", "spawn stderr (" + parent._appId + "): " + this.text);
+            stderr: SplitParser {
+                onRead: data => {
+                    if (data && String(data).length > 0)
+                        Logger.w("PodApps", "spawn stderr (" + launchProc._appId
+                                            + "): " + data);
                 }
+            }
+            onExited: {
+                if (!launchProc._tokenSeen)
+                    Logger.w("PodApps", "launch: no LAUNCH_TOKEN before spawn exit for "
+                                        + launchProc._appId);
+                launchProc.destroy();
             }
         }
     }
