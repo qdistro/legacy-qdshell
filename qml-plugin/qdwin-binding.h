@@ -53,6 +53,12 @@ public:
     Q_INVOKABLE void requestMinimize(quint32 handle);
     Q_INVOKABLE void setBorderColor(quint32 handle, quint32 argb);
 
+    // spec/10 §"compositor-mediated gating" — once the shell has a
+    // broker verdict on the most recent selection_set, it calls
+    // clearSelection on a "deny". `isPrimary` mirrors the event
+    // arg: 0 = clipboard, 1 = primary selection.
+    Q_INVOKABLE void clearSelection(const QString &seat, quint32 isPrimary);
+
 signals:
     void boundChanged();
     void lastErrorChanged();
@@ -67,11 +73,20 @@ signals:
     void toplevelState(quint32 handle, quint32 state);
     void seatFocusChanged(const QString &seat, quint32 handle);
 
+    // spec/10 §"selection-set event" — fires whenever a client sets
+    // the seat selection. Carries the source toplevel handle, the
+    // newline-separated mime types, and the primary/clipboard flag.
+    // qdshell resolves source/dest silo from windows + focus and
+    // calls broker.CheckClipboardTransfer.
+    void selectionSet(const QString &seat, quint32 sourceHandle,
+                      const QString &mimeTypesConcat, quint32 isPrimary);
+
     // wp_security_context_v1 tag emitted by qdwin once it resolves
     // the secctx for a toplevel. Fires after toplevelAdded; instanceId
     // is the load-bearing correlation token for cold-start placeholder
     // resolution (see doc/window-hierarchy.md "Cold-start placeholder
-    // taskbar entries").
+    // taskbar entries"). Also feeds spec/10's clipboard-gate handle→
+    // silo mapping.
     void toplevelSecurityContext(quint32 handle,
                                  const QString &sandboxEngine,
                                  const QString &appId,

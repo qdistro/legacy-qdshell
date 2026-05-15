@@ -6,6 +6,7 @@ import Quickshell.Io
 import Qdistro.Qdwin 1.0
 import qs.Commons
 import qs.Services.Control
+import qs.Services.Qdshell
 import qs.Services.UI
 
 /// qdshell Qdwin — qdwin-only.
@@ -76,6 +77,10 @@ Singleton {
         onBoundChanged: {
             if (bound) {
                 Logger.i("Qdwin", "qdwin_shell_v1 bound v" + shellVersion);
+                // spec/10 Phase-1 — wire the clipboard gate now that
+                // we have a live binding. ClipboardGate.init is
+                // idempotent so re-binds after a teardown are safe.
+                ClipboardGate.init(qdwinBinding);
             } else if (lastError.length > 0) {
                 Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
