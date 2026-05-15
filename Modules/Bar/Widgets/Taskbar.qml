@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
+import qs.Services.Qdistro
 import qs.Services.Qdwin
 import qs.Services.System
 import qs.Services.UI
@@ -354,6 +355,28 @@ Item {
                          });
     }
 
+    // Third pass: Add cold-start placeholders for tier-2 podapps that
+    // are spawning but haven't yet emitted toplevel_security_context.
+    // PodApps removes the entry on instanceId match, so the placeholder
+    // is replaced by the real toplevel automatically. Per
+    // qdistro/doc/containers.md "Cold-start contract".
+    try {
+      const phCount = PodApps.placeholders.count || 0;
+      for (let i = 0; i < phCount; i++) {
+        const ph = PodApps.placeholders.get(i);
+        runningWindows.push({
+                              "id":           "podapp-placeholder:" + ph.launchToken,
+                              "type":         "placeholder",
+                              "window":       null,
+                              "appId":        ph.appId,
+                              "title":        ph.name || ph.appId,
+                              "iconName":     ph.iconName || "",
+                              "silo":         ph.silo || "",
+                              "launchToken":  ph.launchToken,
+                            });
+      }
+    } catch (e) {}
+
     combinedModel = sortApps(runningWindows);
 
     // Sync session order if needed (e.g. first run or new apps added)
@@ -513,6 +536,14 @@ Item {
     }
   }
 
+  // Rebuild when a podapp launch starts/ends (cold-start placeholder).
+  Connections {
+    target: PodApps.placeholders
+    function onCountChanged() {
+      updateCombinedModel();
+    }
+  }
+
   Component.onCompleted: {
     updateCombinedModel();
   }
@@ -647,6 +678,7 @@ Item {
 
           readonly property bool isRunning: modelData.window !== null
           readonly property bool isPinned: modelData.type === "pinned" || modelData.type === "pinned-running"
+          readonly property bool isPlaceholder: modelData.type === "placeholder"
           readonly property bool isFocused: isRunning && modelData.window && modelData.window.isFocused
           readonly property bool isPinnedRunning: isPinned && isRunning && !isFocused
           readonly property bool isHovered: root.hoveredWindowId === modelData.id
@@ -821,6 +853,10 @@ Item {
                     source: ThemeIcons.iconForAppId(taskbarItem.modelData.appId)
                     smooth: true
                     asynchronous: true
+                    // Cold-start placeholders dim the icon to differentiate
+                    // them from real toplevels (per cold-start contract in
+                    // qdistro/doc/containers.md).
+                    opacity: taskbarItem.isPlaceholder ? 0.5 : 1.0
 
                     // Apply dock shader to all taskbar icons
                     layer.enabled: widgetSettings.colorizeIcons !== false
@@ -830,6 +866,17 @@ Item {
 
                       fragmentShader: Qt.resolvedUrl(Quickshell.shellDir + "/Shaders/qsb/appicon_colorize.frag.qsb")
                     }
+                  }
+
+                  // Busy spinner overlay for cold-start placeholders.
+                  // Removed when PodApps resolves the placeholder on
+                  // wp_security_context_v1.instance_id match.
+                  BusyIndicator {
+                    visible: taskbarItem.isPlaceholder
+                    running: visible
+                    anchors.centerIn: parent
+                    width: parent.width * 0.7
+                    height: parent.height * 0.7
                   }
 
                   Rectangle {
