@@ -94,9 +94,17 @@ struct QdwinBindingDispatch {
                               const char *, uint32_t, const char *, uint32_t) {}
     static void activation_pending(void *, qdwin_shell_v1 *,
                                    uint32_t, uint32_t, uint32_t, const char *) {}
-    static void toplevel_security_context(void *, qdwin_shell_v1 *,
-                                          uint32_t, const char *,
-                                          const char *, const char *) {}
+    static void toplevel_security_context(void *d, qdwin_shell_v1 *,
+                                          uint32_t handle,
+                                          const char *sandbox_engine,
+                                          const char *app_id,
+                                          const char *instance_id) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->toplevelSecurityContext(handle,
+                                        qstr(sandbox_engine),
+                                        qstr(app_id),
+                                        qstr(instance_id));
+    }
     static void seat_focus_changed(void *d, qdwin_shell_v1 *,
                                    const char *seat_name,
                                    uint32_t focused_handle) {

@@ -42,6 +42,13 @@ Singleton {
     property ListModel workspaces: ListModel {}
     // Window state is populated from qdwin_shell_v1 events via the
     // Qdistro.Qdwin plugin (see QdwinBinding below).
+    //
+    // Each row carries: handle, ownerUid, appId, title, isXwayland,
+    // workspaceId, sandboxEngine, secctxAppId, instanceId.
+    // The latter three default to "" and are filled in when the
+    // wp_security_context_v1 tag arrives (toplevel_security_context
+    // event fires after toplevel_added). PodApps / VMApps services
+    // use secctxAppId + instanceId for placeholder correlation.
     property ListModel windows: ListModel {}
     property int focusedWindowIndex: -1
     readonly property bool overviewActive: false
@@ -86,8 +93,23 @@ Singleton {
                 title: title || "",
                 isXwayland: isXwayland,
                 workspaceId: 0,
+                sandboxEngine: "",
+                secctxAppId: "",
+                instanceId: "",
             });
             root.windowListChanged();
+        }
+        onToplevelSecurityContext: (handle, sandboxEngine, secctxAppId, instanceId) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "sandboxEngine", sandboxEngine || "");
+                    root.windows.setProperty(i, "secctxAppId",   secctxAppId   || "");
+                    root.windows.setProperty(i, "instanceId",    instanceId    || "");
+                    root.windowSecctxResolved(handle, sandboxEngine || "",
+                                              secctxAppId || "", instanceId || "");
+                    return;
+                }
+            }
         }
         onToplevelRemoved: (handle) => {
             for (let i = 0; i < root.windows.count; i++) {
@@ -157,6 +179,11 @@ Singleton {
     signal workspaceChanged
     signal activeWindowChanged
     signal windowListChanged
+    // Fires when wp_security_context_v1 fields arrive for a known
+    // toplevel. PodApps / VMApps services listen here to resolve
+    // their cold-start placeholders by instanceId match.
+    signal windowSecctxResolved(int handle, string sandboxEngine,
+                                string secctxAppId, string instanceId)
 
     Component.onCompleted: {
         Qt.callLater(() => {

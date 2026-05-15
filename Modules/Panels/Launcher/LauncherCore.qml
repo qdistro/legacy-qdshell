@@ -595,6 +595,14 @@ Rectangle {
     }
   }
 
+  PodAppsProvider {
+    id: podAppsProvider
+    Component.onCompleted: {
+      registerProvider(this);
+      Logger.d("Launcher", "Registered: PodAppsProvider");
+    }
+  }
+
   ClipboardProvider {
     id: clipProvider
     Component.onCompleted: {

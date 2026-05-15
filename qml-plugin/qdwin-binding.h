@@ -66,6 +66,17 @@ signals:
     void toplevelGeometry(quint32 handle, int x, int y, quint32 width, quint32 height);
     void toplevelState(quint32 handle, quint32 state);
     void seatFocusChanged(const QString &seat, quint32 handle);
+
+    // wp_security_context_v1 tag emitted by qdwin once it resolves
+    // the secctx for a toplevel. Fires after toplevelAdded; instanceId
+    // is the load-bearing correlation token for cold-start placeholder
+    // resolution (see doc/window-hierarchy.md "Cold-start placeholder
+    // taskbar entries").
+    void toplevelSecurityContext(quint32 handle,
+                                 const QString &sandboxEngine,
+                                 const QString &appId,
+                                 const QString &instanceId);
+
     void launcherRequested();
     void switcherNext(int dir);
     void switcherCommit();
