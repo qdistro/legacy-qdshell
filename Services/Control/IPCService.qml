@@ -153,6 +153,16 @@ Singleton {
   }
 
   IpcHandler {
+    target: "containers"
+    function togglePanel() {
+      root.screenDetector.withCurrentScreen(screen => {
+                                              var p = PanelService.getPanel("containersPanel", screen);
+                                              p?.toggle(null, "Containers");
+                                            });
+    }
+  }
+
+  IpcHandler {
     target: "notifications"
     function toggleHistory() {
       // Will attempt to open the panel next to the bar button if any.

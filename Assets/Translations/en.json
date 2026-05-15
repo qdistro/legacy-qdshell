@@ -526,6 +526,19 @@
     "windows": "Windows",
     "yes": "Yes"
   },
+  "containers": {
+    "title": "Containers",
+    "subtitle": {
+      "tier2": "Tier-2 podman workloads. Containers start on-demand when you launch a containerised app."
+    },
+    "state": {
+      "running": "running",
+      "off": "off"
+    },
+    "action": {
+      "stop": "Stop"
+    }
+  },
   "control-center": {
     "power-profile": {
       "tooltip-action": "Power Profile",
@@ -583,6 +596,7 @@
       "calculator-enter-expression": "Enter a mathematical expression",
       "calculator-press-enter-to-copy": "Press Enter to copy result",
       "clipboard": "Clipboard history",
+      "containers": "Container apps",
       "clipboard-clear-description": "Clear all clipboard history",
       "clipboard-clear-description-full": "Remove all items from clipboard history",
       "clipboard-clear-history": "Clear clipboard history",

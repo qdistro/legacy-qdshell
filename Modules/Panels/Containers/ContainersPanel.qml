@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Modules.MainScreen
 import qs.Services.Qdistro
@@ -36,6 +37,7 @@ SmartPanel {
     title: I18n.tr("containers.title")
     icon: "box"
     onCloseRequested: root.close()
+    contentPreferredHeight: root.preferredHeight
 
     // Reactive list. Each entry: { name, runningApps[], state }.
     property var rowsModel: ListModel {}
@@ -63,60 +65,69 @@ SmartPanel {
       for (const k in byContainer) rowsModel.append(byContainer[k]);
     }
 
-    Component.onCompleted: rebuildRows()
+    Component.onCompleted: {
+      // Force a refresh on first show so the cache is populated even
+      // if PodApps' periodic timer hasn't run yet.
+      PodApps.refresh();
+      PodApps.refreshContainerStates();
+      rebuildRows();
+    }
     Connections {
       target: PodApps
       function onContainerStateChanged() { panelContent.rebuildRows(); }
     }
+    // PodApps.apps is replaced on every refresh; rebuild when it grows.
+    Connections {
+      target: PodApps.apps
+      function onCountChanged() { panelContent.rebuildRows(); }
+    }
 
-    ColumnLayout {
-      anchors.fill: parent
-      anchors.margins: Style.marginM
+    // PanelShell's body is a ColumnLayout (`default property alias
+    // content: bodyColumn.data`); add children directly with Layout
+    // attached properties — anchors don't apply inside a Layout.
+    NText {
+      text: I18n.tr("containers.subtitle.tier2")
+      Layout.fillWidth: true
+      wrapMode: Text.WordWrap
+    }
+
+    ListView {
+      id: list
+      Layout.fillWidth: true
+      Layout.fillHeight: true
+      clip: true
       spacing: Style.marginS
+      model: panelContent.rowsModel
 
-      NLabel {
-        text: I18n.tr("containers.subtitle.tier2")
-        Layout.fillWidth: true
-        wrapMode: Text.WordWrap
-      }
+      delegate: NBox {
+        width: list.width
+        implicitHeight: rowLayout.implicitHeight + Style.marginM * 2
 
-      ListView {
-        id: list
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        clip: true
-        spacing: Style.marginS
-        model: panelContent.rowsModel
-
-        delegate: NBox {
-          width: list.width
-          implicitHeight: rowLayout.implicitHeight + Style.marginM * 2
-
-          RowLayout {
-            id: rowLayout
-            anchors.fill: parent
-            anchors.margins: Style.marginM
-            spacing: Style.marginM
+        RowLayout {
+          id: rowLayout
+          anchors.fill: parent
+          anchors.margins: Style.marginM
+          spacing: Style.marginM
 
             ColumnLayout {
               Layout.fillWidth: true
               spacing: 2
-              NLabel {
+              NText {
                 text: model.name
-                font.bold: true
+                font.weight: Style.fontWeightBold
               }
-              NLabel {
+              NText {
                 visible: !!model.workload
                 text: model.workload
                 opacity: 0.7
               }
-              NLabel {
+              NText {
                 text: model.apps.length + " app" + (model.apps.length === 1 ? "" : "s")
                 opacity: 0.6
               }
             }
 
-            NLabel {
+            NText {
               text: model.state === "running" ? I18n.tr("containers.state.running")
                                               : I18n.tr("containers.state.off")
               color: model.state === "running" ? Color.mPrimary : Color.mOnSurface
@@ -141,4 +152,3 @@ SmartPanel {
       }
     }
   }
-}

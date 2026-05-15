@@ -15,6 +15,7 @@ import qs.Modules.Panels.Battery
 import qs.Modules.Panels.Bluetooth
 import qs.Modules.Panels.Brightness
 import qs.Modules.Panels.Clock
+import qs.Modules.Panels.Containers
 import qs.Modules.Panels.ControlCenter
 import qs.Modules.Panels.Dock
 import qs.Modules.Panels.Launcher
@@ -315,6 +316,12 @@ PanelWindow {
     NetworkPanel {
       id: networkPanel
       objectName: "networkPanel-" + (root.screen?.name || "unknown")
+      screen: root.screen
+    }
+
+    ContainersPanel {
+      id: containersPanel
+      objectName: "containersPanel-" + (root.screen?.name || "unknown")
       screen: root.screen
     }
 
