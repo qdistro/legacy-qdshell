@@ -369,9 +369,10 @@ Item {
     //
     // Skip placeholders whose launchToken matches a window's instanceId
     // already collected above. toplevelAdded fires before
-    // toplevelSecurityContext, so for one tick the real toplevel and
-    // its placeholder both exist; this filter collapses them to just
-    // the real entry, eliminating the visual double-render.
+    // toplevelSecurityContext, so during the gap (~100-300ms) the real
+    // toplevel exists in Qdwin.windows with empty instanceId and BOTH
+    // entries render. Once secctx attaches the instanceId on the
+    // window's row, this filter collapses the placeholder away.
     try {
       const phCount = PodApps.placeholders.count || 0;
       for (let i = 0; i < phCount; i++) {
