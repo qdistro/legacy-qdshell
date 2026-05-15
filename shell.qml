@@ -118,6 +118,15 @@ ShellRoot {
           // Force PodApps singleton instantiation so the container
           // state poll + auto-scan runs even when no panel is open.
           PodApps.refresh();
+
+          // Force VMApps singleton instantiation so its Connections
+          // (Qdwin.windowListChanged, Qdwin.windowSecctxResolved) are
+          // active before the first tier-5 toplevel arrives — otherwise
+          // the first tier-5 spawn after qdshell start would miss its
+          // tier5WindowAdded signal until something else triggers a
+          // rebuild. Reading any property of the singleton is enough
+          // to instantiate it.
+          void VMApps.tier5Prefix;
         });
 
         delayedInitTimer.running = true;
