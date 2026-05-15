@@ -309,7 +309,12 @@ Item {
     const pinnedApps = Settings.data.dock.pinnedApps || [];
     const processedAppIds = new Set();
 
-    // First pass: Add all running windows
+    // First pass: Add all running windows. Also collect each window's
+    // wp_security_context_v1 instanceId so the placeholder pass below
+    // can suppress its own row when the real toplevel has already
+    // arrived (avoids the brief double-render between toplevel_added
+    // and toplevel_security_context).
+    const seenInstanceIds = new Set();
     try {
       const total = Qdwin.windows.count || 0;
       const activeIds = Qdwin.getActiveWorkspaces().map(function (ws) {
@@ -332,6 +337,7 @@ Item {
                                 "title": w.title || getAppNameFromDesktopEntry(w.appId)
                               });
           processedAppIds.add(normalizeAppId(w.appId));
+          if (w.instanceId) seenInstanceIds.add(w.instanceId);
         }
       }
     } catch (e)
@@ -360,10 +366,17 @@ Item {
     // PodApps removes the entry on instanceId match, so the placeholder
     // is replaced by the real toplevel automatically. Per
     // qdistro/doc/containers.md "Cold-start contract".
+    //
+    // Skip placeholders whose launchToken matches a window's instanceId
+    // already collected above. toplevelAdded fires before
+    // toplevelSecurityContext, so for one tick the real toplevel and
+    // its placeholder both exist; this filter collapses them to just
+    // the real entry, eliminating the visual double-render.
     try {
       const phCount = PodApps.placeholders.count || 0;
       for (let i = 0; i < phCount; i++) {
         const ph = PodApps.placeholders.get(i);
+        if (seenInstanceIds.has(ph.launchToken)) continue;
         runningWindows.push({
                               "id":           "podapp-placeholder:" + ph.launchToken,
                               "type":         "placeholder",

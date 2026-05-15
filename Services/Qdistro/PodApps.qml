@@ -147,6 +147,12 @@ Singleton {
                 }
                 for (const c of changed) {
                     root.containerStateChanged(c, next[c]);
+                    // Clear the scanned flag when a container goes
+                    // away — a podman rm + podman run with the same
+                    // name should re-scan in case the new image has
+                    // different .desktop entries.
+                    if (next[c] !== "running" && root._scannedThisSession[c])
+                        delete root._scannedThisSession[c];
                     // Auto-bootstrap the apps cache for any container
                     // we just observed transitioning into "running" —
                     // covers manual `podman start` and the launcher
@@ -241,10 +247,8 @@ Singleton {
         const cmd = [root.spawnHelper, row.container,
                      row.workload || "weston-terminal", "--"].concat(argv);
 
-        const tokenSlot = { value: "" };
         const proc = launchProcessComp.createObject(root, {
             "command": cmd,
-            "_tokenSlot": tokenSlot,
             "_appId":    row.appId,
             "_name":     row.name,
             "_iconName": row.iconName || "",
