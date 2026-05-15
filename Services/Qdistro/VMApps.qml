@@ -2,76 +2,83 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Services.Qdwin
 
 // VMApps — tier-5 (per-app VM, waypipe-over-AF_VSOCK) toplevel filter
-// for the qdshell launcher / taskbar / containers panel.
+// + launcher for the qdshell launcher / taskbar / containers panel.
 //
 // Unlike PodApps (tier-2), tier-5 apps do NOT arrive via
 // qdwin_nested_manager_v1. They're regular xdg_toplevels on the
 // outer compositor — connections from the host-side `waypipe-client`
 // half of the waypipe-over-vsock bridge — tagged with
-// wp_security_context_v1 fields. The bridge / spawn-tier5.sh design
-// is in qdistro/doc/isolation-tiers.md (Tier 5) and the design
-// pivot from the earlier nested-compositor approach is in
-// qdistro/doc/containers.md "Why tier-2 first" + Future work.
+// wp_security_context_v1 fields (engine + app_id + instance_id) that
+// spawn-tier5.sh plants by wrapping waypipe-client with
+// qdistro-secctx-exec. instance_id == the LAUNCH_TOKEN spawn-tier5.sh
+// emits on stdout, which is how we correlate cold-start placeholders
+// to the eventual real toplevel.
 //
 // What this service does:
-//   - Watches Qdwin.windows (the canonical toplevel list).
-//   - Exposes the subset whose secctxAppId starts with
-//     `qdistro.tier5.` as `tier5Windows`, indexed by handle.
-//   - Derives a `silo` per row (`vm-<silo>` per the convention) so
-//     the same vocabulary the broker rules engine uses lines up
-//     on the qdshell side.
-//
-// What this service deliberately does NOT do in v1:
-//   - **No `launch()` / spawn-tier5 integration.** Launching a
-//     tier-5 app from qdshell requires resolving "which app inside
-//     which VM" — a UX question (per-VM launcher list? scan the
-//     base qcow2's xdg .desktop entries? curated config?). Until
-//     that's decided, tier-5 apps are cold-started by admin via
-//     `sudo qdistro-tier5-spawn --vm <name> -- <cmd>` from a shell.
-//   - **No cold-start placeholder UX.** PodApps's cold-start
-//     spinner relies on a per-launch LAUNCH_TOKEN that spawn-tier2.sh
-//     emits on stdout and threads through wp_security_context_v1's
-//     instance_id field. spawn-tier5.sh today only passes a single
-//     `--secctx <app_id>` to waypipe (no engine/instance triple), so
-//     there's nothing to correlate a placeholder against. Add this
-//     once spawn-tier5.sh + waypipe wire the full secctx triple
-//     (tracked in todo/qdwin-vm/tier5-vm-bringup.md, step 5 follow-up).
+//   1. **Filter:** watches Qdwin.windows and exposes the tier-5
+//      subset (secctxAppId starts with `qdistro.tier5.`) as
+//      `tier5Windows`. Each row carries a derived `silo = vm-<tag>`.
+//   2. **Launch:** `launch(row)` shells out to `qdistro-tier5-spawn
+//      --vm <auto-name> -- <execArgv>`, parses LAUNCH_TOKEN from
+//      stdout, seeds a `placeholders` row keyed on it.
+//   3. **Cold-start placeholder resolution:** listens to
+//      `Qdwin.windowSecctxResolved`; when a tier-5 toplevel's
+//      instance_id matches a known launchToken, drops the placeholder
+//      and emits `placeholderResolved`.
 //
 // See:
 //   - qdistro/doc/isolation-tiers.md "Tier 5 — per-app VM windowed"
-//   - qdistro/doc/containers.md (UI surface vocabulary parity)
+//   - qdistro/doc/containers.md "Why tier-2 first" (UI vocabulary
+//     parity with PodApps; transport differs)
 //   - qdistro/doc/ui.md "silo-badges" (badge ring colour for tier-5)
-//   - qdistro/tier5-vm/spawn-tier5.sh
+//   - qdistro/tier5-vm/spawn-tier5.sh (LAUNCH_TOKEN emission +
+//     qdistro-secctx-exec wrap)
 Singleton {
     id: root
 
     Component.onCompleted: Logger.i("VMApps", "service started")
 
     // The reverse-DNS engine prefix that identifies a tier-5 app.
-    // Matches the SECCTX default in qdistro/tier5-vm/spawn-tier5.sh.
+    // Matches TIER5_SECCTX_ENGINE default in spawn-tier5.sh.
     readonly property string tier5Prefix: "qdistro.tier5."
 
-    // Filtered subset of Qdwin.windows. Each row carries the same
-    // fields Qdwin.windows does (handle, ownerUid, appId, title,
-    // isXwayland, workspaceId, sandboxEngine, secctxAppId,
-    // instanceId) plus a derived `silo` string.
-    property ListModel tier5Windows: ListModel {}
+    // Spawn helper path. spawn-tier5.sh installs as this symlink by
+    // scripts/install/install-tier5-for-vm.sh. Requires root (libvirt
+    // domain define + virsh start + qemu launch), so we invoke via
+    // pkexec — install-tier5-for-vm.sh ships a polkit policy that
+    // lets the active admin session pkexec it without re-auth
+    // (allow_active=yes per qdistro single-tenant convention).
+    readonly property string spawnHelper: "qdistro-tier5-spawn"
+    readonly property string spawnLauncher: "pkexec"
 
-    // Quick lookup: handle (int) -> silo (string).
+    // ---- toplevel filter (existing v1 surface) ---------------------------
+    // Each row mirrors Qdwin.windows + adds `silo` ("vm-<tag>").
+    property ListModel tier5Windows: ListModel {}
     property var _siloByHandle: ({})
 
     signal tier5WindowAdded(int handle, string silo, string appId)
     signal tier5WindowRemoved(int handle, string silo)
 
-    // ---- helpers ----------------------------------------------------------
-    // Derive the silo name from a tier-5 secctxAppId.
-    // `qdistro.tier5.<silo>` → `vm-<silo>` (matches broker/qdshell silo
-    // convention used by tier-3's `user-<uid>` and tier-2's
-    // `tier2/<container>`).
+    // ---- cold-start placeholders -----------------------------------------
+    // Each entry: { launchToken, appId, name, iconName, silo, since }
+    // Inserted on spawn, removed on matching toplevel_security_context
+    // event (instanceId == launchToken) OR after placeholderTimeoutMs.
+    // Tier-5 boot is slow (guest VM cold-start ~30-60s), so the timeout
+    // is longer than PodApps's 15s default.
+    property ListModel placeholders: ListModel {}
+    property int placeholderTimeoutMs: 90000
+
+    signal placeholderAdded(string launchToken, string appId,
+                            string name, string iconName, string silo)
+    signal placeholderResolved(string launchToken, int handle)
+    signal placeholderTimedOut(string launchToken, string appId)
+
+    // ---- helpers ---------------------------------------------------------
     function siloFromSecctx(secctxAppId) {
         if (!secctxAppId || !secctxAppId.startsWith(root.tier5Prefix))
             return "";
@@ -84,10 +91,16 @@ Singleton {
         return !!secctxAppId && secctxAppId.startsWith(root.tier5Prefix);
     }
 
-    // Build tier5Windows from scratch off Qdwin.windows. Cheap enough
-    // (handful of windows) that incremental tracking isn't worth the
-    // complexity; rebuild on any windowListChanged or
-    // windowSecctxResolved event.
+    // Generate a fresh VM name for a launch. spawn-tier5.sh validates
+    // [a-zA-Z0-9][a-zA-Z0-9_-]{0,62}, so use a short hex suffix.
+    function _generateVmName(appId) {
+        const stub = (appId || "vmapp").replace(/[^a-zA-Z0-9_-]/g, "-")
+                                       .slice(0, 24);
+        const suffix = Math.floor(Math.random() * 0xFFFFFF)
+                           .toString(16).padStart(6, "0");
+        return "t5-" + stub + "-" + suffix;
+    }
+
     function rebuild() {
         const fresh = [];
         const seenHandles = new Set();
@@ -112,7 +125,6 @@ Singleton {
             seenHandles.add(w.handle);
         }
 
-        // Diff against the current tier5Windows for signal emission.
         const prevHandles = new Set();
         for (let i = 0; i < root.tier5Windows.count; i++)
             prevHandles.add(root.tier5Windows.get(i).handle);
@@ -132,22 +144,146 @@ Singleton {
         root._siloByHandle = nextSiloByHandle;
     }
 
-    // ---- wire-up ----------------------------------------------------------
-    // Rebuild on any change to the canonical window list. secctx fields
-    // arrive AFTER toplevel_added (per Qdwin.qml's comment on the
-    // windowSecctxResolved signal), so windowListChanged alone misses
-    // the moment a window becomes recognisably tier-5 — also listen to
-    // the secctx-resolved signal.
+    // ---- launch ----------------------------------------------------------
+    // Called from Launcher / Taskbar click handlers. Forks
+    // spawn-tier5.sh --vm <auto-name> -- <argv...>; the helper emits
+    // LAUNCH_TOKEN=<hex> early on stdout. We register a placeholder
+    // keyed on the token; it's resolved when the inner toplevel
+    // arrives carrying instance_id == launchToken (set by spawn-
+    // tier5.sh's qdistro-secctx-exec wrap).
+    //
+    // row shape: { appId, name, iconName, execArgv (string JSON-encoded
+    // array of strings) }
+    function launch(row) {
+        if (!row || !row.appId) {
+            Logger.w("VMApps", "launch: missing appId");
+            return;
+        }
+        let argv = [];
+        try { argv = JSON.parse(row.execArgv); } catch (e) { argv = []; }
+        if (argv.length === 0) {
+            Logger.w("VMApps", "launch: empty execArgv for " + row.appId);
+            return;
+        }
+        const vmName = row.vmName || root._generateVmName(row.appId);
+        // Build: pkexec qdistro-tier5-spawn --vm <vmName> -- <argv...>
+        // pkexec passes stdin/stdout/stderr through so the
+        // LAUNCH_TOKEN= line on stdout still reaches our SplitParser.
+        const cmd = [root.spawnLauncher, root.spawnHelper,
+                     "--vm", vmName, "--"].concat(argv);
+
+        const proc = launchProcessComp.createObject(root, {
+            "command":   cmd,
+            "_appId":    row.appId,
+            "_name":     row.name,
+            "_iconName": row.iconName || "",
+            "_silo":     "vm-" + vmName,
+        });
+        proc.running = true;
+    }
+
+    // Internal helper Process component. One per launch.
+    //
+    // spawn-tier5.sh stays in the foreground for the VM's lifetime
+    // (waypipe-client teardown == toplevel close), so stdout stays
+    // open until the user closes the window. SplitParser delivers
+    // the LAUNCH_TOKEN= line as soon as spawn-tier5.sh emits it
+    // (which is right after CID + port allocation, well before
+    // qga and the inner app start).
+    Component {
+        id: launchProcessComp
+        Process {
+            id: launchProc
+            property string _appId
+            property string _name
+            property string _iconName
+            property string _silo
+            property bool   _tokenSeen: false
+            stdout: SplitParser {
+                onRead: data => {
+                    const m = String(data).match(/^LAUNCH_TOKEN=([0-9a-fA-F]+)/);
+                    if (m && !launchProc._tokenSeen) {
+                        launchProc._tokenSeen = true;
+                        root._registerPlaceholder(m[1], launchProc._appId,
+                                                  launchProc._name,
+                                                  launchProc._iconName,
+                                                  launchProc._silo);
+                    }
+                }
+            }
+            stderr: SplitParser {
+                onRead: data => {
+                    if (data && String(data).length > 0)
+                        Logger.w("VMApps", "spawn stderr (" + launchProc._appId
+                                            + "): " + data);
+                }
+            }
+            onExited: {
+                if (!launchProc._tokenSeen)
+                    Logger.w("VMApps", "launch: no LAUNCH_TOKEN before spawn exit for "
+                                        + launchProc._appId);
+                launchProc.destroy();
+            }
+        }
+    }
+
+    function _registerPlaceholder(launchToken, appId, name, iconName, silo) {
+        placeholders.append({
+            launchToken: launchToken,
+            appId:       appId,
+            name:        name,
+            iconName:    iconName,
+            silo:        silo,
+            since:       Date.now(),
+        });
+        placeholderAdded(launchToken, appId, name, iconName, silo);
+    }
+
+    // Garbage-collect placeholders that never matched a toplevel
+    // within placeholderTimeoutMs. Per the tier-5 cold-start budget
+    // this is 90s — significantly longer than PodApps's 15s since
+    // guest boot dominates.
+    Timer {
+        id: placeholderGcTimer
+        interval: 5000
+        repeat: true
+        running: true
+        onTriggered: {
+            const now = Date.now();
+            for (let i = root.placeholders.count - 1; i >= 0; i--) {
+                const ph = root.placeholders.get(i);
+                if (now - ph.since > root.placeholderTimeoutMs) {
+                    root.placeholderTimedOut(ph.launchToken, ph.appId);
+                    root.placeholders.remove(i);
+                }
+            }
+        }
+    }
+
+    // ---- wire-up ---------------------------------------------------------
     Connections {
         target: Qdwin
         function onWindowListChanged() { root.rebuild(); }
         function onWindowSecctxResolved(handle, sandboxEngine, secctxAppId, instanceId) {
+            // Filter rebuild for any tier-5 toplevel arrival.
             if (root.isTier5(secctxAppId))
                 root.rebuild();
             else if (root._siloByHandle[handle])
-                // A previously-tier-5 toplevel had its secctx changed
-                // (shouldn't happen in practice, but harmless).
                 root.rebuild();
+
+            // Placeholder resolution: instance_id should match a
+            // pending LAUNCH_TOKEN. spawn-tier5.sh defaults
+            // TIER5_SECCTX_INSTANCE=LAUNCH_TOKEN, so instanceId
+            // is the launchToken modulo the wp_security_context_v1
+            // wire round-trip.
+            if (!instanceId) return;
+            for (let i = 0; i < root.placeholders.count; i++) {
+                if (root.placeholders.get(i).launchToken === instanceId) {
+                    root.placeholders.remove(i);
+                    root.placeholderResolved(instanceId, handle);
+                    return;
+                }
+            }
         }
     }
 }

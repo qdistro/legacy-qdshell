@@ -603,6 +603,14 @@ Rectangle {
     }
   }
 
+  VMAppsProvider {
+    id: vmAppsProvider
+    Component.onCompleted: {
+      registerProvider(this);
+      Logger.d("Launcher", "Registered: VMAppsProvider");
+    }
+  }
+
   ClipboardProvider {
     id: clipProvider
     Component.onCompleted: {
