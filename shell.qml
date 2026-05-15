@@ -32,6 +32,7 @@ import qs.Services.Control
 import qs.Services.Hardware
 import qs.Services.Location
 import qs.Services.Networking
+import qs.Services.Qdistro
 import qs.Services.Qdshell
 import qs.Services.Power
 import qs.Services.System
@@ -113,6 +114,10 @@ ShellRoot {
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
+
+          // Force PodApps singleton instantiation so the container
+          // state poll + auto-scan runs even when no panel is open.
+          PodApps.refresh();
         });
 
         delayedInitTimer.running = true;

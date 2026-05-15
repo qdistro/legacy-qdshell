@@ -21,6 +21,8 @@ import qs.Services.Qdwin
 Singleton {
     id: root
 
+    Component.onCompleted: Logger.i("PodApps", "service started")
+
     // ---- Configuration ----------------------------------------------------
     readonly property string cacheRoot: "/var/lib/qdistro/podapps"
     // Spawn helper path. Resolved at runtime; if the user runs from a
@@ -134,6 +136,7 @@ Singleton {
                     if (root._containerStates[name] !== next[name])
                         changed.push(name);
                 }
+                const prevStates = root._containerStates;
                 root._containerStates = next;
                 // Propagate to apps model.
                 for (let i = 0; i < root.apps.count; i++) {
@@ -142,8 +145,63 @@ Singleton {
                     if (row.containerState !== s)
                         root.apps.setProperty(i, "containerState", s);
                 }
-                for (const c of changed)
+                for (const c of changed) {
                     root.containerStateChanged(c, next[c]);
+                    // Auto-bootstrap the apps cache for any container
+                    // we just observed transitioning into "running" —
+                    // covers manual `podman start` and the launcher
+                    // path uniformly. Idempotent: scan rewrites
+                    // apps.json atomically; once-per-session guard
+                    // (_scannedThisSession) avoids re-scanning a
+                    // container that flaps off/on inside one shell run.
+                    if (next[c] === "running"
+                        && (prevStates[c] || "off") !== "running"
+                        && !root._scannedThisSession[c]) {
+                        root._scannedThisSession[c] = true;
+                        Logger.i("PodApps", "auto-scan: " + c
+                                            + " transitioned to running");
+                        root._scanContainer(c);
+                    }
+                }
+            }
+        }
+    }
+
+    // Per-session "we've already kicked a scan for this container" set;
+    // reset when the user explicitly calls refresh().
+    property var _scannedThisSession: ({})
+
+    function _scanContainer(container) {
+        // Container is freshly running but podman exec isn't always
+        // ready immediately (entrypoint races, network namespace
+        // setup). 2s is enough headroom for the weston-terminal image
+        // in practice; if it isn't, scan just emits "0 entries" and
+        // the cache stays whatever it was before.
+        const proc = scanProcessComp.createObject(root, {
+            "command": ["sh", "-c",
+                        "sleep 2 && qdistro-podapps-scan " + container],
+            "_container": container,
+        });
+        proc.running = true;
+    }
+
+    Component {
+        id: scanProcessComp
+        Process {
+            id: scanProc
+            property string _container
+            stdout: SplitParser {
+                onRead: data => Logger.d("PodApps", "scan(" + scanProc._container + "): " + data)
+            }
+            stderr: SplitParser {
+                onRead: data => Logger.d("PodApps", "scan(" + scanProc._container + ") err: " + data)
+            }
+            onExited: code => {
+                if (code === 0)
+                    root.refresh();
+                else
+                    Logger.w("PodApps", "scan failed for " + scanProc._container + " (exit " + code + ")");
+                scanProc.destroy();
             }
         }
     }
