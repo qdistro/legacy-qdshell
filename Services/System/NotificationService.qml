@@ -79,6 +79,14 @@ Singleton {
       function onActionsChanged() {
         updateNotificationFromObject(targetDataId);
       }
+      // hintsChanged fires when the client updates the notification via
+      // replaces_id (the standard "live progress" pattern). Without
+      // this handler the value/progress hint would only be picked up
+      // for brand-new notifications, defeating the whole point of
+      // streamed file-op progress.
+      function onHintsChanged() {
+        updateNotificationFromObject(targetDataId);
+      }
     }
   }
 
@@ -289,7 +297,10 @@ Singleton {
     const oldTimestamp = existing.timestamp;
     const oldProgress = existing.progress;
 
-    // Update properties (keeping original timestamp and progress)
+    // Update properties (keeping original timestamp; progress is
+    // overwritten with the user-supplied value when present so a
+    // file-op client driving us via replaces_id sees the bar follow
+    // its updates rather than the dwell timer).
     activeList.setProperty(index, "summary", data.summary);
     activeList.setProperty(index, "summaryMarkdown", data.summaryMarkdown);
     activeList.setProperty(index, "body", data.body);
@@ -301,7 +312,12 @@ Singleton {
     activeList.setProperty(index, "cachedImage", data.cachedImage);
     activeList.setProperty(index, "actionsJson", data.actionsJson);
     activeList.setProperty(index, "timestamp", oldTimestamp);
-    activeList.setProperty(index, "progress", oldProgress);
+    activeList.setProperty(index, "userProgress", data.userProgress);
+    if (data.userProgress >= 0) {
+      activeList.setProperty(index, "progress", data.userProgress);
+    } else {
+      activeList.setProperty(index, "progress", oldProgress);
+    }
 
     // Update stored notification object
     const notifData = activeNotifications[internalId];
@@ -423,6 +439,30 @@ Singleton {
     return durations[data.urgency];
   }
 
+  // Extract a 0..1 progress value from notification hints. The
+  // Freedesktop spec doesn't standardise this, so we look for the two
+  // de-facto keys clients use:
+  //   - "value"    — KDE-style integer 0..100 (libnotify-bin, paste,
+  //                  GNOME's transfer notifications, qfileman)
+  //   - "progress" — older legacy alias still used by some apps
+  // Returns -1 when no progress hint is present, otherwise a number
+  // clamped to [0, 1]. Treating these as user-supplied progress lets
+  // file-op clients drive the existing progress bar instead of having
+  // it always represent dwell-time-until-dismiss.
+  function extractUserProgress(n) {
+    const hints = n.hints || {};
+    var raw = -1;
+    if (hints["value"] !== undefined && hints["value"] !== null)
+      raw = Number(hints["value"]);
+    else if (hints["progress"] !== undefined && hints["progress"] !== null)
+      raw = Number(hints["progress"]);
+    if (!isFinite(raw) || raw < 0)
+      return -1;
+    if (raw > 1)
+      raw = raw / 100;  // clients send 0..100; spec implies 0..100
+    return Math.min(1, Math.max(0, raw));
+  }
+
   function createData(n) {
     const time = new Date();
     const id = Checksum.sha256(JSON.stringify({
@@ -436,6 +476,12 @@ Singleton {
     const imageId = generateImageId(n, image);
     queueImage(image, n.appName || "", n.summary || "", id);
 
+    const userProgress = extractUserProgress(n);
+    // When the client supplies a progress hint, render the bar to
+    // match it. Otherwise the bar stays at 1.0 so updateAllProgress()
+    // can tick it down toward dismissal as the dwell timer elapses.
+    const initialProgress = userProgress >= 0 ? userProgress : 1.0;
+
     return {
       "id": id,
       "summary": processNotificationText(n.summary || ""),
@@ -446,7 +492,8 @@ Singleton {
       "urgency": n.urgency < 0 || n.urgency > 2 ? 1 : n.urgency,
       "expireTimeout": n.expireTimeout,
       "timestamp": time,
-      "progress": 1.0,
+      "progress": initialProgress,
+      "userProgress": userProgress,  // -1 = none, else 0..1
       "originalImage": image,
       "cachedImage": image  // Start with original, update when cached
                      ,
@@ -489,6 +536,13 @@ Singleton {
     activeList.setProperty(index, "originalImage", data.originalImage);
     activeList.setProperty(index, "cachedImage", data.cachedImage);
     activeList.setProperty(index, "actionsJson", data.actionsJson);
+    // Propagate user-supplied progress on a hints update so a client
+    // streaming file-op percentages (qfileman, gnome-disks, paste) sees
+    // the bar follow its writes.
+    activeList.setProperty(index, "userProgress", data.userProgress);
+    if (data.userProgress >= 0) {
+      activeList.setProperty(index, "progress", data.userProgress);
+    }
 
     // Update metadata
     notifData.metadata.urgency = data.urgency;
@@ -539,6 +593,15 @@ Singleton {
       const meta = notifData.metadata;
       if (meta.duration === -1 || meta.paused)
         continue;
+      // When the client supplies its own progress hint we leave the
+      // bar alone — the file-op (or whatever) drives it. The dwell
+      // timer is also suppressed so the notification stays on screen
+      // until the client either pushes a 100% update or calls
+      // CloseNotification explicitly. Reach 100% and the next tick
+      // dismisses it like any other completed notification.
+      if (notif.userProgress >= 0 && notif.userProgress < 1) {
+        continue;
+      }
       const elapsed = now - meta.timestamp;
       const progress = Math.max(1.0 - (elapsed / meta.duration), 0.0);
 
