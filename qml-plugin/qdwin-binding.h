@@ -53,6 +53,12 @@ public:
     Q_INVOKABLE void requestMinimize(quint32 handle);
     Q_INVOKABLE void setBorderColor(quint32 handle, quint32 argb);
 
+    // spec/10 §"compositor-mediated gating" — once the shell has a
+    // broker verdict on the most recent selection_set, it calls
+    // clearSelection on a "deny". `isPrimary` mirrors the event
+    // arg: 0 = clipboard, 1 = primary selection.
+    Q_INVOKABLE void clearSelection(const QString &seat, quint32 isPrimary);
+
 signals:
     void boundChanged();
     void lastErrorChanged();
@@ -66,6 +72,23 @@ signals:
     void toplevelGeometry(quint32 handle, int x, int y, quint32 width, quint32 height);
     void toplevelState(quint32 handle, quint32 state);
     void seatFocusChanged(const QString &seat, quint32 handle);
+
+    // spec/10 §"selection-set event" — fires whenever a client sets
+    // the seat selection. Carries the source toplevel handle, the
+    // newline-separated mime types, and the primary/clipboard flag.
+    // qdshell resolves source/dest silo from windows + focus and
+    // calls broker.CheckClipboardTransfer.
+    void selectionSet(const QString &seat, quint32 sourceHandle,
+                      const QString &mimeTypesConcat, quint32 isPrimary);
+
+    // spec/10 v13 — toplevel security_context tags arrive after the
+    // toplevel_added event. Used by qdshell to map toplevel handle →
+    // silo without relying on title-prefix heuristics.
+    void toplevelSecurityContext(quint32 handle,
+                                 const QString &sandboxEngine,
+                                 const QString &appId,
+                                 const QString &instanceId);
+
     void launcherRequested();
     void switcherNext(int dir);
     void switcherCommit();

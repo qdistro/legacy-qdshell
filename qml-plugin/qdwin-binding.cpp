@@ -90,13 +90,31 @@ struct QdwinBindingDispatch {
                                      uint32_t, const char *, uint32_t) {}
     static void nested_proxy_pixel_source(void *, qdwin_shell_v1 *,
                                           uint32_t, const char *, const char *) {}
-    static void selection_set(void *, qdwin_shell_v1 *,
-                              const char *, uint32_t, const char *, uint32_t) {}
+    // spec/10 selection_set — forward to QML so ClipboardGate can
+    // consult the broker and call clearSelection on a deny verdict.
+    static void selection_set(void *d, qdwin_shell_v1 *,
+                              const char *seat_name, uint32_t source_handle,
+                              const char *mime_types_concat,
+                              uint32_t is_primary) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->selectionSet(qstr(seat_name), source_handle,
+                             qstr(mime_types_concat), is_primary);
+    }
     static void activation_pending(void *, qdwin_shell_v1 *,
                                    uint32_t, uint32_t, uint32_t, const char *) {}
-    static void toplevel_security_context(void *, qdwin_shell_v1 *,
-                                          uint32_t, const char *,
-                                          const char *, const char *) {}
+    // spec/10 v13 toplevel_security_context — forward to QML so the
+    // shell can build handle→silo maps for the clipboard gate. The
+    // sandbox_engine string drives silo derivation when present;
+    // empty engine falls through to title-prefix / uid heuristics.
+    static void toplevel_security_context(void *d, qdwin_shell_v1 *,
+                                          uint32_t handle,
+                                          const char *sandbox_engine,
+                                          const char *app_id,
+                                          const char *instance_id) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->toplevelSecurityContext(handle, qstr(sandbox_engine),
+                                        qstr(app_id), qstr(instance_id));
+    }
     static void seat_focus_changed(void *d, qdwin_shell_v1 *,
                                    const char *seat_name,
                                    uint32_t focused_handle) {
@@ -316,5 +334,14 @@ void QdwinBinding::requestMinimize(quint32 handle) {
 void QdwinBinding::setBorderColor(quint32 handle, quint32 argb) {
     if (!shell_) return;
     qdwin_shell_v1_set_border_color(shell_, handle, argb);
+    if (display_) wl_display_flush(display_);
+}
+
+// spec/10 §"clear_selection" — deny verdict from broker; compositor
+// drops the seat's selection (and primary equivalent when isPrimary=1).
+void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
+    if (!shell_) return;
+    QByteArray seatUtf8 = seat.toUtf8();
+    qdwin_shell_v1_clear_selection(shell_, seatUtf8.constData(), isPrimary);
     if (display_) wl_display_flush(display_);
 }
