@@ -58,32 +58,15 @@ Singleton {
 
     Component.onCompleted: Logger.i("Tier3FocusIPC", "service started")
 
-    // Track the last-seen ClipboardGate event so selectionState
-    // can return a meaningful snapshot. Populated by the Connections
-    // block below.
-    property string _lastSrcSilo: ""
-    property string _lastDstSilo: ""
-    property string _lastVerdict: ""
-    property string _lastSeat: ""
-
-    Connections {
-        target: ClipboardGate
-        // ClipboardGate doesn't currently expose a clean signal —
-        // we tap into its logging side-effect by scraping from the
-        // _onSelectionSet path. To avoid duplicating that logic,
-        // we'd ideally have a `selectionStateChanged(srcSilo,
-        // dstSilo, verdict)` signal; absent that, the IPC selection-
-        // State command emits a "snapshot needs journal grep"
-        // marker that the bats driver pairs with the canonical
-        // CLIPBOARD_GATE log line.
-        //
-        // The simpler v1: just emit a probe log line on demand;
-        // the driver greps the most recent CLIPBOARD_GATE line.
-        ignoreUnknownSignals: true
-    }
+    // Allowlist for the `seat` arg — qdwin's seat naming is `default`
+    // today; "pointer"/"keyboard" reserved for the multi-seat future.
+    // Anything else gets rejected with a clear error rather than
+    // hitting the native binding with arbitrary strings.
+    readonly property var _allowedSeats: ({ "default": true, "pointer": true, "keyboard": true })
 
     function _findSiloHandle(silo) {
-        if (!silo) return -1;
+        if (!silo || typeof silo !== "string") return -1;
+        if (silo.length > 64) return -1;   // silo names from useradd are short
         const wm = Tier3Apps.tier3Windows;
         if (!wm) return -1;
         for (let i = 0; i < wm.count; i++) {
@@ -93,12 +76,44 @@ Singleton {
         return -1;
     }
 
+    // M3 fix (2026-05-16): validate that `handle` belongs to a tier-3
+    // toplevel before delegating. Without this check, any admin-uid
+    // process with IPC reach can focus-steal arbitrary windows —
+    // the surface name "tier3focus" implies scoped operation, so the
+    // check makes the boundary honest.
+    function _isTier3Handle(handle) {
+        const wm = Tier3Apps.tier3Windows;
+        if (!wm) return false;
+        for (let i = 0; i < wm.count; i++) {
+            if (wm.get(i).handle === handle) return true;
+        }
+        return false;
+    }
+
     IpcHandler {
         target: "tier3focus"
 
         // qs ipc call tier3focus injectFocus <handle> [seat]
         function injectFocus(handle: int, seat: string): string {
             const seatName = seat && seat.length > 0 ? seat : "default";
+            if (!root._allowedSeats[seatName]) {
+                Logger.w("Tier3FocusIPC",
+                         "injectFocus REJECTED — bad seat='" + seatName + "'");
+                return "error: invalid seat '" + seatName + "'";
+            }
+            if (!Number.isInteger(handle) || handle < 0 || handle > 4294967295) {
+                Logger.w("Tier3FocusIPC",
+                         "injectFocus REJECTED — handle out of range: " + handle);
+                return "error: invalid handle";
+            }
+            if (!root._isTier3Handle(handle)) {
+                Logger.w("Tier3FocusIPC",
+                         "injectFocus REJECTED — handle=" + handle
+                         + " is not a tier-3 toplevel (use Tier3Apps.tier3Windows)");
+                return "error: handle=" + handle + " is not a tier-3 toplevel";
+            }
+            Logger.i("Tier3FocusIPC",
+                     "injectFocus handle=" + handle + " seat=" + seatName);
             Qdwin.injectFocus(handle, seatName);
             return "ok handle=" + handle + " seat=" + seatName;
         }
@@ -106,7 +121,14 @@ Singleton {
         // qs ipc call tier3focus clearSelection [seat] [primary]
         function clearSelection(seat: string, primary: string): string {
             const seatName = seat && seat.length > 0 ? seat : "default";
+            if (!root._allowedSeats[seatName]) {
+                Logger.w("Tier3FocusIPC",
+                         "clearSelection REJECTED — bad seat='" + seatName + "'");
+                return "error: invalid seat '" + seatName + "'";
+            }
             const isPri = primary === "1" || primary === "true";
+            Logger.i("Tier3FocusIPC",
+                     "clearSelection seat=" + seatName + " primary=" + (isPri ? 1 : 0));
             Qdwin.clearSeatSelection(seatName, isPri);
             return "ok seat=" + seatName + " primary=" + (isPri ? 1 : 0);
         }
@@ -122,15 +144,22 @@ Singleton {
         }
 
         // qs ipc call tier3focus selectionState
-        // Emits a journal probe line; the driver pairs with the
-        // most recent CLIPBOARD_GATE log entry to identify the
-        // current selection owner. Returns the IPC reply for the
-        // CLI caller's convenience.
+        //
+        // M4 fix (2026-05-16): the prior version maintained four
+        // _last* properties claiming to track the most recent
+        // ClipboardGate event, but no `function on…` handlers in the
+        // Connections block wrote them. They were dead. ClipboardGate
+        // doesn't currently expose a signal for Tier3FocusIPC to
+        // subscribe to, so this command now reports a verbatim
+        // snapshot of focus-side state (focused tier-3 handle + that
+        // handle's silo). The "is admin's selection still set?"
+        // question is journal-driven — pair with a grep for the most
+        // recent CLIPBOARD_GATE line.
         function selectionState(): string {
-            const reply = "src_silo=" + (root._lastSrcSilo || "?")
-                        + " dst_silo=" + (root._lastDstSilo || "?")
-                        + " verdict=" + (root._lastVerdict || "?")
-                        + " seat="   + (root._lastSeat || "default");
+            const wm = Tier3Apps.tier3Windows;
+            const tier3Count = wm ? wm.count : 0;
+            const reply = "tier3_toplevels=" + tier3Count
+                        + " hint=grep_journal_for_CLIPBOARD_GATE";
             Logger.i("Tier3FocusIPC", "selectionState " + reply);
             return reply;
         }
