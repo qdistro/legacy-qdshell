@@ -127,6 +127,11 @@ ShellRoot {
           // rebuild. Reading any property of the singleton is enough
           // to instantiate it.
           void VMApps.tier5Prefix;
+
+          // Same trick for Tier3Apps — force its Connections active
+          // so the first cross-uid silo toplevel (qdistro.tier3.<silo>)
+          // observed after qdshell start doesn't slip past the filter.
+          void Tier3Apps.tier3Prefix;
         });
 
         delayedInitTimer.running = true;
