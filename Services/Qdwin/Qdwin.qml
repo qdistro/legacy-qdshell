@@ -105,6 +105,15 @@ Singleton {
             root.windowListChanged();
         }
         onToplevelSecurityContext: (handle, sandboxEngine, secctxAppId, instanceId) => {
+            // Receive-side log line. Mirrors qdwin's send-side line at
+            // qdwin/qdwin.c:814 ("qdwin: toplevel_security_context …")
+            // so the wire path is greppable from both ends — the
+            // load-bearing assertion in
+            // tests/integration/vm/s41-secctx-toplevel-event.sh.
+            Logger.i("Qdwin", "toplevel_security_context handle=" + handle
+                + " engine=" + (sandboxEngine || "")
+                + " app_id=" + (secctxAppId || "")
+                + " instance=" + (instanceId || ""));
             for (let i = 0; i < root.windows.count; i++) {
                 if (root.windows.get(i).handle === handle) {
                     root.windows.setProperty(i, "sandboxEngine", sandboxEngine || "");
