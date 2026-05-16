@@ -603,6 +603,14 @@ Rectangle {
     }
   }
 
+  App1AppsProvider {
+    id: app1AppsProvider
+    Component.onCompleted: {
+      registerProvider(this);
+      Logger.d("Launcher", "Registered: App1AppsProvider");
+    }
+  }
+
   VMAppsProvider {
     id: vmAppsProvider
     Component.onCompleted: {
