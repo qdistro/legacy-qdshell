@@ -71,6 +71,23 @@ Singleton {
     // runs while no shell is bound). The binding takes no QML
     // properties; we drive it via signal handlers + Q_INVOKABLE
     // methods.
+    // External-facing wrappers for the native binding's Q_INVOKABLE
+    // methods. Exposed so peer singletons (e.g. Tier3FocusIPC) and
+    // IPC handlers can drive qdwin without needing direct access to
+    // the internal qdwinBinding id.
+    function injectFocus(handle, seat) {
+        if (!qdwinBinding) return;
+        qdwinBinding.focusWindow(handle, seat || "default");
+        Logger.i("Qdwin", "ipc injectFocus handle=" + handle
+                 + " seat=" + (seat || "default"));
+    }
+    function clearSeatSelection(seat, isPrimary) {
+        if (!qdwinBinding) return;
+        qdwinBinding.clearSelection(seat || "default", isPrimary ? 1 : 0);
+        Logger.i("Qdwin", "ipc clearSelection seat=" + (seat || "default")
+                 + " primary=" + (isPrimary ? 1 : 0));
+    }
+
     QdwinBinding {
         id: qdwinBinding
 

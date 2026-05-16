@@ -132,6 +132,12 @@ ShellRoot {
           // so the first cross-uid silo toplevel (qdistro.tier3.<silo>)
           // observed after qdshell start doesn't slip past the filter.
           void Tier3Apps.tier3Prefix;
+
+          // And for Tier3FocusIPC — registers the "tier3focus" IPC
+          // target so `qs ipc call tier3focus …` resolves. Needed
+          // by tests/integration/vm/s48-focus-aware-clear.sh in
+          // qdistro to drive cross-silo focus headlessly.
+          void Tier3FocusIPC.isQdistroFocusIPC;
         });
 
         delayedInitTimer.running = true;
