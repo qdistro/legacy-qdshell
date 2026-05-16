@@ -69,7 +69,6 @@ Singleton {
     // hence the secctx-derived silo property.
     property ListModel tier3Windows: ListModel {}
     property var _siloByHandle: ({})
-    property var _siloColoursSeen: ({})
 
     signal tier3WindowAdded(int handle, string silo, string appId, string colour)
     signal tier3WindowRemoved(int handle, string silo)
@@ -155,18 +154,21 @@ Singleton {
             root.tier3Windows.append(row);
             nextSiloByHandle[row.handle] = row.silo;
             if (!prevHandles.has(row.handle)) {
-                // Wire-contract log line (s38 bats greps this).
+                // Wire-contract log lines (s38 / s41 bats grep these).
+                // Both fire per new-handle observation; intentionally
+                // not deduped per silo because the singleton lives for
+                // the whole qdshell session, so a once-per-silo dedup
+                // hides the colour-resolve line for every spawn after
+                // the first (the test would only see it on initial
+                // qdshell start). Re-logging is cheap; greppability
+                // wins.
                 Logger.i("Tier3Apps",
                     "[tier3] toplevel observed silo=" + row.silo
                     + " secctx=" + row.secctxAppId
                     + " handle=" + row.handle);
-                // One colour-resolve line per silo on first sighting.
-                if (!root._siloColoursSeen[row.silo]) {
-                    root._siloColoursSeen[row.silo] = row.colour;
-                    Logger.i("Tier3Apps",
-                        "[tier3] silo=" + row.silo
-                        + " color=" + row.colour);
-                }
+                Logger.i("Tier3Apps",
+                    "[tier3] silo=" + row.silo
+                    + " color=" + row.colour);
                 root.tier3WindowAdded(row.handle, row.silo, row.appId, row.colour);
             }
         }
