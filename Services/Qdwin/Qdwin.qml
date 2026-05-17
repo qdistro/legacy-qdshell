@@ -87,6 +87,21 @@ Singleton {
         Logger.i("Qdwin", "ipc clearSelection seat=" + (seat || "default")
                  + " primary=" + (isPrimary ? 1 : 0));
     }
+    // P05a Phase A: per-toplevel chrome colour. Tier4Apps / Tier3Apps
+    // call this after resolving a toplevel's silo so qdwin stores the
+    // rgba per-handle (qdwin_toplevel_border_rgba in qdwin.c). Pre-P05a
+    // the rgba arg was logged + dropped on the qdwin side; now the SSD
+    // paint helper reads it back via the per-toplevel state. Returns
+    // nothing — fire-and-forget. Logs on no-binding so a race during
+    // shell startup leaves a journal trace.
+    function setBorderColor(handle, rgba) {
+        if (!qdwinBinding) {
+            Logger.w("Qdwin", "setBorderColor handle=" + handle
+                              + " rgba=" + rgba + " — no binding");
+            return;
+        }
+        qdwinBinding.setBorderColor(handle, rgba >>> 0);
+    }
 
     QdwinBinding {
         id: qdwinBinding
