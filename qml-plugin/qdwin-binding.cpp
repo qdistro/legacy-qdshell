@@ -190,12 +190,12 @@ static const qdwin_shell_v1_listener kShellListener = {
     .selection_set             = QdwinBindingDispatch::selection_set,
     .activation_pending        = QdwinBindingDispatch::activation_pending,
     .toplevel_security_context = QdwinBindingDispatch::toplevel_security_context,
+    .toplevel_peer_identity    = QdwinBindingDispatch::toplevel_peer_identity,
     .seat_focus_changed        = QdwinBindingDispatch::seat_focus_changed,
     .data_offer_receive_pending = QdwinBindingDispatch::data_offer_receive_pending,
     .hotkey_pressed            = QdwinBindingDispatch::hotkey_pressed,
     .chrome_button             = QdwinBindingDispatch::chrome_button,
     .popup_button              = QdwinBindingDispatch::popup_button,
-    .toplevel_peer_identity    = QdwinBindingDispatch::toplevel_peer_identity,
 };
 
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.
