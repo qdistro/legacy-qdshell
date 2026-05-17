@@ -133,6 +133,15 @@ ShellRoot {
           // observed after qdshell start doesn't slip past the filter.
           void Tier3Apps.tier3Prefix;
 
+          // Same trick for Tier4Apps — force Connections active so the
+          // first tier-4 SPICE virt-viewer toplevel (qdistro.tier4.*)
+          // doesn't slip past the silo-colour filter before any panel
+          // opens. Without this the first tier-4 VM spawned after
+          // qdshell start renders with neutral chrome until the user
+          // touches any UI element that incidentally references
+          // Tier4Apps. (P05a integration HIGH-1.)
+          void Tier4Apps.tier4Prefix;
+
           // And for Tier3FocusIPC — registers the "tier3focus" IPC
           // target so `qs ipc call tier3focus …` resolves. Needed
           // by tests/integration/vm/s48-focus-aware-clear.sh in

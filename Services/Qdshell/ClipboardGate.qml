@@ -110,7 +110,17 @@ Singleton {
     // sandbox_engine is "qdistro", instance_id IS the silo. For other
     // engines (flatpak, firejail) we still bucket by instance_id for
     // policy purposes but tag the engine so policy rules can match.
-    if (instanceId && instanceId.length > 0) {
+    //
+    // EXCEPTION — tier-4 (qdistro.tier4.*): spawn-tier4.sh stamps the
+    // instance_id as "$VM_NAME-$$" (pid-suffixed), so the same VM
+    // launched twice would get two different "silo" strings under the
+    // naive instance_id rule. The chrome-paint side (Tier4Apps.qml)
+    // derives silo from the secctx app_id suffix instead — for the
+    // same-silo gate to match, we MUST use the same derivation here.
+    // (P05a security H3 / integration MEDIUM-2.)
+    if (appId && appId.length > 0 && appId.startsWith("qdistro.tier4.")) {
+      root._handleToSilo[handle] = appId.slice("qdistro.tier4.".length);
+    } else if (instanceId && instanceId.length > 0) {
       root._handleToSilo[handle] = instanceId;
     } else if (sandboxEngine && sandboxEngine.length > 0) {
       // Engine-only context — bucket by engine. Better than a uid.
@@ -119,6 +129,28 @@ Singleton {
     if (appId && appId.length > 0) {
       root._handleToAppId[handle] = appId;
     }
+  }
+
+  // Tier-4 strict MIME allow-list. The base type (everything before the
+  // first ";") must equal text/plain or text/uri-list; charset suffixes
+  // are preserved. Mirrors qdistro/tier4-vm/tier4_chrome.py::strip_mimes
+  // — Python is the canonical implementation; this is the QML port.
+  // (P05a security MS-2 / integration MEDIUM-1.)
+  readonly property var _tier4AllowedMimeBases: ["text/plain", "text/uri-list"]
+
+  function _stripTier4Mimes(mimes) {
+    const seen = {};
+    const out = [];
+    for (let i = 0; i < mimes.length; i++) {
+      const s = mimes[i];
+      if (typeof s !== "string" || s.length === 0) continue;
+      const base = s.split(";", 1)[0].trim().toLowerCase();
+      if (root._tier4AllowedMimeBases.indexOf(base) < 0) continue;
+      if (seen[s]) continue;
+      seen[s] = true;
+      out.push(s);
+    }
+    return out;
   }
 
   // -- the gate itself -------------------------------------------------
@@ -133,11 +165,50 @@ Singleton {
       ? (root._handleToSilo[focusedHandle] || "unknown")
       : "unknown";
 
-    const mimeList = (mimeTypesConcat || "").split("\n").filter(s => s.length > 0);
+    let mimeList = (mimeTypesConcat || "").split("\n").filter(s => s.length > 0);
+
+    // Tier-4 source → strict MIME allow-list (text/plain + text/uri-list).
+    // The strip runs BEFORE policy consult so a tier-4 guest advertising
+    // text/html or image/png has those types dropped, not evaluated.
+    // (P05a security MS-2 / integration MEDIUM-1.)
+    const srcAppId = root._handleToAppId[sourceHandle] || "";
+    if (srcAppId.startsWith("qdistro.tier4.")) {
+      const before = mimeList.length;
+      mimeList = root._stripTier4Mimes(mimeList);
+      if (mimeList.length !== before) {
+        Logger.i("ClipboardGate",
+                 "tier4 mime-strip",
+                 "src_app=" + srcAppId,
+                 "before=" + before,
+                 "after=" + mimeList.length);
+      }
+    }
     const mimeCsv = mimeList.join(",");
 
     let verdict = "deny";
     let reason = "default-deny";
+
+    // If after stripping there are no allowed MIMEs, deny without
+    // consulting policy. The Python strip_mimes contract is "deny on
+    // empty stripped list" — keep that semantics here.
+    if (srcAppId.startsWith("qdistro.tier4.") && mimeList.length === 0) {
+      verdict = "deny";
+      reason = "tier4-no-allowed-mimes";
+
+      Logger.i("ClipboardGate",
+               "CLIPBOARD_GATE",
+               "seat=" + (seat || "default"),
+               "src_silo=" + srcSilo,
+               "dst_silo=" + dstSilo,
+               "mime_types=" + mimeCsv,
+               "verdict=" + verdict,
+               "reason=" + reason);
+
+      if (root._binding) {
+        root._binding.clearSelection(seat || "default", isPrimary);
+      }
+      return;
+    }
 
     if (srcSilo === dstSilo && srcSilo !== "unknown") {
       verdict = "allow";
