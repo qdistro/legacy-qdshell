@@ -573,4 +573,13 @@ PanelWindow {
     enabled: root.isPanelOpen && (PanelService.openedPanel.onPageDownPressed !== undefined)
     onActivated: PanelService.openedPanel.onPageDownPressed()
   }
+
+  // Ctrl+Alt+L is handled at the compositor level by qdwin
+  // (qdwin.c §6.6 qdwin_on_lock_key), which sends
+  // lock_requested(reason=3=manual) directly to qdlocker. The QML
+  // Shortcut was removed because (a) it only fired when qdshell had
+  // focus, missing the task requirement "works when focus is in a
+  // non-qdshell window"; (b) when it did fire it activated the
+  // deprecated WlSessionLock (PanelService.lockScreen) which qdwin
+  // doesn't implement, causing double-trigger / silent failure.
 }

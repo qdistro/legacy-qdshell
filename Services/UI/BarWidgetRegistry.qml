@@ -23,6 +23,7 @@ Singleton {
                            "DarkMode": darkModeComponent,
                            "KeepAwake": keepAwakeComponent,
                            "KeyboardLayout": keyboardLayoutComponent,
+                           "Lock": lockComponent,
                            "LockKeys": lockKeysComponent,
                            "Launcher": launcherComponent,
                            "MediaMini": mediaMiniComponent,
@@ -56,6 +57,7 @@ Singleton {
                                      "KeepAwake": "WidgetSettings/KeepAwakeSettings.qml",
                                      "KeyboardLayout": "WidgetSettings/KeyboardLayoutSettings.qml",
                                      "Launcher": "WidgetSettings/LauncherSettings.qml",
+                                     "Lock": "WidgetSettings/LockSettings.qml",
                                      "LockKeys": "WidgetSettings/LockKeysSettings.qml",
                                      "MediaMini": "WidgetSettings/MediaMiniSettings.qml",
                                      "Microphone": "WidgetSettings/MicrophoneSettings.qml",
@@ -171,6 +173,7 @@ Singleton {
                                     "iconColor": "none",
                                     "textColor": "none"
                                   },
+                                  "Lock": {},
                                   "LockKeys": {
                                     "showCapsLock": true,
                                     "showNumLock": true,
@@ -336,6 +339,9 @@ Singleton {
   }
   property Component keyboardLayoutComponent: Component {
     KeyboardLayout {}
+  }
+  property Component lockComponent: Component {
+    LockButton {}
   }
   property Component keepAwakeComponent: Component {
     KeepAwake {}
