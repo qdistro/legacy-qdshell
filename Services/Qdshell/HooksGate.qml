@@ -32,16 +32,16 @@ import qs.Commons
 //                                  qdistro broker).
 //
 // The broker is on the system bus:
-//   bus  = com.qdistro.AdminBroker1
-//   path = /com/qdistro/AdminBroker1
+//   bus  = org.qdistro.AdminBroker1
+//   path = /org/qdistro/AdminBroker1
 //   sig  = CheckPermission(s action, a{sv} details) -> s
 
 Singleton {
   id: root
 
-  readonly property string brokerBus: "com.qdistro.AdminBroker1"
-  readonly property string brokerPath: "/com/qdistro/AdminBroker1"
-  readonly property string brokerIface: "com.qdistro.AdminBroker1"
+  readonly property string brokerBus: "org.qdistro.AdminBroker1"
+  readonly property string brokerPath: "/org/qdistro/AdminBroker1"
+  readonly property string brokerIface: "org.qdistro.AdminBroker1"
 
   // Pending gate requests, keyed by a unique id. Each entry:
   //   { event, script, args, callback }

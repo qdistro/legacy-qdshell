@@ -92,6 +92,19 @@ signals:
                                  const QString &appId,
                                  const QString &instanceId);
 
+    // Option-B identity sidecar — fires immediately after
+    // toplevelSecurityContext for the same handle, carrying the
+    // compositor-observed peer identity. ClipboardGate forwards the
+    // tuple to the broker's VerifyClientIdentity method before honouring
+    // any same-silo short-circuit. See todo/decisions/
+    // secctx-identity-contract.md.
+    void toplevelPeerIdentity(quint32 handle,
+                              quint32 peerPid,
+                              quint64 peerStarttime,
+                              quint32 peerUid,
+                              const QString &peerExe,
+                              const QString &peerSelinuxLabel);
+
     // qdwin_shell_v1.nested_proxy_pixel_source — the compositor is
     // asking the shell to spawn a pixel-consumer process for a nested
     // (tier-2) proxy toplevel. pwNode is the PipeWire node name the

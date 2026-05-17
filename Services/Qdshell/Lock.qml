@@ -24,8 +24,8 @@ import qs.Commons
 // method, not a redefinition of UnlockVault.
 //
 // D-Bus surface (system bus):
-//   bus  = com.qdistro.Pwd1
-//   path = /com/qdistro/Pwd1
+//   bus  = org.qdistro.Pwd1
+//   path = /org/qdistro/Pwd1
 //   sigs = ListVaults() -> as
 //          IsUnlocked(s name) -> b
 //          UnlockVault(s name, s secret) -> b
@@ -40,9 +40,9 @@ import qs.Commons
 Singleton {
   id: root
 
-  readonly property string pwdBus: "com.qdistro.Pwd1"
-  readonly property string pwdPath: "/com/qdistro/Pwd1"
-  readonly property string pwdIface: "com.qdistro.Pwd1"
+  readonly property string pwdBus: "org.qdistro.Pwd1"
+  readonly property string pwdPath: "/org/qdistro/Pwd1"
+  readonly property string pwdIface: "org.qdistro.Pwd1"
 
   // Cached daemon-presence flag, refreshed by listVaults() (the
   // canonical probe). Until first probe, presumed false so UIs

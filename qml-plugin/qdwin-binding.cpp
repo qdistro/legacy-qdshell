@@ -20,7 +20,10 @@
 #include <cstring>
 
 namespace {
-constexpr uint32_t kBindVersion = 14;
+// Bump to 22 to pick up `toplevel_peer_identity` — the Option-B
+// identity sidecar emitted alongside `toplevel_security_context`. See
+// todo/decisions/secctx-identity-contract.md.
+constexpr uint32_t kBindVersion = 22;
 
 inline QString qstr(const char *s) {
     return s ? QString::fromUtf8(s) : QString();
@@ -120,6 +123,25 @@ struct QdwinBindingDispatch {
         emit b->toplevelSecurityContext(handle, qstr(sandbox_engine),
                                         qstr(app_id), qstr(instance_id));
     }
+    // Option-B identity sidecar (qdwin_shell_v1@v22). Fires immediately
+    // after `toplevel_security_context` for the same handle. starttime
+    // is reassembled from the lo/hi uint32 split that the protocol
+    // carries (wayland has no native uint64 arg type).
+    static void toplevel_peer_identity(void *d, qdwin_shell_v1 *,
+                                       uint32_t handle,
+                                       uint32_t peer_pid,
+                                       uint32_t peer_starttime_lo,
+                                       uint32_t peer_starttime_hi,
+                                       uint32_t peer_uid,
+                                       const char *peer_exe,
+                                       const char *peer_selinux_label) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        quint64 st = (static_cast<quint64>(peer_starttime_hi) << 32)
+                     | static_cast<quint64>(peer_starttime_lo);
+        emit b->toplevelPeerIdentity(handle, peer_pid, st, peer_uid,
+                                     qstr(peer_exe),
+                                     qstr(peer_selinux_label));
+    }
     static void seat_focus_changed(void *d, qdwin_shell_v1 *,
                                    const char *seat_name,
                                    uint32_t focused_handle) {
@@ -173,6 +195,7 @@ static const qdwin_shell_v1_listener kShellListener = {
     .hotkey_pressed            = QdwinBindingDispatch::hotkey_pressed,
     .chrome_button             = QdwinBindingDispatch::chrome_button,
     .popup_button              = QdwinBindingDispatch::popup_button,
+    .toplevel_peer_identity    = QdwinBindingDispatch::toplevel_peer_identity,
 };
 
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.

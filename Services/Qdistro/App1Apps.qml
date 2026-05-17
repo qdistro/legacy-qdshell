@@ -5,11 +5,11 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 
-// App1Apps — discover ``com.qdistro.App1`` receivers via the broker.
+// App1Apps — discover ``org.qdistro.App1`` receivers via the broker.
 //
 // Where PodApps surfaces container-scanned tier-2 apps, App1Apps
 // surfaces *running* user-uid apps that have registered themselves on
-// the session bus as ``com.qdistro.<Name>.uid<NNNN>`` and answered
+// the session bus as ``org.qdistro.<Name>.uid<NNNN>`` and answered
 // the App1 contract (GetName / GetSilo / CanReceive / ReceivePayload).
 // The data source is the admin broker's ``ListReceivers`` method,
 // which side-channels into every uid's UserRelay to enumerate names.
@@ -41,9 +41,9 @@ Singleton {
         _scan.running = false;
         _scan.command = ["sh", "-c",
             "busctl --system --json=short call " +
-            "com.qdistro.AdminBroker1 " +
-            "/com/qdistro/AdminBroker1 " +
-            "com.qdistro.AdminBroker1 " +
+            "org.qdistro.AdminBroker1 " +
+            "/org/qdistro/AdminBroker1 " +
+            "org.qdistro.AdminBroker1 " +
             "ListReceivers 2>/dev/null || echo ''"];
         _scan.running = true;
     }
@@ -109,9 +109,9 @@ Singleton {
         _siloScan.running = false;
         _siloScan.command = ["sh", "-c",
             "busctl --system --json=short call " +
-            "com.qdistro.SessionManager1 " +
-            "/com/qdistro/SessionManager1 " +
-            "com.qdistro.SessionManager1 " +
+            "org.qdistro.SessionManager1 " +
+            "/org/qdistro/SessionManager1 " +
+            "org.qdistro.SessionManager1 " +
             "ListSilos 2>/dev/null || echo ''"];
         _siloScan.running = true;
     }

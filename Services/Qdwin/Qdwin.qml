@@ -376,7 +376,7 @@ Singleton {
         qdwinBinding.closeWindow(h);
     }
 
-    // Fire-and-forget Close() RPC on com.qdistro.Tier4VM.Control.uid<N>.
+    // Fire-and-forget Close() RPC on org.qdistro.Tier4VM.Control.uid<N>.
     // The control process owns this name (see qdistro/tier4-vm/
     // tier4_control.py); the same-uid bus + same-uid attestation in the
     // handler defends against cross-uid abuse. We use busctl rather
@@ -385,7 +385,7 @@ Singleton {
     // exit, the RPC just guarantees the qemu domain doesn't survive.
     function _dispatchTier4Close(vmName, ownerUid) {
         if (!vmName || typeof ownerUid !== "number" || ownerUid < 0) return;
-        const busName = "com.qdistro.Tier4VM.Control.uid" + ownerUid;
+        const busName = "org.qdistro.Tier4VM.Control.uid" + ownerUid;
         Logger.i("Qdwin", "tier4 close vm=" + vmName
                           + " uid=" + ownerUid + " bus=" + busName);
         // The RPC takes no args, returns (bsui). Discard the reply —
@@ -393,8 +393,8 @@ Singleton {
         // so the user gets a window dismissal regardless.
         Quickshell.execDetached([
             "busctl", "--user", "--no-pager",
-            "call", busName, "/com/qdistro/Tier4VM",
-            "com.qdistro.Tier4VM.Control", "Close"
+            "call", busName, "/org/qdistro/Tier4VM",
+            "org.qdistro.Tier4VM.Control", "Close"
         ]);
     }
 

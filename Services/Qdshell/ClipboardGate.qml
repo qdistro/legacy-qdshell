@@ -37,7 +37,7 @@ import qs.Commons
 // file is the always-on defense.
 //
 // TODO(track-04-phase-2): replace `_consultLocalPolicy` with a busctl
-// shell-out to `com.qdistro.AdminBroker1.CheckClipboardTransfer`,
+// shell-out to `org.qdistro.AdminBroker1.CheckClipboardTransfer`,
 // mirroring HooksGate's Process+env pattern. Keep the local-policy
 // branch as the "broker absent" graceful fallback.
 //
@@ -69,6 +69,13 @@ Singleton {
     binding.toplevelAdded.connect(root._onToplevelAdded);
     binding.toplevelRemoved.connect(root._onToplevelRemoved);
     binding.toplevelSecurityContext.connect(root._onSecurityContext);
+    // Option-B identity sidecar (qdwin_shell_v1@v22). Older bindings
+    // simply never emit; the same-silo gate then stays unverified and
+    // falls through to the cross-silo policy path. See
+    // todo/decisions/secctx-identity-contract.md.
+    if (binding.toplevelPeerIdentity !== undefined) {
+      binding.toplevelPeerIdentity.connect(root._onPeerIdentity);
+    }
     binding.selectionSet.connect(root._onSelectionSet);
     root._wired = true;
     ClipboardPolicy.load();
@@ -84,6 +91,16 @@ Singleton {
   // QML ListModel doesn't support uint32 keys well.
   property var _handleToSilo: ({})
   property var _handleToAppId: ({})
+
+  // Option-B identity bookkeeping (todo/decisions/secctx-identity-contract.md):
+  //   _handleToIdentity[handle] = { pid, starttime, uid, exe, label,
+  //                                 sandboxEngine, appId, instanceId }
+  //   _verifyCache[verifyKey]   = bool   (true = broker said OK)
+  //   _verifyInFlight[verifyKey] = bool  (suppress duplicate calls)
+  // verifyKey = pid + ":" + starttime — anti-PID-reuse.
+  property var _handleToIdentity: ({})
+  property var _verifyCache: ({})
+  property var _verifyInFlight: ({})
 
   // -- handle/silo tracking -------------------------------------------
 
@@ -102,6 +119,91 @@ Singleton {
   function _onToplevelRemoved(handle) {
     delete root._handleToSilo[handle];
     delete root._handleToAppId[handle];
+    delete root._handleToIdentity[handle];
+  }
+
+  // Option-B identity sidecar from qdwin_shell_v1@v22. Caches the
+  // tuple keyed by toplevel handle so the selection-set gate can find
+  // it without racing the broker round-trip; the verify call itself
+  // fires lazily on first use and caches by (pid, starttime).
+  function _onPeerIdentity(handle, peerPid, peerStarttime, peerUid,
+                           peerExe, peerSelinuxLabel) {
+    const existing = root._handleToIdentity[handle] || {};
+    root._handleToIdentity[handle] = {
+      pid:        peerPid >>> 0,
+      starttime:  peerStarttime,  // quint64 — JS number; >2^53 wraps,
+                                  // but starttime jiffies fit comfortably
+      uid:        peerUid >>> 0,
+      exe:        peerExe || "",
+      label:      peerSelinuxLabel || "",
+      sandboxEngine: existing.sandboxEngine || "",
+      appId:         existing.appId         || "",
+      instanceId:    existing.instanceId    || "",
+    };
+  }
+
+  function _verifyKey(identity) {
+    return (identity.pid >>> 0) + ":" + identity.starttime;
+  }
+
+  // Issue (or reuse) a broker VerifyClientIdentity call. Async-fire-and-
+  // forget: the result lands in _verifyCache and gates future
+  // selection_set decisions for that (pid, starttime). The very first
+  // transfer from a given client racing the verify still falls through
+  // to the cross-silo path (default-deny), which is exactly the
+  // conservative posture the decision doc calls for.
+  function _ensureVerified(handle) {
+    const id = root._handleToIdentity[handle];
+    if (!id || !id.pid) return false;
+    const key = root._verifyKey(id);
+    if (root._verifyCache.hasOwnProperty(key)) return root._verifyCache[key];
+    if (root._verifyInFlight[key]) return false;
+    root._verifyInFlight[key] = true;
+    _verifyProc.command = [
+      "busctl", "--system", "--no-pager", "call",
+      "org.qdistro.AdminBroker1", "/org/qdistro/AdminBroker1",
+      "org.qdistro.AdminBroker1", "VerifyClientIdentity",
+      "utusssss",
+      String(id.pid >>> 0),
+      String(id.starttime),
+      String(id.uid >>> 0),
+      String(id.exe || ""),
+      String(id.label || ""),
+      String(id.sandboxEngine || ""),
+      String(id.appId || ""),
+      String(id.instanceId || ""),
+    ];
+    _verifyProc._pendingKey = key;
+    _verifyProc.running = true;
+    return false;
+  }
+
+  Process {
+    id: _verifyProc
+    running: false
+    property string _pendingKey: ""
+    stdout: StdioCollector { id: _verifyStdout }
+    stderr: StdioCollector { id: _verifyStderr }
+    onExited: (exitCode, exitStatus) => {
+      const key = _verifyProc._pendingKey;
+      _verifyProc._pendingKey = "";
+      delete root._verifyInFlight[key];
+      if (exitCode !== 0) {
+        // Broker absent or method missing — treat as unverified. The
+        // cross-silo path takes over (default-deny under policy).
+        root._verifyCache[key] = false;
+        return;
+      }
+      const out = String(_verifyStdout.text || "").trim();
+      // busctl prints booleans as "b true" / "b false".
+      const verified = out.endsWith("true");
+      root._verifyCache[key] = verified;
+      if (!verified) {
+        Logger.w("ClipboardGate",
+                 "VerifyClientIdentity denied for key=" + key
+                 + " out=" + out);
+      }
+    }
   }
 
   function _onSecurityContext(handle, sandboxEngine, appId, instanceId) {
@@ -129,6 +231,15 @@ Singleton {
     if (appId && appId.length > 0) {
       root._handleToAppId[handle] = appId;
     }
+    // Stash the secctx tuple on the identity entry so the broker
+    // VerifyClientIdentity call can include "claimed" values alongside
+    // the (pid, starttime, exe, label) the compositor observed.
+    const existing = root._handleToIdentity[handle] || {};
+    root._handleToIdentity[handle] = Object.assign({}, existing, {
+      sandboxEngine: sandboxEngine || "",
+      appId:         appId         || "",
+      instanceId:    instanceId    || "",
+    });
   }
 
   // Tier-4 strict MIME allow-list. The base type (everything before the
@@ -210,9 +321,22 @@ Singleton {
       return;
     }
 
-    if (srcSilo === dstSilo && srcSilo !== "unknown") {
+    // Option-B identity gate (todo/decisions/secctx-identity-contract.md):
+    // the same-silo string match short-circuits to allow only when the
+    // broker has independently re-verified the source AND destination
+    // process identity against /proc. Without verification (broker
+    // absent, race before first verify, mismatch), fall through to the
+    // cross-silo policy path — which is default-deny. _ensureVerified
+    // returns synchronously cached results and fires off an async
+    // broker round-trip on first sight.
+    const srcVerified = root._ensureVerified(sourceHandle);
+    const dstVerified = (focusedHandle !== 4294967295)
+      ? root._ensureVerified(focusedHandle)
+      : false;
+    const identityVerified = srcVerified && dstVerified;
+    if (srcSilo === dstSilo && srcSilo !== "unknown" && identityVerified) {
       verdict = "allow";
-      reason = "same-silo";
+      reason = "same-silo+verified";
     } else if (srcSilo === "unknown" || dstSilo === "unknown") {
       // Unknown silo on either end — fall through to policy. Default
       // deny ensures we don't leak before security_context lands.

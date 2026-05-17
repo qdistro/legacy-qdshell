@@ -28,9 +28,9 @@ import qs.Commons
 Singleton {
   id: root
 
-  readonly property string brokerBus: "com.qdistro.AdminBroker1"
-  readonly property string brokerPath: "/com/qdistro/AdminBroker1"
-  readonly property string brokerIface: "com.qdistro.AdminBroker1"
+  readonly property string brokerBus: "org.qdistro.AdminBroker1"
+  readonly property string brokerPath: "/org/qdistro/AdminBroker1"
+  readonly property string brokerIface: "org.qdistro.AdminBroker1"
 
   // After three consecutive failures, suppress further calls for the
   // session — broker is clearly absent or unreachable; further attempts

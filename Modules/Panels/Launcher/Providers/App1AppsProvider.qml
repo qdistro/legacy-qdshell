@@ -3,7 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Services.Qdistro
 
-// App1AppsProvider — surface running com.qdistro.App1 receivers in
+// App1AppsProvider — surface running org.qdistro.App1 receivers in
 // the launcher.
 //
 // Reads from Services.Qdistro.App1Apps. Entries are running user-uid
