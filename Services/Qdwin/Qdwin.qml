@@ -342,7 +342,60 @@ Singleton {
     function closeWindow(window) {
         const h = _handleOf(window);
         if (h < 0) return;
+        // P05a: if this is a tier-4 VM toplevel, route the close button
+        // through the per-VM Tier4VM.Control.Close() RPC FIRST so the
+        // ACPI→destroy lifecycle (with virsh timeout + orphan reap) runs
+        // before xdg_toplevel.close goes to virt-viewer. The RPC handler
+        // tears down virt-viewer and the libvirt domain; we still call
+        // xdg_toplevel.close afterward as a belt-and-braces so the
+        // window disappears even when the control process is missing
+        // (degraded image without dbus-python).
+        if (typeof window === "object" && window !== null
+                && typeof window.secctxAppId === "string"
+                && window.secctxAppId.startsWith("qdistro.tier4.")
+                && typeof window.ownerUid === "number") {
+            const vm = window.secctxAppId.slice("qdistro.tier4.".length);
+            if (vm.length > 0) {
+                _dispatchTier4Close(vm, window.ownerUid);
+            }
+        } else if (h >= 0) {
+            // Lookup the row from windows by handle so a bare-handle
+            // caller (Taskbar / Workspace pass numeric handles) also
+            // benefits from the tier-4 close hook.
+            for (let i = 0; i < root.windows.count; i++) {
+                const w = root.windows.get(i);
+                if (w.handle === h
+                        && typeof w.secctxAppId === "string"
+                        && w.secctxAppId.startsWith("qdistro.tier4.")) {
+                    const vm2 = w.secctxAppId.slice("qdistro.tier4.".length);
+                    if (vm2.length > 0) _dispatchTier4Close(vm2, w.ownerUid);
+                    break;
+                }
+            }
+        }
         qdwinBinding.closeWindow(h);
+    }
+
+    // Fire-and-forget Close() RPC on com.qdistro.Tier4VM.Control.uid<N>.
+    // The control process owns this name (see qdistro/tier4-vm/
+    // tier4_control.py); the same-uid bus + same-uid attestation in the
+    // handler defends against cross-uid abuse. We use busctl rather
+    // than DBusBinding because the result is a fire-and-forget side
+    // effect — the user-visible close is achieved by virt-viewer's
+    // exit, the RPC just guarantees the qemu domain doesn't survive.
+    function _dispatchTier4Close(vmName, ownerUid) {
+        if (!vmName || typeof ownerUid !== "number" || ownerUid < 0) return;
+        const busName = "com.qdistro.Tier4VM.Control.uid" + ownerUid;
+        Logger.i("Qdwin", "tier4 close vm=" + vmName
+                          + " uid=" + ownerUid + " bus=" + busName);
+        // The RPC takes no args, returns (bsui). Discard the reply —
+        // even denial / failure should fall through to xdg_toplevel.close
+        // so the user gets a window dismissal regardless.
+        Quickshell.execDetached([
+            "busctl", "--user", "--no-pager",
+            "call", busName, "/com/qdistro/Tier4VM",
+            "com.qdistro.Tier4VM.Control", "Close"
+        ]);
     }
 
     function requestMaximize(window, maximized) {
