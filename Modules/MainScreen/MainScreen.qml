@@ -573,4 +573,13 @@ PanelWindow {
     enabled: root.isPanelOpen && (PanelService.openedPanel.onPageDownPressed !== undefined)
     onActivated: PanelService.openedPanel.onPageDownPressed()
   }
+
+  // Ctrl+Alt+L to lock screen
+  Shortcut {
+    sequence: "Ctrl+Alt+L"
+    enabled: !PanelService.isKeybindRecording
+    onActivated: {
+      PanelService.lockScreen?.active = true;
+    }
+  }
 }
