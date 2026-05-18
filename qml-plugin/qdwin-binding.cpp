@@ -20,10 +20,18 @@
 #include <cstring>
 
 namespace {
-// Bump to 22 to pick up `toplevel_peer_identity` — the Option-B
-// identity sidecar emitted alongside `toplevel_security_context`. See
-// todo/decisions/secctx-identity-contract.md.
-constexpr uint32_t kBindVersion = 22;
+// Bump to 23 to pick up `selection_set_source_identity` — the v23 sidecar
+// emitted IMMEDIATELY BEFORE `selection_set` carrying the secctx tuple
+// (engine, app_id, instance_id) of the wl_client that issued the
+// set_selection. ClipboardGate.qml uses it to derive src_silo from the
+// wire instead of from keyboard-focus state, closing the R9 P04 hole
+// where a tagged wl_client without focused-toplevel ownership had its
+// src_silo collapse to the focused admin shell's silo.
+//
+// Earlier bumps in this file:
+//   22 — toplevel_peer_identity (Option-B identity sidecar, see
+//        todo/decisions/secctx-identity-contract.md)
+constexpr uint32_t kBindVersion = 23;
 
 inline QString qstr(const char *s) {
     return s ? QString::fromUtf8(s) : QString();
@@ -109,6 +117,22 @@ struct QdwinBindingDispatch {
         emit b->selectionSet(qstr(seat_name), source_handle,
                              qstr(mime_types_concat), is_primary);
     }
+    // v23 sidecar — qdwin_shell_v1.selection_set_source_identity fires
+    // IMMEDIATELY BEFORE the matching `selection_set` for tagged source
+    // clients. We forward the tuple as a distinct signal; ClipboardGate
+    // stashes it as "pending" and consumes it on the very next
+    // selectionSet. Order is preserved because wayland dispatch is
+    // single-threaded and Qt direct-connect signal delivery runs
+    // synchronously inside this dispatch frame.
+    static void selection_set_source_identity(void *d, qdwin_shell_v1 *,
+                                              const char *src_sandbox_engine,
+                                              const char *src_app_id,
+                                              const char *src_instance_id) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->selectionSetSourceIdentity(qstr(src_sandbox_engine),
+                                           qstr(src_app_id),
+                                           qstr(src_instance_id));
+    }
     static void activation_pending(void *, qdwin_shell_v1 *,
                                    uint32_t, uint32_t, uint32_t, const char *) {}
     // wp_security_context_v1 tag — load-bearing for both the cold-
@@ -188,6 +212,8 @@ static const qdwin_shell_v1_listener kShellListener = {
     .nested_proxy_pending      = QdwinBindingDispatch::nested_proxy_pending,
     .nested_proxy_pixel_source = QdwinBindingDispatch::nested_proxy_pixel_source,
     .selection_set             = QdwinBindingDispatch::selection_set,
+    .selection_set_source_identity =
+        QdwinBindingDispatch::selection_set_source_identity,
     .activation_pending        = QdwinBindingDispatch::activation_pending,
     .toplevel_security_context = QdwinBindingDispatch::toplevel_security_context,
     .toplevel_peer_identity    = QdwinBindingDispatch::toplevel_peer_identity,

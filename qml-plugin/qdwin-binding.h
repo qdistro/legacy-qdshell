@@ -82,6 +82,19 @@ signals:
     void selectionSet(const QString &seat, quint32 sourceHandle,
                       const QString &mimeTypesConcat, quint32 isPrimary);
 
+    // v23 sidecar — fires IMMEDIATELY BEFORE the matching selectionSet
+    // when the wl_client that issued set_selection carries a
+    // wp_security_context_v1 tag. ClipboardGate caches this as the
+    // "pending source identity" and consumes it on the very next
+    // selectionSet, deriving src_silo from the wire instead of from
+    // the keyboard-focused toplevel handle. Pre-v23 shells never emit
+    // it; untagged source clients on a v23 shell skip it too — in
+    // both cases ClipboardGate falls back to the v11 focus-handle
+    // path verbatim.
+    void selectionSetSourceIdentity(const QString &srcSandboxEngine,
+                                    const QString &srcAppId,
+                                    const QString &srcInstanceId);
+
     // wp_security_context_v1 tag emitted by qdwin once it resolves
     // the secctx for a toplevel. Fires after toplevelAdded; instanceId
     // is the load-bearing correlation token for cold-start placeholder
