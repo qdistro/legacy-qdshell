@@ -302,6 +302,37 @@ class Qdshell:
     log_path: Path
 
 
+def _resolve_qml_import_path() -> Optional[str]:
+    """Build a QML_IMPORT_PATH entry pointing at the local qml-plugin build.
+
+    qdshell's QML imports `Qdistro.Qdwin 1.0`, served by
+    `<repo>/qml-plugin/libqdistro-qdwin.so` + qmldir. Qt's QML loader
+    looks for `<import-path>/Qdistro/Qdwin/qmldir`, so we materialise
+    that layout under `<repo>/build/qml-staged/` and return its parent.
+    Returns None when the .so has not been built — the test will then
+    surface the usual ImportError instead of silently passing.
+    """
+    plugin_so = QDSHELL_ROOT / "build" / "qml-plugin" / "libqdistro-qdwin.so"
+    qmldir_src = QDSHELL_ROOT / "qml-plugin" / "qmldir"
+    if not plugin_so.exists() or not qmldir_src.exists():
+        return None
+    stage_root = QDSHELL_ROOT / "build" / "qml-staged"
+    target_dir = stage_root / "Qdistro" / "Qdwin"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    # Use symlinks so an incremental rebuild of the .so is picked up
+    # without re-running the runner; relink defensively each call.
+    for src, name in ((plugin_so, plugin_so.name), (qmldir_src, "qmldir")):
+        dst = target_dir / name
+        try:
+            if dst.is_symlink() or dst.exists():
+                dst.unlink()
+            dst.symlink_to(src)
+        except OSError:
+            # Filesystem doesn't support symlinks (rare); fall back to copy.
+            shutil.copy2(src, dst)
+    return str(stage_root)
+
+
 def start_qdshell(weston: Compositor, *, settle_seconds: float = 4.0) -> Qdshell:
     """Launch qs against the given nested compositor.
 
@@ -326,6 +357,12 @@ def start_qdshell(weston: Compositor, *, settle_seconds: float = 4.0) -> Qdshell
     env["XDG_CONFIG_HOME"] = config_home
     env["QT_QPA_PLATFORM"] = "wayland"
     env.setdefault("QS_LOG_LEVEL", "info")
+    staged = _resolve_qml_import_path()
+    if staged is not None:
+        existing = env.get("QML_IMPORT_PATH", "")
+        env["QML_IMPORT_PATH"] = staged + (
+            (":" + existing) if existing else ""
+        )
     cmd = ["qs", "--path", str(QDSHELL_ROOT), "--allow-duplicate"]
     log_f = open(log_path, "wb")
     proc = subprocess.Popen(
