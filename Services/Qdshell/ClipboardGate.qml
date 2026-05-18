@@ -222,6 +222,18 @@ Singleton {
     // (P05a security H3 / integration MEDIUM-2.)
     if (appId && appId.length > 0 && appId.startsWith("qdistro.tier4.")) {
       root._handleToSilo[handle] = appId.slice("qdistro.tier4.".length);
+    } else if (sandboxEngine === "qdistro-silo"
+               && appId && appId.length > 0) {
+      // engine="qdistro-silo" + app_id=<silo-name> is the canonical
+      // qdwin tag for silo identity (see qdwin/qdwin.c
+      // qdwin_send_toplevel_security_context emit-site comments and
+      // qdwin/test-client/qdwin-test-clipboard-emit.c §"qdwin maps
+      // sandbox_engine='qdistro-silo' + app_id=<name> to a silo").
+      // Take silo from app_id, not instance_id — qdwin-test-clipboard-
+      // emit stamps instance_id with a probe-pid tag that would
+      // otherwise collide with no real silo entry in policy. (Bug-3
+      // ClipboardGate browser-origin gap, P04 round-6.)
+      root._handleToSilo[handle] = appId;
     } else if (instanceId && instanceId.length > 0) {
       root._handleToSilo[handle] = instanceId;
     } else if (sandboxEngine && sandboxEngine.length > 0) {
