@@ -23,6 +23,7 @@
 #include <QObject>
 #include <QString>
 #include <QSocketNotifier>
+#include <QTimer>
 #include <cstdint>
 
 struct wl_display;
@@ -133,6 +134,7 @@ private slots:
 private:
     void connectAndBind();
     void teardown(const QString &reason);
+    void scheduleReconnect();
     void setLastError(const QString &s);
     void setBound(bool b);
     void setFocused(const QString &seat, quint32 handle);
@@ -153,4 +155,13 @@ private:
     quint32 shellVersion_ = 0;
     quint32 focusedHandle_ = UINT32_MAX;
     QString focusedSeat_;
+
+    // Auto-reconnect after a dispatch error / compositor restart.
+    // teardown() schedules connectAndBind() via singleShot with an
+    // exponential backoff (capped). destroying_ short-circuits the
+    // schedule from the destructor so we don't fire after the object
+    // is gone.
+    bool destroying_ = false;
+    int reconnectAttempts_ = 0;
+    QTimer reconnectTimer_;
 };

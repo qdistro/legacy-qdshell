@@ -225,10 +225,19 @@ static const wl_registry_listener kRegistryListener = {
 // -------------------- QdwinBinding --------------------
 
 QdwinBinding::QdwinBinding(QObject *parent) : QObject(parent) {
+    reconnectTimer_.setSingleShot(true);
+    connect(&reconnectTimer_, &QTimer::timeout, this, [this]() {
+        if (destroying_) return;
+        qWarning().noquote() << "qdwin-binding: reconnect attempt"
+                             << reconnectAttempts_;
+        connectAndBind();
+    });
     connectAndBind();
 }
 
 QdwinBinding::~QdwinBinding() {
+    destroying_ = true;
+    reconnectTimer_.stop();
     teardown(QStringLiteral("binding destroyed"));
 }
 
@@ -310,6 +319,23 @@ void QdwinBinding::teardown(const QString &reason) {
     if (!reason.isEmpty() && lastError_.isEmpty())
         setLastError(reason);
     emit disconnected();
+    // Schedule a reconnect on any non-destructor teardown — covers
+    // qdwin/weston restarts, transient broken-pipe on the wayland
+    // socket, and bind-time failures (display not yet up). The
+    // destructor sets destroying_ so we don't fire after delete.
+    if (!destroying_) scheduleReconnect();
+}
+
+void QdwinBinding::scheduleReconnect() {
+    if (destroying_) return;
+    // Exponential backoff with a cap so we don't busy-loop if the
+    // compositor never comes back. 200 ms → 400 ms → 800 ms → … →
+    // 5000 ms ceiling. Reset on a successful hello (setBound(true)).
+    int ms = 200;
+    for (int i = 0; i < reconnectAttempts_ && ms < 5000; ++i) ms *= 2;
+    if (ms > 5000) ms = 5000;
+    reconnectAttempts_++;
+    reconnectTimer_.start(ms);
 }
 
 void QdwinBinding::setLastError(const QString &s) {
@@ -322,6 +348,13 @@ void QdwinBinding::setLastError(const QString &s) {
 void QdwinBinding::setBound(bool b) {
     if (bound_ == b) return;
     bound_ = b;
+    if (b) {
+        // A successful hello resets the reconnect backoff so the next
+        // unexpected disconnect retries promptly rather than at the
+        // previous attempt's ceiling.
+        reconnectAttempts_ = 0;
+        lastError_.clear();
+    }
     emit boundChanged();
 }
 
