@@ -490,17 +490,27 @@ Constraints:
 
 
 def describe(image_path: Path) -> str:
-    """Send PNG to Claude vision; return the textual description.
+    """Send PNG to a vision LLM; return the textual description.
 
-    Returns empty string when ANTHROPIC_API_KEY is unset — callers should treat
-    that as "describe step skipped" rather than "panel is empty".
+    Prefers Claude (anthropic SDK) when ANTHROPIC_API_KEY is set. Otherwise
+    falls back to the local `pi` CLI with qwen3.6-plus (vision-capable),
+    unless QDSHELL_UI_NO_PI=1 is set. Returns "" when no backend is available
+    — callers should treat that as "describe step skipped".
     """
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return ""
-    try:
-        import anthropic
-    except ImportError:
-        return ""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            return _describe_with_anthropic(image_path)
+    if shutil.which("pi") and os.environ.get("QDSHELL_UI_NO_PI") != "1":
+        return _describe_with_pi(image_path)
+    return ""
+
+
+def _describe_with_anthropic(image_path: Path) -> str:
+    import anthropic
     client = anthropic.Anthropic()
     data = image_path.read_bytes()
     b64 = base64.standard_b64encode(data).decode("ascii")
@@ -518,6 +528,21 @@ def describe(image_path: Path) -> str:
         }],
     )
     return resp.content[0].text.strip()
+
+
+def _describe_with_pi(image_path: Path) -> str:
+    """Vision via local pi CLI + qwen3.6-plus. See memory: reference-pi-vision-fallback."""
+    try:
+        result = subprocess.run(
+            ["pi", "--print", "--provider", "qwen", "--model", "qwen3.6-plus",
+             f"@{image_path}", _DESCRIBE_PROMPT],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -562,27 +587,28 @@ class JudgeResult:
 
 
 def judge(reference: str, actual: str) -> JudgeResult:
-    """LLM-as-judge: does `actual` cover everything `reference` requires?"""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return JudgeResult("SKIP", "(no ANTHROPIC_API_KEY set)", [], [])
+    """LLM-as-judge: does `actual` cover everything `reference` requires?
+
+    Prefers Claude (anthropic SDK) when ANTHROPIC_API_KEY is set. Otherwise
+    falls back to the local `pi` CLI with qwen3.6-plus, unless QDSHELL_UI_NO_PI=1.
+    """
     if not actual.strip():
         return JudgeResult("SKIP", "(empty actual description)", [], [])
-    try:
-        import anthropic
-    except ImportError:
-        return JudgeResult("SKIP", "(anthropic SDK not installed)", [], [])
-    client = anthropic.Anthropic()
-    resp = client.messages.create(
-        model=VISION_MODEL,
-        max_tokens=JUDGE_MAX_TOKENS,
-        messages=[{
-            "role": "user",
-            "content": _JUDGE_PROMPT_TEMPLATE.format(
-                reference=reference.strip(), actual=actual.strip(),
-            ),
-        }],
+    prompt = _JUDGE_PROMPT_TEMPLATE.format(
+        reference=reference.strip(), actual=actual.strip(),
     )
-    raw = resp.content[0].text.strip()
+    raw = ""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            raw = _judge_with_anthropic(prompt)
+    if not raw and shutil.which("pi") and os.environ.get("QDSHELL_UI_NO_PI") != "1":
+        raw = _judge_with_pi(prompt)
+    if not raw:
+        return JudgeResult("SKIP", "(no judge backend available)", [], [])
     verdict = "FAIL"
     missing, extra = [], []
     for line in raw.splitlines():
@@ -598,6 +624,30 @@ def judge(reference: str, actual: str) -> JudgeResult:
             if v and v.lower() != "none":
                 extra.append(v)
     return JudgeResult(verdict, raw, missing, extra)
+
+
+def _judge_with_anthropic(prompt: str) -> str:
+    import anthropic
+    client = anthropic.Anthropic()
+    resp = client.messages.create(
+        model=VISION_MODEL,
+        max_tokens=JUDGE_MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text.strip()
+
+
+def _judge_with_pi(prompt: str) -> str:
+    try:
+        result = subprocess.run(
+            ["pi", "--print", "--provider", "qwen", "--model", "qwen3.6-plus", prompt],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 
 # ---------------------------------------------------------------------------
