@@ -77,6 +77,16 @@ Singleton {
       binding.toplevelPeerIdentity.connect(root._onPeerIdentity);
     }
     binding.selectionSet.connect(root._onSelectionSet);
+    // v23 sidecar — selection_set_source_identity. Fires IMMEDIATELY
+    // BEFORE the matching selectionSet (qdwin guarantees the pair-by-
+    // sequence ordering on the wire; the Qt direct-connect signal
+    // delivery in qdwin-binding.cpp preserves it). Older bindings
+    // simply never emit; src_silo then falls back to the v11
+    // focus-handle path verbatim.
+    if (binding.selectionSetSourceIdentity !== undefined) {
+      binding.selectionSetSourceIdentity.connect(
+        root._onSelectionSetSourceIdentity);
+    }
     root._wired = true;
     ClipboardPolicy.load();
     Logger.i("ClipboardGate", "wired to qdwin_shell_v1; policy default=deny");
@@ -101,6 +111,16 @@ Singleton {
   property var _handleToIdentity: ({})
   property var _verifyCache: ({})
   property var _verifyInFlight: ({})
+
+  // v23 sidecar — selection_set_source_identity. The compositor fires
+  // this IMMEDIATELY BEFORE the matching selectionSet for tagged
+  // source clients; we stash the tuple here and consume it on the
+  // very next _onSelectionSet, then clear. Pair-by-sequence: at most
+  // one outstanding entry. Stale untagged-source events on a v23
+  // shell skip the sidecar entirely, so _pendingSrcIdentity stays
+  // null and the v11 focus-handle path takes over.
+  //   { sandboxEngine, appId, instanceId }   (or null)
+  property var _pendingSrcIdentity: null
 
   // -- handle/silo tracking -------------------------------------------
 
@@ -206,6 +226,42 @@ Singleton {
     }
   }
 
+  // Derive a silo string from a (sandboxEngine, appId, instanceId) tuple.
+  // Mirrors the per-engine resolution rules in _onSecurityContext so a
+  // wire-sourced tuple (v23 sidecar) and a toplevel-handle-sourced
+  // tuple (v13 toplevel_security_context) yield the same silo string
+  // for the same client. Keep the two derivations in lockstep — any
+  // future engine added in _onSecurityContext MUST be mirrored here.
+  function _siloFromSecctx(sandboxEngine, appId, instanceId) {
+    if (appId && appId.length > 0 && appId.startsWith("qdistro.tier4.")) {
+      return appId.slice("qdistro.tier4.".length);
+    }
+    if (sandboxEngine === "qdistro-silo" && appId && appId.length > 0) {
+      return appId;
+    }
+    if (instanceId && instanceId.length > 0) {
+      return instanceId;
+    }
+    if (sandboxEngine && sandboxEngine.length > 0) {
+      return "engine:" + sandboxEngine;
+    }
+    return "";
+  }
+
+  // v23 sidecar handler. Stash the tuple as "pending"; the very next
+  // _onSelectionSet consumes it. Overwrites any previous pending entry
+  // — by the qdwin contract there is at most one outstanding sidecar
+  // per resource, so a back-to-back pair {sidecar, sidecar} would only
+  // arise from a bug, and "last write wins" matches what selection_set
+  // itself would do.
+  function _onSelectionSetSourceIdentity(sandboxEngine, appId, instanceId) {
+    root._pendingSrcIdentity = {
+      sandboxEngine: sandboxEngine || "",
+      appId:         appId         || "",
+      instanceId:    instanceId    || "",
+    };
+  }
+
   function _onSecurityContext(handle, sandboxEngine, appId, instanceId) {
     // The instance_id in qdistro carries the silo name — that's the
     // convention from clipboard.md §"compositor-mediated gating". When
@@ -279,7 +335,26 @@ Singleton {
   // -- the gate itself -------------------------------------------------
 
   function _onSelectionSet(seat, sourceHandle, mimeTypesConcat, isPrimary) {
-    const srcSilo = root._handleToSilo[sourceHandle] || "unknown";
+    // v23 wire-sourced identity wins over the focus-handle map. The
+    // compositor only emits the sidecar when the source wl_client
+    // carries a wp_security_context_v1 tag, so a non-null
+    // _pendingSrcIdentity means "we know the source silo from the
+    // wire — don't trust the focus-handle map" (which collapses to the
+    // focused admin shell's silo when the tagged client doesn't own a
+    // focused toplevel). Consume + clear.
+    const pending = root._pendingSrcIdentity;
+    root._pendingSrcIdentity = null;
+    let srcSilo;
+    if (pending !== null) {
+      const wireSilo = root._siloFromSecctx(pending.sandboxEngine,
+                                            pending.appId,
+                                            pending.instanceId);
+      srcSilo = wireSilo.length > 0
+        ? wireSilo
+        : (root._handleToSilo[sourceHandle] || "unknown");
+    } else {
+      srcSilo = root._handleToSilo[sourceHandle] || "unknown";
+    }
     // Destination silo = silo of the currently-focused toplevel on this
     // seat. The binding caches focusedHandle on the seat that last
     // changed; for Phase-1 (single seat) we just read that.
@@ -294,7 +369,9 @@ Singleton {
     // The strip runs BEFORE policy consult so a tier-4 guest advertising
     // text/html or image/png has those types dropped, not evaluated.
     // (P05a security MS-2 / integration MEDIUM-1.)
-    const srcAppId = root._handleToAppId[sourceHandle] || "";
+    const srcAppId = (pending !== null && pending.appId)
+      ? pending.appId
+      : (root._handleToAppId[sourceHandle] || "");
     if (srcAppId.startsWith("qdistro.tier4.")) {
       const before = mimeList.length;
       mimeList = root._stripTier4Mimes(mimeList);
