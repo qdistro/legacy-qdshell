@@ -76,16 +76,30 @@ Singleton {
         return -1;
     }
 
-    // M3 fix (2026-05-16): validate that `handle` belongs to a tier-3
-    // toplevel before delegating. Without this check, any admin-uid
-    // process with IPC reach can focus-steal arbitrary windows —
-    // the surface name "tier3focus" implies scoped operation, so the
-    // check makes the boundary honest.
+    // M3 fix (2026-05-16): validate that `handle` belongs to an
+    // admin-visible silo toplevel before delegating. Without this
+    // check, any admin-uid process with IPC reach can focus-steal
+    // arbitrary windows — the surface name "tier3focus" implies
+    // scoped operation, so the check makes the boundary honest.
+    //
+    // P04 R10-fix (2026-05-19): also accept tier-4 handles. The
+    // s106-browser-clipboard-gate driver needs to inject focus to a
+    // tier-4-tagged destination toplevel so ClipboardGate's
+    // focusedHandle → _handleToSilo lookup resolves to a real silo
+    // (instead of "unknown"). Tier-4 toplevels are equally admin-
+    // visible / admin-owned, so the security boundary is unchanged.
+    // The IPC name "tier3focus" is kept for backwards-compat with
+    // the s48 driver.
     function _isTier3Handle(handle) {
-        const wm = Tier3Apps.tier3Windows;
-        if (!wm) return false;
-        for (let i = 0; i < wm.count; i++) {
-            if (wm.get(i).handle === handle) return true;
+        const wm3 = Tier3Apps.tier3Windows;
+        if (wm3) {
+            for (let i = 0; i < wm3.count; i++)
+                if (wm3.get(i).handle === handle) return true;
+        }
+        const wm4 = Tier4Apps.tier4Windows;
+        if (wm4) {
+            for (let i = 0; i < wm4.count; i++)
+                if (wm4.get(i).handle === handle) return true;
         }
         return false;
     }
