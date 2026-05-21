@@ -2,13 +2,13 @@
 #
 # Lives in the qdshell repo because qdshell is the sole consumer and
 # the lifecycle of the plugin tracks qdshell's QML surface, not
-# qdwin's compositor internals. The protocol XML still lives in the
-# qdwin repo (it's the protocol owner); we pull it via a relative
-# sibling path. Repo layout (memory: project-layout):
-#
-#   qdistro-org/
-#     qdwin/qdwin/qdwin-shell-v1.xml    ← protocol authority
-#     qdshell/qml-plugin/               ← this directory
+# qdwin's compositor internals. The protocol XML lives in the qdwin
+# repo (it's the protocol owner); qdwin installs it as part of the
+# `qdistro-protocols` pkg-config package, and we discover it through
+# that — same shape as upstream `wayland-protocols`. The previous
+# `../../qdwin/qdwin/qdwin-shell-v1.xml` sibling-checkout path was
+# replaced 2026-05-21; the only requirement now is that qdwin's
+# `qdistro-protocols.pc` is on PKG_CONFIG_PATH at build time.
 #
 # Built as a side-by-side native QML plugin (no qs/quickshell fork).
 # qmldir + libqdistro-qdwin.so install under
@@ -32,11 +32,13 @@ wayland_scanner = find_program(
   native: true,
 )
 
-# qdwin_shell_v1 protocol XML — owned by the qdwin sibling repo. We
-# read it through a relative path rather than copying, so the two
-# repos can't drift out of sync. If the qdistro-org parent layout
-# changes, update both this path and the project-layout memory entry.
-proto_xml = files('../../qdwin/qdwin/qdwin-shell-v1.xml')
+# qdwin_shell_v1 protocol XML — sourced from qdwin's installed
+# qdistro-protocols pkg-config package. qdwin must be built and
+# installed (or `qdistro-protocols.pc` otherwise reachable via
+# PKG_CONFIG_PATH) before this builds.
+dep_qdistro_protocols = dependency('qdistro-protocols')
+qdistro_protocols_dir = dep_qdistro_protocols.get_variable(pkgconfig: 'pkgdatadir')
+proto_xml = files(qdistro_protocols_dir / 'qdwin-shell-v1.xml')
 
 qdwin_shell_client_header = custom_target(
   'qdwin-shell-v1-client-header',
