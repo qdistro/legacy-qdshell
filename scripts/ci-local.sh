@@ -38,9 +38,27 @@ done
 
 # --- locate Qt6 binaries --------------------------------------------
 
-QMLTEST="${QMLTEST:-/usr/lib64/qt6/bin/qmltestrunner}"
-QMLLINT="${QMLLINT:-/usr/lib64/qt6/bin/qmllint}"
-QMLFORMAT="${QMLFORMAT:-/usr/lib64/qt6/bin/qmlformat}"
+find_qt_tool() {
+    local tool=$1
+    local candidate
+    for candidate in \
+        "$(command -v "$tool" 2>/dev/null || true)" \
+        "/usr/lib64/qt6/bin/$tool" \
+        "/usr/lib/qt6/bin/$tool" \
+        "/usr/lib64/qt6/libexec/$tool" \
+        "/usr/lib/qt6/libexec/$tool"
+    do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    printf '%s\n' "$tool"
+}
+
+QMLTEST="${QMLTEST:-$(find_qt_tool qmltestrunner)}"
+QMLLINT="${QMLLINT:-$(find_qt_tool qmllint)}"
+QMLFORMAT="${QMLFORMAT:-$(find_qt_tool qmlformat)}"
 
 for tool in "$QMLTEST" "$QMLLINT" "$QMLFORMAT"; do
     if [ ! -x "$tool" ]; then
@@ -75,7 +93,7 @@ for f in Tests/tst_*.qml; do
     if [ ! -f "$f" ]; then continue; fi
     QMLTEST_FILES=$((QMLTEST_FILES + 1))
     out="$("$QMLTEST" -input "$f" 2>&1 || true)"
-    line="$(printf '%s\n' "$out" | grep -E '^Totals:' | tail -1)"
+    line="$(printf '%s\n' "$out" | grep -E '^Totals:' | tail -1 || true)"
     if [ -z "$line" ]; then
         err "  $f: NO TOTALS LINE — runner failed"
         QMLTEST_FAIL=$((QMLTEST_FAIL + 1))

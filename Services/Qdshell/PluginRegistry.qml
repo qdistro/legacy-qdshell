@@ -1,5 +1,4 @@
 pragma Singleton
-
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -47,16 +46,16 @@ Singleton {
         // If no colon or colon is after position 6 (hash length), it's a plain ID
         if (colonIndex === -1 || colonIndex > 6) {
             return {
-                sourceHash: null,
-                pluginId: compositeKey,
-                isOfficial: true
+                "sourceHash": null,
+                "pluginId": compositeKey,
+                "isOfficial": true
             };
         }
         // Has hash prefix (custom source plugin)
         return {
-            sourceHash: compositeKey.substring(0, colonIndex),
-            pluginId: compositeKey.substring(colonIndex + 1),
-            isOfficial: false
+            "sourceHash": compositeKey.substring(0, colonIndex),
+            "pluginId": compositeKey.substring(colonIndex + 1),
+            "isOfficial": false
         };
     }
 
@@ -117,13 +116,11 @@ Singleton {
 
             // Ensure default repo is in sources
             if (root.pluginSources.length === 0) {
-                root.pluginSources = [
-                    {
+                root.pluginSources = [{
                         "name": "Qdshell Plugins",
                         "url": "https://github.com/qdshell-dev/qdshell-plugins",
                         "enabled": true
-                    }
-                ];
+                    }];
                 root.save();
             }
 
@@ -138,13 +135,11 @@ Singleton {
             Logger.w("PluginRegistry", "Failed to load plugins.json, will create it:", error);
             // Initialize defaults and continue
             root.pluginStates = {};
-            root.pluginSources = [
-                {
+            root.pluginSources = [{
                     "name": "Qdshell Plugins",
                     "url": "https://github.com/qdshell-dev/qdshell-plugins",
                     "enabled": true
-                }
-            ];
+                }];
             // Scan for installed plugins
             root.scanPluginFolder();
         }
@@ -164,14 +159,13 @@ Singleton {
         for (var pluginId in root.pluginStates) {
             if (root.pluginStates[pluginId].sourceUrl === undefined) {
                 Logger.i("PluginRegistry", "Migrating plugin data to v2 (adding sourceUrl)");
-
                 var newStates = {};
                 for (var id in root.pluginStates) {
                     // For v1 -> v2 migration, we assume plugins are from main source
                     // Custom plugins installed before this feature need to be reinstalled
                     newStates[id] = {
-                        enabled: root.pluginStates[id].enabled,
-                        sourceUrl: root.mainSourceUrl
+                        "enabled": root.pluginStates[id].enabled,
+                        "sourceUrl": root.mainSourceUrl
                     };
                 }
                 root.pluginStates = newStates;
@@ -187,10 +181,10 @@ Singleton {
             var source = root.pluginSources[i];
             if (source.name === "Official Qdshell Plugins") {
                 newSources.push({
-                    name: "Qdshell Plugins",
-                    url: source.url,
-                    enabled: source.enabled
-                });
+                        "name": "Qdshell Plugins",
+                        "url": source.url,
+                        "enabled": source.enabled
+                    });
                 sourcesChanged = true;
                 Logger.i("PluginRegistry", "Migrating source name: 'Official Qdshell Plugins' -> 'Qdshell Plugins'");
             } else {
@@ -201,7 +195,6 @@ Singleton {
             root.pluginSources = newSources;
             needsSave = true;
         }
-
         if (needsSave) {
             root.save();
             Logger.i("PluginRegistry", "Migration complete");
@@ -217,16 +210,14 @@ Singleton {
         command: ["mkdir", "-p", "${root.pluginsDir}"]
       }
     `, root, "MkdirPlugins");
-
         mkdirProcess.exited.connect(function (exitCode) {
-            if (exitCode === 0) {
-                Logger.d("PluginRegistry", "Plugins directory ensured:", root.pluginsDir);
-            } else {
-                Logger.e("PluginRegistry", "Failed to create plugins directory");
-            }
-            mkdirProcess.destroy();
-        });
-
+                if (exitCode === 0) {
+                    Logger.d("PluginRegistry", "Plugins directory ensured:", root.pluginsDir);
+                } else {
+                    Logger.e("PluginRegistry", "Failed to create plugins directory");
+                }
+                mkdirProcess.destroy();
+            });
         mkdirProcess.running = true;
     }
 
@@ -239,21 +230,18 @@ Singleton {
         command: ["sh", "-c", "test -f '${root.pluginsFile}' || echo '{\\"version\\":${root.currentVersion},\\"states\\":{},\\"sources\\":[]}' > '${root.pluginsFile}'"]
       }
     `, root, "EnsurePluginsFile");
-
         checkProcess.exited.connect(function (exitCode) {
-            if (exitCode === 0) {
-                Logger.d("PluginRegistry", "Plugins file ensured:", root.pluginsFile);
-            }
-            checkProcess.destroy();
-        });
-
+                if (exitCode === 0) {
+                    Logger.d("PluginRegistry", "Plugins file ensured:", root.pluginsFile);
+                }
+                checkProcess.destroy();
+            });
         checkProcess.running = true;
     }
 
     // Scan plugin folder to discover installed plugins (single process reads all manifests)
     function scanPluginFolder() {
         Logger.i("PluginRegistry", "Scanning plugin folder:", root.pluginsDir);
-
         var scanProcess = Qt.createQmlObject(`
       import QtQuick
       import Quickshell.Io
@@ -263,57 +251,48 @@ Singleton {
         running: true
       }
     `, root, "ScanAllPlugins");
-
         scanProcess.exited.connect(function (exitCode) {
-            var output = String(scanProcess.stdout.text || "");
-            var sections = output.split("@@PLUGIN@@");
-            var loadedCount = 0;
-
-            for (var i = 1; i < sections.length; i++) {
-                var section = sections[i];
-                var newlineIdx = section.indexOf('\n');
-                if (newlineIdx === -1)
-                    continue;
-
-                var pluginId = section.substring(0, newlineIdx).trim();
-                var manifestJson = section.substring(newlineIdx + 1).trim();
-
-                if (!pluginId || !manifestJson)
-                    continue;
-
-                try {
-                    var manifest = JSON.parse(manifestJson);
-                    var validation = validateManifest(manifest);
-
-                    if (validation.valid) {
-                        manifest.compositeKey = pluginId;
-                        root.installedPlugins[pluginId] = manifest;
-                        Logger.i("PluginRegistry", "Loaded plugin:", pluginId, "-", manifest.name);
-
-                        if (!root.pluginStates[pluginId]) {
-                            root.pluginStates[pluginId] = {
-                                enabled: false
-                            };
+                var output = String(scanProcess.stdout.text || "");
+                var sections = output.split("@@PLUGIN@@");
+                var loadedCount = 0;
+                for (var i = 1; i < sections.length; i++) {
+                    var section = sections[i];
+                    var newlineIdx = section.indexOf('\n');
+                    if (newlineIdx === -1)
+                        continue;
+                    var pluginId = section.substring(0, newlineIdx).trim();
+                    var manifestJson = section.substring(newlineIdx + 1).trim();
+                    if (!pluginId || !manifestJson)
+                        continue;
+                    try {
+                        var manifest = JSON.parse(manifestJson);
+                        var validation = validateManifest(manifest);
+                        if (validation.valid) {
+                            manifest.compositeKey = pluginId;
+                            root.installedPlugins[pluginId] = manifest;
+                            Logger.i("PluginRegistry", "Loaded plugin:", pluginId, "-", manifest.name);
+                            if (!root.pluginStates[pluginId]) {
+                                root.pluginStates[pluginId] = {
+                                    "enabled": false
+                                };
+                            }
+                            loadedCount++;
+                        } else {
+                            Logger.e("PluginRegistry", "Invalid manifest for", pluginId + ":", validation.error);
                         }
-                        loadedCount++;
-                    } else {
-                        Logger.e("PluginRegistry", "Invalid manifest for", pluginId + ":", validation.error);
+                    } catch (e) {
+                        Logger.e("PluginRegistry", "Failed to parse manifest for", pluginId + ":", e.toString());
                     }
-                } catch (e) {
-                    Logger.e("PluginRegistry", "Failed to parse manifest for", pluginId + ":", e.toString());
                 }
-            }
-
-            Logger.i("PluginRegistry", "All plugin manifests loaded. Total plugins:", loadedCount);
-            root.pluginsChanged();
-            scanProcess.destroy();
-        });
+                Logger.i("PluginRegistry", "All plugin manifests loaded. Total plugins:", loadedCount);
+                root.pluginsChanged();
+                scanProcess.destroy();
+            });
     }
 
     // Load a single plugin's manifest from disk
     function loadPluginManifest(pluginId) {
         var manifestPath = root.pluginsDir + "/" + pluginId + "/manifest.json";
-
         var catProcess = Qt.createQmlObject(`
       import QtQuick
       import Quickshell.Io
@@ -323,47 +302,44 @@ Singleton {
         running: true
       }
     `, root, "LoadManifest_" + pluginId);
-
         catProcess.exited.connect(function (exitCode) {
-            var output = String(catProcess.stdout.text || "");
-            if (exitCode === 0 && output) {
-                try {
-                    var manifest = JSON.parse(output);
-                    var validation = validateManifest(manifest);
+                var output = String(catProcess.stdout.text || "");
+                if (exitCode === 0 && output) {
+                    try {
+                        var manifest = JSON.parse(output);
+                        var validation = validateManifest(manifest);
+                        if (validation.valid) {
+                            manifest.compositeKey = pluginId;
+                            root.installedPlugins[pluginId] = manifest;
+                            Logger.i("PluginRegistry", "Loaded plugin:", pluginId, "-", manifest.name);
 
-                    if (validation.valid) {
-                        manifest.compositeKey = pluginId;
-                        root.installedPlugins[pluginId] = manifest;
-                        Logger.i("PluginRegistry", "Loaded plugin:", pluginId, "-", manifest.name);
-
-                        // Ensure state exists (default to disabled)
-                        if (!root.pluginStates[pluginId]) {
-                            root.pluginStates[pluginId] = {
-                                enabled: false
-                            };
+                            // Ensure state exists (default to disabled)
+                            if (!root.pluginStates[pluginId]) {
+                                root.pluginStates[pluginId] = {
+                                    "enabled": false
+                                };
+                            }
+                        } else {
+                            Logger.e("PluginRegistry", "Invalid manifest for", pluginId + ":", validation.error);
                         }
-                    } else {
-                        Logger.e("PluginRegistry", "Invalid manifest for", pluginId + ":", validation.error);
+                    } catch (e) {
+                        Logger.e("PluginRegistry", "Failed to parse manifest for", pluginId + ":", e.toString());
                     }
-                } catch (e) {
-                    Logger.e("PluginRegistry", "Failed to parse manifest for", pluginId + ":", e.toString());
+                } else {
+                    Logger.d("PluginRegistry", "No manifest found for:", pluginId);
                 }
-            } else {
-                Logger.d("PluginRegistry", "No manifest found for:", pluginId);
-            }
 
-            // Decrement pending count and emit signal when all are done
-            root.pendingManifests--;
-            Logger.d("PluginRegistry", "Pending manifests remaining:", root.pendingManifests);
-            if (root.pendingManifests === 0) {
-                var installedIds = Object.keys(root.installedPlugins);
-                Logger.i("PluginRegistry", "All plugin manifests loaded. Total plugins:", installedIds.length);
-                Logger.d("PluginRegistry", "Installed plugin IDs:", JSON.stringify(installedIds));
-                root.pluginsChanged();
-            }
-
-            catProcess.destroy();
-        });
+                // Decrement pending count and emit signal when all are done
+                root.pendingManifests--;
+                Logger.d("PluginRegistry", "Pending manifests remaining:", root.pendingManifests);
+                if (root.pendingManifests === 0) {
+                    var installedIds = Object.keys(root.installedPlugins);
+                    Logger.i("PluginRegistry", "All plugin manifests loaded. Total plugins:", installedIds.length);
+                    Logger.d("PluginRegistry", "Installed plugin IDs:", JSON.stringify(installedIds));
+                    root.pluginsChanged();
+                }
+                catProcess.destroy();
+            });
     }
 
     // Save registry to disk (only states and sources)
@@ -371,11 +347,10 @@ Singleton {
         adapter.version = root.currentVersion;
         adapter.states = root.pluginStates;
         adapter.sources = root.pluginSources;
-
         Qt.callLater(() => {
-            pluginsFileView.writeAdapter();
-            Logger.d("PluginRegistry", "Plugin states saved");
-        });
+                pluginsFileView.writeAdapter();
+                Logger.d("PluginRegistry", "Plugin states saved");
+            });
     }
 
     // Enable/disable a plugin
@@ -384,15 +359,13 @@ Singleton {
             Logger.w("PluginRegistry", "Cannot set state for non-existent plugin:", pluginId);
             return;
         }
-
         if (!root.pluginStates[pluginId]) {
             root.pluginStates[pluginId] = {
-                enabled: enabled
+                "enabled": enabled
             };
         } else {
             root.pluginStates[pluginId].enabled = enabled;
         }
-
         save();
         root.pluginsChanged();
         Logger.i("PluginRegistry", "Plugin", pluginId, enabled ? "enabled" : "disabled");
@@ -421,8 +394,8 @@ Singleton {
     // Get enabled plugin IDs only
     function getEnabledPluginIds() {
         return Object.keys(root.pluginStates).filter(function (id) {
-            return root.pluginStates[id].enabled === true;
-        });
+                return root.pluginStates[id].enabled === true;
+            });
     }
 
     // Register a plugin (add to installed plugins after download)
@@ -435,14 +408,13 @@ Singleton {
         // Ensure state exists (default to disabled, store sourceUrl)
         if (!root.pluginStates[compositeKey]) {
             root.pluginStates[compositeKey] = {
-                enabled: false,
-                sourceUrl: sourceUrl || root.mainSourceUrl
+                "enabled": false,
+                "sourceUrl": sourceUrl || root.mainSourceUrl
             };
         } else {
             // Preserve enabled state but update sourceUrl
             root.pluginStates[compositeKey].sourceUrl = sourceUrl || root.mainSourceUrl;
         }
-
         save();
         root.pluginsChanged();
         Logger.i("PluginRegistry", "Registered plugin:", compositeKey);
@@ -488,10 +460,10 @@ Singleton {
         // Create a new array to trigger property change notification
         var newSources = root.pluginSources.slice();
         newSources.push({
-            name: name,
-            url: url,
-            enabled: true
-        });
+                "name": name,
+                "url": url,
+                "enabled": true
+            });
         root.pluginSources = newSources;
         save();
         Logger.i("PluginRegistry", "Added plugin source:", name);
@@ -506,12 +478,10 @@ Singleton {
                 newSources.push(root.pluginSources[i]);
             }
         }
-
         if (newSources.length === root.pluginSources.length) {
             Logger.w("PluginRegistry", "Source not found:", url);
             return false;
         }
-
         root.pluginSources = newSources;
         save();
         Logger.i("PluginRegistry", "Removed plugin source:", url);
@@ -525,21 +495,19 @@ Singleton {
         for (var i = 0; i < root.pluginSources.length; i++) {
             if (root.pluginSources[i].url === url) {
                 newSources.push({
-                    name: root.pluginSources[i].name,
-                    url: root.pluginSources[i].url,
-                    enabled: enabled
-                });
+                        "name": root.pluginSources[i].name,
+                        "url": root.pluginSources[i].url,
+                        "enabled": enabled
+                    });
                 found = true;
             } else {
                 newSources.push(root.pluginSources[i]);
             }
         }
-
         if (!found) {
             Logger.w("PluginRegistry", "Source not found:", url);
             return false;
         }
-
         root.pluginSources = newSources;
         save();
         Logger.i("PluginRegistry", "Source", url, enabled ? "enabled" : "disabled");
@@ -581,25 +549,23 @@ Singleton {
     function validateManifest(manifest) {
         if (!manifest) {
             return {
-                valid: false,
-                error: "Manifest is null or undefined"
+                "valid": false,
+                "error": "Manifest is null or undefined"
             };
         }
-
         var required = ["id", "name", "version", "author", "description"];
         for (var i = 0; i < required.length; i++) {
             if (!manifest[required[i]]) {
                 return {
-                    valid: false,
-                    error: "Missing required field: " + required[i]
+                    "valid": false,
+                    "error": "Missing required field: " + required[i]
                 };
             }
         }
-
         if (!manifest.entryPoints) {
             return {
-                valid: false,
-                error: "Missing 'entryPoints' field"
+                "valid": false,
+                "error": "Missing 'entryPoints' field"
             };
         }
 
@@ -607,14 +573,13 @@ Singleton {
         var versionRegex = /^\d+\.\d+\.\d+$/;
         if (!versionRegex.test(manifest.version)) {
             return {
-                valid: false,
-                error: "Invalid version format (must be x.y.z)"
+                "valid": false,
+                "error": "Invalid version format (must be x.y.z)"
             };
         }
-
         return {
-            valid: true,
-            error: null
+            "valid": true,
+            "error": null
         };
     }
 }

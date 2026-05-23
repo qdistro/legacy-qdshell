@@ -33,7 +33,7 @@ NIconButton {
   readonly property string iconColorKey: widgetSettings.iconColor !== undefined ? widgetSettings.iconColor : widgetMetadata.iconColor
 
   icon: iconName
-  tooltipText: I18n.tr("actions.open-launcher")
+  tooltipText: ""
   tooltipDirection: BarService.getTooltipDirection(screenName)
   baseSize: Style.getCapsuleHeightForScreen(screenName)
   applyUiScale: false

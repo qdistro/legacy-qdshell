@@ -121,6 +121,13 @@ Singleton {
             if (lastError.length > 0)
                 Logger.w("Qdwin", "binding error: " + lastError);
         }
+        onLauncherRequested: {
+            const screen = PanelService.findScreenForPanels();
+            if (screen)
+                PanelService.toggleLauncher(screen);
+            else
+                Logger.w("Qdwin", "launcher_requested with no available screen");
+        }
 
         onToplevelAdded: (handle, ownerUid, appId, title, isXwayland) => {
             root.windows.append({
