@@ -41,12 +41,14 @@ done
 find_qt_tool() {
     local tool=$1
     local candidate
+    # Prefer explicit Qt6 paths over command -v, which may find a
+    # qtchooser wrapper that dispatches to a missing Qt5 install.
     for candidate in \
-        "$(command -v "$tool" 2>/dev/null || true)" \
         "/usr/lib64/qt6/bin/$tool" \
         "/usr/lib/qt6/bin/$tool" \
         "/usr/lib64/qt6/libexec/$tool" \
-        "/usr/lib/qt6/libexec/$tool"
+        "/usr/lib/qt6/libexec/$tool" \
+        "$(command -v "$tool" 2>/dev/null || true)"
     do
         if [ -n "$candidate" ] && [ -x "$candidate" ]; then
             printf '%s\n' "$candidate"
