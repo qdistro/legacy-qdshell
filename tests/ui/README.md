@@ -17,10 +17,10 @@ one human-authored markdown file under `expectations/` listing what
 
 1. The harness opens the surface via `qs ipc call …`.
 2. `weston-screenshooter` saves a PNG of the framebuffer.
-3. The PNG is sent to Claude (vision) with a "describe what you see"
-   prompt → free-form bullet list of observed elements.
+3. The PNG is sent to the local Codex CLI with a "describe what you see"
+   prompt -> free-form bullet list of observed elements.
 4. The observed description is judged against the expectation file by
-   a second Claude call: every reference bullet must be present in the
+   a second Codex call: every reference bullet must be present in the
    observed description for the test to pass.
 
 Step 4 is LLM-as-judge rather than substring matching because UI text
@@ -38,7 +38,7 @@ System packages:
   above in order and uses the first one it finds.
 * `grim` — screenshot tool for wlroots (`zypper in grim` / `apt install grim`).
 * `qs` / `quickshell`
-* `python3` (>=3.10), `pytest`, `anthropic` (Python SDK)
+* `python3` (>=3.10), `pytest`, and the local `codex` CLI
 
 On the current dev machine (openSUSE Tumbleweed) install with:
 
@@ -46,23 +46,24 @@ On the current dev machine (openSUSE Tumbleweed) install with:
 sudo zypper install sway grim
 ```
 
-API key:
+Vision backend:
 
-* `ANTHROPIC_API_KEY` — required for the describe + judge steps.
-  Without it the harness still boots qdshell and captures PNGs into
-  `tests/ui/artifacts/` (so a human can compare manually), but every
-  test reports SKIP.
+* `codex` — required for the describe + judge steps. Without it the harness
+  still boots qdshell and captures PNGs into `tests/ui/artifacts/` so a
+  human can compare manually, but every test reports SKIP. Set
+  `QDSHELL_UI_NO_CODEX=1` to force the secondary local `pi` fallback when it
+  is installed.
 
 ## Running
 
 ```bash
-# Make sure pytest + anthropic are installed.
-pip install --user pytest anthropic
+# Make sure pytest is installed and codex is on PATH.
+pip install --user pytest
 
 # Run the suite (set the env flag — the suite is opt-in so it does
 # not fire in the default qmltest CI workflow that uses
 # QT_QPA_PLATFORM=offscreen).
-ANTHROPIC_API_KEY=sk-…  QDSHELL_UI_TESTS=1  pytest tests/ui -v
+QDSHELL_UI_TESTS=1 pytest tests/ui -v
 ```
 
 Run a single surface:

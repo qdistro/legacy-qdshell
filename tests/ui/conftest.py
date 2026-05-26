@@ -5,6 +5,7 @@ default qmltest workflow (which uses QT_QPA_PLATFORM=offscreen).
 """
 
 import os
+import shutil
 
 import pytest
 
@@ -30,6 +31,8 @@ def weston():
 
 @pytest.fixture(scope="session")
 def qdshell(weston):
+    if shutil.which("qs") is None:
+        pytest.skip("qs executable is not installed")
     q = runner.start_qdshell(weston)
     yield q
     runner.stop_qdshell(q)

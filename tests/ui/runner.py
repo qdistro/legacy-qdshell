@@ -10,14 +10,14 @@ Design notes:
   * `weston-screenshooter` is shipped with weston and uses weston's
     debug screenshot protocol — it only works when weston is started
     with `--debug`. We always pass `--debug`.
-  * The vision step is gated on ANTHROPIC_API_KEY. With no key, the
-    harness still boots, screenshots, and writes them under artifacts/
-    so a human reviewer can compare manually.
+  * Vision uses the local Codex CLI when available, matching the qdistro
+    GUI scenario agent setup. With no LLM backend, the harness still boots,
+    screenshots, and writes them under artifacts/ so a human reviewer can
+    compare manually.
 """
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import dataclasses
 import os
@@ -35,11 +35,6 @@ QDSHELL_ROOT = Path(__file__).resolve().parents[2]
 UI_TESTS_ROOT = Path(__file__).resolve().parent
 EXPECTATIONS_DIR = UI_TESTS_ROOT / "expectations"
 ARTIFACTS_DIR = UI_TESTS_ROOT / "artifacts"
-
-VISION_MODEL = "claude-opus-4-7"      # vision + judge
-DESCRIBE_MAX_TOKENS = 600
-JUDGE_MAX_TOKENS = 400
-
 
 # ---------------------------------------------------------------------------
 # Nested headless compositor
@@ -492,42 +487,46 @@ Constraints:
 def describe(image_path: Path) -> str:
     """Send PNG to a vision LLM; return the textual description.
 
-    Prefers Claude (anthropic SDK) when ANTHROPIC_API_KEY is set. Otherwise
-    falls back to the local `pi` CLI with qwen3.6-plus (vision-capable),
-    unless QDSHELL_UI_NO_PI=1 is set. Returns "" when no backend is available
-    — callers should treat that as "describe step skipped".
+    Uses the local Codex CLI, unless QDSHELL_UI_NO_CODEX=1 is set. Falls
+    back to `pi` when available. Returns "" when no backend is available;
+    callers should treat that as "describe step skipped".
     """
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            pass
-        else:
-            return _describe_with_anthropic(image_path)
+    if shutil.which("codex") and os.environ.get("QDSHELL_UI_NO_CODEX") != "1":
+        return _describe_with_codex(image_path)
     if shutil.which("pi") and os.environ.get("QDSHELL_UI_NO_PI") != "1":
         return _describe_with_pi(image_path)
     return ""
 
 
-def _describe_with_anthropic(image_path: Path) -> str:
-    import anthropic
-    client = anthropic.Anthropic()
-    data = image_path.read_bytes()
-    b64 = base64.standard_b64encode(data).decode("ascii")
-    resp = client.messages.create(
-        model=VISION_MODEL,
-        max_tokens=DESCRIBE_MAX_TOKENS,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {
-                    "type": "base64", "media_type": "image/png", "data": b64,
-                }},
-                {"type": "text", "text": _DESCRIBE_PROMPT},
-            ],
-        }],
-    )
-    return resp.content[0].text.strip()
+def _run_codex(prompt: str, image_path: Optional[Path] = None) -> str:
+    with tempfile.TemporaryDirectory(prefix="qdshell-codex-") as tmp:
+        output_path = Path(tmp) / "last-message.txt"
+        cmd = [
+            "codex", "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--sandbox", "danger-full-access",
+            "--cd", str(QDSHELL_ROOT),
+            "--ephemeral",
+            "--output-last-message", str(output_path),
+        ]
+        if image_path is not None:
+            cmd.extend(["--image", str(image_path)])
+        cmd.append(prompt)
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return ""
+        if output_path.exists():
+            return output_path.read_text(errors="replace").strip()
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+
+def _describe_with_codex(image_path: Path) -> str:
+    return _run_codex(_DESCRIBE_PROMPT, image_path=image_path)
 
 
 def _describe_with_pi(image_path: Path) -> str:
@@ -589,8 +588,8 @@ class JudgeResult:
 def judge(reference: str, actual: str) -> JudgeResult:
     """LLM-as-judge: does `actual` cover everything `reference` requires?
 
-    Prefers Claude (anthropic SDK) when ANTHROPIC_API_KEY is set. Otherwise
-    falls back to the local `pi` CLI with qwen3.6-plus, unless QDSHELL_UI_NO_PI=1.
+    Uses the local Codex CLI, unless QDSHELL_UI_NO_CODEX=1. Falls back to
+    `pi` when available.
     """
     if not actual.strip():
         return JudgeResult("SKIP", "(empty actual description)", [], [])
@@ -598,13 +597,8 @@ def judge(reference: str, actual: str) -> JudgeResult:
         reference=reference.strip(), actual=actual.strip(),
     )
     raw = ""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            pass
-        else:
-            raw = _judge_with_anthropic(prompt)
+    if shutil.which("codex") and os.environ.get("QDSHELL_UI_NO_CODEX") != "1":
+        raw = _run_codex(prompt)
     if not raw and shutil.which("pi") and os.environ.get("QDSHELL_UI_NO_PI") != "1":
         raw = _judge_with_pi(prompt)
     if not raw:
@@ -624,17 +618,6 @@ def judge(reference: str, actual: str) -> JudgeResult:
             if v and v.lower() != "none":
                 extra.append(v)
     return JudgeResult(verdict, raw, missing, extra)
-
-
-def _judge_with_anthropic(prompt: str) -> str:
-    import anthropic
-    client = anthropic.Anthropic()
-    resp = client.messages.create(
-        model=VISION_MODEL,
-        max_tokens=JUDGE_MAX_TOKENS,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return resp.content[0].text.strip()
 
 
 def _judge_with_pi(prompt: str) -> str:
