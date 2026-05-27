@@ -42,6 +42,9 @@
       "center": [
         {
           "id": "Workspace"
+        },
+        {
+          "id": "Taskbar"
         }
       ],
       "right": [

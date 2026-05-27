@@ -226,6 +226,9 @@ Singleton {
         property list<var> center: [
           {
             "id": "Workspace"
+          },
+          {
+            "id": "Taskbar"
           }
         ]
         property list<var> right: [
