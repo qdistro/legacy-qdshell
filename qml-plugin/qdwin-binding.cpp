@@ -174,11 +174,16 @@ struct QdwinBindingDispatch {
         emit b->seatFocusChanged(qstr(seat_name), focused_handle);
     }
 
-    // v15+ slots — never fired at our current bind version (14) but
-    // wired as no-ops so a future BIND_VERSION bump doesn't crash on a
-    // NULL listener slot.
-    static void overlay_key(void *, qdwin_shell_v1 *,
-                            uint32_t, uint32_t, const char *, uint32_t) {}
+    // v15+ slots — wired at our bind version (23); overlay_key
+    // forwards to QML, the rest are no-ops awaiting consumers.
+    static void overlay_key(void *d, qdwin_shell_v1 *,
+                            uint32_t role, uint32_t sym,
+                            const char *utf8, uint32_t state) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        b->overlayKeyCount_++;
+        emit b->overlayKeyCountChanged();
+        emit b->overlayKey(role, sym, qstr(utf8), state);
+    }
     static void data_offer_receive_pending(void *, qdwin_shell_v1 *,
                                            uint32_t, const char *,
                                            uint32_t, uint32_t, const char *) {}

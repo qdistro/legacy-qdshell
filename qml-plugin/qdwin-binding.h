@@ -37,6 +37,7 @@ class QdwinBinding : public QObject {
     Q_PROPERTY(quint32 shellVersion READ shellVersion NOTIFY boundChanged)
     Q_PROPERTY(quint32 focusedHandle READ focusedHandle NOTIFY focusedHandleChanged)
     Q_PROPERTY(QString focusedSeat READ focusedSeat NOTIFY focusedHandleChanged)
+    Q_PROPERTY(quint64 overlayKeyCount READ overlayKeyCount NOTIFY overlayKeyCountChanged)
 
 public:
     explicit QdwinBinding(QObject *parent = nullptr);
@@ -47,6 +48,7 @@ public:
     quint32 shellVersion() const { return shellVersion_; }
     quint32 focusedHandle() const { return focusedHandle_; }
     QString focusedSeat() const { return focusedSeat_; }
+    quint64 overlayKeyCount() const { return overlayKeyCount_; }
 
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
     Q_INVOKABLE void closeWindow(quint32 handle);
@@ -64,6 +66,7 @@ signals:
     void boundChanged();
     void lastErrorChanged();
     void focusedHandleChanged();
+    void overlayKeyCountChanged();
 
     void hello(quint32 uid);
     void toplevelAdded(quint32 handle, quint32 ownerUid, const QString &appId,
@@ -135,6 +138,7 @@ signals:
     void switcherCommit();
     void lockRequested();
     void idleLockHint(quint32 reason);
+    void overlayKey(quint32 role, quint32 sym, const QString &utf8, quint32 state);
 
     // Emitted whenever the dispatch loop hits an unrecoverable error
     // and the binding tears itself down (display closed, bind_as_shell
@@ -168,6 +172,7 @@ private:
     quint32 shellVersion_ = 0;
     quint32 focusedHandle_ = UINT32_MAX;
     QString focusedSeat_;
+    quint64 overlayKeyCount_ = 0;
 
     // Auto-reconnect after a dispatch error / compositor restart.
     // teardown() schedules connectAndBind() via singleShot with an
