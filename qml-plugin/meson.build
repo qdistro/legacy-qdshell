@@ -53,10 +53,12 @@ qdwin_shell_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+dep_qt6_network = dependency('Qt6Network')
+
 moc_files = qt6.preprocess(
-  moc_headers: ['qdwin-binding.h'],
+  moc_headers: ['qdwin-binding.h', 'ctrl-server.h'],
   moc_sources: ['qdistro-qdwin-plugin.cpp'],
-  dependencies: [dep_qt6_core, dep_qt6_qml],
+  dependencies: [dep_qt6_core, dep_qt6_qml, dep_qt6_network],
 )
 
 qml_plugin_install_dir = get_option('datadir') / 'qdistro' / 'qml' / 'Qdistro' / 'Qdwin'
@@ -65,6 +67,7 @@ shared_library(
   'qdistro-qdwin',
   sources: [
     'qdwin-binding.cpp',
+    'ctrl-server.cpp',
     'qdistro-qdwin-plugin.cpp',
     moc_files,
     qdwin_shell_client_header,
@@ -74,6 +77,7 @@ shared_library(
     dep_wayland_client,
     dep_qt6_core,
     dep_qt6_qml,
+    dep_qt6_network,
   ],
   cpp_args: ['-fPIC'],
   install: true,

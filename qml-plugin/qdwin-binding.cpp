@@ -9,6 +9,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "qdwin-binding.h"
+#include "ctrl-server.h"
 
 #include <wayland-client.h>
 #include "qdwin-shell-v1-client-protocol.h"
@@ -181,8 +182,11 @@ struct QdwinBindingDispatch {
                             const char *utf8, uint32_t state) {
         auto *b = static_cast<QdwinBinding *>(d);
         b->overlayKeyCount_++;
+        b->lastOverlayRole_ = role;
+        b->lastOverlaySym_ = sym;
+        b->lastOverlayUtf8_ = qstr(utf8);
         emit b->overlayKeyCountChanged();
-        emit b->overlayKey(role, sym, qstr(utf8), state);
+        emit b->overlayKey(role, sym, b->lastOverlayUtf8_, state);
     }
     static void data_offer_receive_pending(void *, qdwin_shell_v1 *,
                                            uint32_t, const char *,
@@ -264,6 +268,8 @@ QdwinBinding::QdwinBinding(QObject *parent) : QObject(parent) {
         connectAndBind();
     });
     connectAndBind();
+
+    ctrlServer_ = new CtrlServer(*this, this);
 }
 
 QdwinBinding::~QdwinBinding() {

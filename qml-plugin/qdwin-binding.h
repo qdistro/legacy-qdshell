@@ -26,6 +26,8 @@
 #include <QTimer>
 #include <cstdint>
 
+class CtrlServer;
+
 struct wl_display;
 struct wl_registry;
 struct qdwin_shell_v1;
@@ -49,6 +51,9 @@ public:
     quint32 focusedHandle() const { return focusedHandle_; }
     QString focusedSeat() const { return focusedSeat_; }
     quint64 overlayKeyCount() const { return overlayKeyCount_; }
+    quint32 lastOverlayRole() const { return lastOverlayRole_; }
+    quint32 lastOverlaySym() const { return lastOverlaySym_; }
+    QString lastOverlayUtf8() const { return lastOverlayUtf8_; }
 
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
     Q_INVOKABLE void closeWindow(quint32 handle);
@@ -173,6 +178,11 @@ private:
     quint32 focusedHandle_ = UINT32_MAX;
     QString focusedSeat_;
     quint64 overlayKeyCount_ = 0;
+    quint32 lastOverlayRole_ = 0;
+    quint32 lastOverlaySym_ = 0;
+    QString lastOverlayUtf8_;
+
+    CtrlServer *ctrlServer_ = nullptr;
 
     // Auto-reconnect after a dispatch error / compositor restart.
     // teardown() schedules connectAndBind() via singleShot with an
