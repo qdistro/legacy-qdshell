@@ -96,6 +96,11 @@ void CtrlServer::onNewConnection() {
         connect(sock, &QLocalSocket::disconnected,
                 sock, &QLocalSocket::deleteLater);
 
+        // Cap the internal read buffer so a misbehaving client cannot
+        // cause unbounded memory growth by flooding data without a
+        // newline. +1 so a full kMaxCommandLen line plus '\n' fits.
+        sock->setReadBufferSize(kMaxCommandLen + 1);
+
         if (sock->canReadLine()) {
             // A complete line is already buffered (the common case
             // for socat / echo).
