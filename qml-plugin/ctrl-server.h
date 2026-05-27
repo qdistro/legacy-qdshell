@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <QLocalServer>
+#include <QString>
 
 class QLocalSocket;
 class QdwinBinding;
@@ -24,6 +25,7 @@ public:
 private slots:
     void onNewConnection();
     void onReadyRead();
+    void onClientTimeout();
 
 private:
     void handleConnection(QLocalSocket *sock);
@@ -31,4 +33,6 @@ private:
 
     QdwinBinding &binding_;
     QLocalServer server_;
+    QString listenedPath_;       // exact path we successfully listen()ed on
+    bool listening_ = false;     // true only after a successful listen()
 };
