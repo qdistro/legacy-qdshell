@@ -16,16 +16,31 @@
 
 namespace {
 
-// Per-client timeout (ms) — if a connected client sends no data
-// within this window we close it. Prevents a misbehaving local
-// client from accumulating idle sockets.
+// Per-client timeout (ms) — if a connected client does not deliver a
+// complete newline-terminated command within this window we close it.
+// Covers both the "never sends data" and "sends partial data then
+// stalls" cases without blocking the Qt event loop.
 constexpr int kClientTimeoutMs = 2000;
+
+// Maximum bytes we'll buffer per client before rejecting.
+constexpr qint64 kMaxCommandLen = 1024;
 
 QString socketPath() {
     const char *xdg = std::getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0])
         return QStringLiteral("%1/qdshell.sock").arg(QString::fromUtf8(xdg));
     return QStringLiteral("/run/user/%1/qdshell.sock").arg(getuid());
+}
+
+// Probe whether a Unix socket path is actively served by attempting
+// a synchronous client connect. Returns true if a server accepted
+// the connection (i.e. the socket is live, not stale).
+bool isSocketLive(const QString &path) {
+    QLocalSocket probe;
+    probe.connectToServer(path, QIODevice::ReadOnly);
+    bool live = probe.waitForConnected(200);
+    probe.disconnectFromServer();
+    return live;
 }
 
 } // namespace
@@ -36,8 +51,12 @@ CtrlServer::CtrlServer(QdwinBinding &binding, QObject *parent)
 {
     const QString path = socketPath();
 
-    // Remove stale socket from a previous crash / unclean shutdown.
-    QFile::remove(path);
+    // Only remove a stale socket — one that exists on disk but has no
+    // live server behind it. If a live server is already listening we
+    // leave its socket alone and fail gracefully below so the
+    // incumbent isn't disrupted.
+    if (QFile::exists(path) && !isSocketLive(path))
+        QFile::remove(path);
 
     server_.setSocketOptions(QLocalServer::UserAccessOption);
 
@@ -77,17 +96,18 @@ void CtrlServer::onNewConnection() {
         connect(sock, &QLocalSocket::disconnected,
                 sock, &QLocalSocket::deleteLater);
 
-        if (sock->bytesAvailable() > 0) {
-            // Data already buffered (the common case for socat / echo).
+        if (sock->canReadLine()) {
+            // A complete line is already buffered (the common case
+            // for socat / echo).
             handleConnection(sock);
         } else {
-            // Fully async: wait for readyRead instead of blocking
-            // the Qt event loop with waitForReadyRead.
+            // Wire readyRead so we get called back as more data
+            // arrives — fully async, never blocks the event loop.
             connect(sock, &QLocalSocket::readyRead,
                     this, &CtrlServer::onReadyRead);
 
             // Arm a per-client timeout so a misbehaving connector
-            // that never sends data gets cleaned up.
+            // that never completes a line gets cleaned up.
             auto *timer = new QTimer(sock);  // parented to sock
             timer->setSingleShot(true);
             connect(timer, &QTimer::timeout,
@@ -100,6 +120,22 @@ void CtrlServer::onNewConnection() {
 void CtrlServer::onReadyRead() {
     auto *sock = qobject_cast<QLocalSocket *>(sender());
     if (!sock) return;
+
+    // If the client has buffered more than kMaxCommandLen without a
+    // newline, reject immediately.
+    if (sock->bytesAvailable() > kMaxCommandLen) {
+        disconnect(sock, &QLocalSocket::readyRead,
+                   this, &CtrlServer::onReadyRead);
+        sock->write(QByteArrayLiteral("error: command too long\n"));
+        sock->flush();
+        sock->disconnectFromServer();
+        return;
+    }
+
+    // Wait until a full line is available — the client may deliver
+    // "status\n" across multiple TCP-style chunks.
+    if (!sock->canReadLine())
+        return;
 
     // Disconnect so we handle exactly one command per connection.
     disconnect(sock, &QLocalSocket::readyRead,
@@ -123,12 +159,12 @@ void CtrlServer::onClientTimeout() {
 
 void CtrlServer::handleConnection(QLocalSocket *sock) {
     // Protocol: one line per connection, max 1 KiB.
-    QByteArray data = sock->readLine(1024);
+    QByteArray data = sock->readLine(kMaxCommandLen);
 
     // Reject overlong / truncated lines: a well-formed command must
-    // end with '\n'. readLine(1024) returns at most 1024 bytes; if
-    // the last byte is not '\n', the client either sent a line longer
-    // than the protocol allows or closed without a newline terminator.
+    // end with '\n'. readLine returns at most kMaxCommandLen bytes;
+    // if the last byte is not '\n', the client either sent a line
+    // longer than the protocol allows or closed without a newline.
     if (!data.isEmpty() && !data.endsWith('\n')) {
         sock->write(QByteArrayLiteral("error: command too long or unterminated\n"));
         sock->flush();
