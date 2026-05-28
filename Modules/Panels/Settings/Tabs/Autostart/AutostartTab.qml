@@ -14,7 +14,7 @@ ColumnLayout {
   property var _activeDialog: null
 
   Component.onCompleted: {
-    AutostartService.showSystemEntries = Settings.data.session ? Settings.data.session.showSystemAutostart : true;
+    AutostartService.showSystemEntries = AutostartService.readShowSystem();
     AutostartService.refresh();
   }
 

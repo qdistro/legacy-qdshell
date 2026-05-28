@@ -18,9 +18,45 @@ Singleton {
   readonly property string userDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/autostart"
   readonly property string systemDir: "/etc/xdg/autostart"
 
+  // Read the showSystemAutostart setting, defaulting to true unless it is
+  // explicitly set to false (robust against a missing session/key).
+  function readShowSystem() {
+    const s = Settings.data.session;
+    if (s && s.showSystemAutostart !== undefined)
+      return s.showSystemAutostart !== false;
+    return true;
+  }
+
   // Shell-safe quoting: wraps a string in single quotes, escaping embedded single quotes
   function _q(s) {
     return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  // Build an awk program that sets a single key=value strictly within the
+  // [Desktop Entry] group: replaces the first occurrence if present, otherwise
+  // appends it at the end of the group (never inside later groups). The value
+  // is read from the QD_VAL environment variable so awk never reinterprets it.
+  function _awkSetKeyInGroup(key) {
+    const k = key.replace(/"/g, "\\\"");
+    return "BEGIN{ v=ENVIRON[\"QD_VAL\"] } " +
+           "function flush(){ if(ingroup && !done){ print \"" + k + "=\" v; done=1 } } " +
+           "/^\\[/{ flush(); ingroup=($0==\"[Desktop Entry]\"); print; next } " +
+           "{ if(ingroup && index($0, \"" + k + "=\")==1){ if(!done){ print \"" + k + "=\" v; done=1 } next } print } " +
+           "END{ flush() }";
+  }
+
+  // Build an awk program that deletes a key strictly within [Desktop Entry].
+  function _awkDelKeyInGroup(key) {
+    const k = key.replace(/"/g, "\\\"");
+    return "/^\\[/{ ingroup=($0==\"[Desktop Entry]\"); print; next } " +
+           "{ if(ingroup && index($0, \"" + k + "=\")==1){ next } print }";
+  }
+
+  // Shell command (string) that sets key=value within [Desktop Entry].
+  function _setKeyCmd(filePath, key, value) {
+    const fp = _q(filePath);
+    return "tmp=\"$(mktemp)\"; QD_VAL=" + _q(value) + " awk " + _q(_awkSetKeyInGroup(key)) +
+           " " + fp + " > \"$tmp\" && mv \"$tmp\" " + fp;
   }
 
   // Refresh the full list by scanning both directories
@@ -49,18 +85,20 @@ Singleton {
         writeProcess.command = ["sh", "-c", "rm -f " + _q(userPath)];
       }
     } else {
-      // Plain user entry: toggle X-GNOME-Autostart-enabled / clear Hidden.
+      // Plain user entry: set X-GNOME-Autostart-enabled within [Desktop Entry].
+      // When enabling, also drop any Hidden=true that would override it. Both
+      // operations stay scoped to the [Desktop Entry] group via awk.
       const filePath = entry.filePath;
       if (enabled) {
+        // Remove Hidden within the group, then set the enabled key true.
+        const fp = _q(filePath);
+        const delHidden = "tmp=\"$(mktemp)\"; awk " + _q(_awkDelKeyInGroup("Hidden")) +
+                          " " + fp + " > \"$tmp\" && mv \"$tmp\" " + fp;
         writeProcess.command = ["sh", "-c",
-          "sed -i '/^Hidden=/d' " + _q(filePath) + " && " +
-          "if grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + "; then " +
-          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=true/' " + _q(filePath) + "; fi"];
+          delHidden + " && " + _setKeyCmd(filePath, "X-GNOME-Autostart-enabled", "true")];
       } else {
         writeProcess.command = ["sh", "-c",
-          "if grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + "; then " +
-          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=false/' " + _q(filePath) + "; " +
-          "else echo 'X-GNOME-Autostart-enabled=false' >> " + _q(filePath) + "; fi"];
+          _setKeyCmd(filePath, "X-GNOME-Autostart-enabled", "false")];
       }
     }
     writeProcess.running = true;
@@ -79,15 +117,17 @@ Singleton {
       content += "Path=" + workingDir + "\n";
     content += "X-GNOME-Autostart-enabled=true\n";
 
-    // Use a shell loop to find a free filename so we never clobber an
-    // existing user or override .desktop file. The heredoc redirection must
-    // be on the cat command itself (cat > "$f" << EOF), with the body and
-    // terminator following on their own lines.
+    // Use a shell loop to find a free filename. We avoid both existing user
+    // files and any matching name in the system dir, so a new entry never
+    // clobbers a user file nor silently shadows a system autostart entry.
+    // The heredoc redirection must be on the cat command itself.
     const dir = _q(userDir);
+    const sysDir = _q(systemDir);
     writeProcess.command = ["sh", "-c",
       "mkdir -p " + dir + "; " +
-      "base=" + _q(base) + "; f=" + _q(userDir) + "/\"$base.desktop\"; i=1; " +
-      "while [ -e \"$f\" ]; do f=" + _q(userDir) + "/\"$base-$i.desktop\"; i=$((i+1)); done; " +
+      "base=" + _q(base) + "; n=\"$base\"; i=1; " +
+      "while [ -e " + dir + "/\"$n.desktop\" ] || [ -e " + sysDir + "/\"$n.desktop\" ]; do n=\"$base-$i\"; i=$((i+1)); done; " +
+      "f=" + dir + "/\"$n.desktop\"; " +
       "cat > \"$f\" << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF"];
     writeProcess.running = true;
   }
@@ -151,7 +191,7 @@ Singleton {
   Connections {
     target: Settings
     function onDataChanged() {
-      root.showSystemEntries = Settings.data.session ? Settings.data.session.showSystemAutostart : true;
+      root.showSystemEntries = root.readShowSystem();
     }
   }
 

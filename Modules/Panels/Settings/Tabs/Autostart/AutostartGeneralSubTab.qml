@@ -13,10 +13,8 @@ ColumnLayout {
   NToggle {
     label: I18n.tr("panels.autostart.show-system-label")
     description: I18n.tr("panels.autostart.show-system-description")
-    checked: Settings.data.session ? Settings.data.session.showSystemAutostart : true
+    checked: AutostartService.readShowSystem()
     onToggled: checked => {
-      if (!Settings.data.session)
-        Settings.data.session = {};
       Settings.data.session.showSystemAutostart = checked;
       AutostartService.showSystemEntries = checked;
       AutostartService.refresh();
