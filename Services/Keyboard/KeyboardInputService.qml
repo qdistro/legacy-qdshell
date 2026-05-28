@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Services.UI
+import "KeyboardXkb.js" as KeyboardXkb
 
 /// KeyboardInputService — keyboard repeat, cursor blink, layout, NumLock,
 /// Compose key and XKB option management for the Settings > Keyboard tab.
@@ -80,10 +81,9 @@ Singleton {
     queryCapabilities();
   }
 
-  // ─── Shell-safe quoting (AutostartService pattern) ────────────────
-  function _q(s) {
-    return "'" + String(s).replace(/'/g, "'\\''") + "'";
-  }
+  // Shell-safe quoting now lives in the pure KeyboardXkb.js module
+  // (KeyboardXkb.shellQuote / setxkbmapShellCmd), which quotes every user value
+  // by construction for the chained `sh -c` apply path.
 
   // ─── Capability detection ────────────────────────────────────────
   Process {
@@ -163,78 +163,18 @@ Singleton {
     xkbProc.running = true;
   }
 
+  // Parsing lives in the pure KeyboardXkb.js module (dual QML/Node) so it is
+  // unit-testable headless. This wrapper only wires the parsed result into the
+  // singleton's reactive state.
   function _parseXkbList(text) {
-    var models = [];
-    var layouts = [];
-    var variants = ({});
-    var optionGroups = ({}); // groupKey -> { name, options: [] }
-    var section = "";
-
-    var lines = String(text || "").split("\n");
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var trimmed = line.trim();
-      if (trimmed === "")
-        continue;
-      if (trimmed.charAt(0) === "!") {
-        // e.g. "! model", "! layout", "! variant", "! option"
-        section = trimmed.substring(1).trim();
-        continue;
-      }
-      // Each entry: <key><whitespace><description...>
-      var m = trimmed.match(/^(\S+)\s+(.*)$/);
-      if (!m)
-        continue;
-      var key = m[1];
-      var name = m[2].trim();
-
-      if (section === "model") {
-        models.push({ "key": key, "name": name });
-      } else if (section === "layout") {
-        layouts.push({ "key": key, "name": name });
-      } else if (section === "variant") {
-        // Variant key format: "<variant>" with description "<Lang>: <desc>";
-        // the owning layout is the trailing token in the description's colon
-        // group. evdev.lst variant lines look like:
-        //   intl    us: English (US, intl., with dead keys)
-        // The layout code is the token before the colon.
-        var colon = name.indexOf(":");
-        var layoutCode = colon > 0 ? name.substring(0, colon).trim() : "";
-        if (layoutCode === "")
-          continue;
-        if (!variants[layoutCode])
-          variants[layoutCode] = [];
-        variants[layoutCode].push({ "key": key, "name": name });
-      } else if (section === "option") {
-        // Option keys are "group" or "group:option". Group headers have no
-        // colon; member options are "group:something".
-        if (key.indexOf(":") === -1) {
-          if (!optionGroups[key])
-            optionGroups[key] = { "name": name, "options": [] };
-          else
-            optionGroups[key].name = name;
-        } else {
-          var grp = key.substring(0, key.indexOf(":"));
-          if (!optionGroups[grp])
-            optionGroups[grp] = { "name": grp, "options": [] };
-          optionGroups[grp].options.push({ "key": key, "name": name });
-        }
-      }
-    }
-
-    var optionsOut = [];
-    for (var g in optionGroups) {
-      optionsOut.push({ "group": g, "name": optionGroups[g].name, "options": optionGroups[g].options });
-    }
-    optionsOut.sort(function (a, b) { return a.name.localeCompare(b.name); });
-
-    root.availableModels = models;
-    root.availableLayouts = layouts;
-    root.availableVariants = variants;
-    root.availableOptions = optionsOut;
+    var res = KeyboardXkb.parseXkbList(text);
+    root.availableModels = res.models;
+    root.availableLayouts = res.layouts;
+    root.availableVariants = res.variants;
+    root.availableOptions = res.options;
     root.xkbDataLoaded = true;
-    Logger.d("KeyboardInput", "xkb data: " + models.length + " models, "
-             + layouts.length + " layouts");
+    Logger.d("KeyboardInput", "xkb data: " + res.models.length + " models, "
+             + res.layouts.length + " layouts");
   }
 
   // Human-readable name for a layout code (falls back to the code itself).
@@ -257,57 +197,26 @@ Singleton {
     stderr: StdioCollector {}
   }
 
-  // Build the `setxkbmap` argument list from the persisted settings, using a
-  // shell command string so we can chain with xset/numlockx. All user-provided
-  // tokens go through _q() so a malicious layout/option string cannot inject.
+  // Build the `setxkbmap` invocation from the persisted settings. The shell
+  // string is produced by the pure KeyboardXkb.setxkbmapShellCmd builder, which
+  // quotes EVERY user value by construction (model/layout/variant/options/
+  // switch/compose) — unconditionally, so a value beginning with "-" or
+  // carrying shell metacharacters stays inert data and can never inject. The
+  // chained `sh -c` apply path consumes this string.
   function _setxkbmapCmd() {
-    if (!hasSetxkbmap)
-      return "";
-    var ls = (layouts && layouts.length > 0) ? layouts.slice() : ["us"];
-    // Variants are positional and comma-joined to match the layout list.
-    var vs = [];
-    for (var i = 0; i < ls.length; i++) {
-      var code = ls[i];
-      vs.push((variants && variants[code]) ? variants[code] : "");
-    }
-    var cmd = "setxkbmap";
-    if (keyboardModel && keyboardModel !== "")
-      cmd += " -model " + _q(keyboardModel);
-    cmd += " -layout " + _q(ls.join(","));
-    // Only pass -variant if at least one variant is non-empty.
-    var anyVariant = vs.some(function (v) { return v !== ""; });
-    if (anyVariant)
-      cmd += " -variant " + _q(vs.join(","));
-
-    // Collect XKB options: explicit option list + switch shortcut + compose.
-    var opts = [];
-    if (xkbOptions) {
-      for (var j = 0; j < xkbOptions.length; j++) {
-        if (xkbOptions[j] && xkbOptions[j] !== "")
-          opts.push(xkbOptions[j]);
-      }
-    }
-    if (switchShortcut && switchShortcut !== "")
-      opts.push(switchShortcut);
-    if (composeKey && composeKey !== "")
-      opts.push(composeKey);
-    // Always pass an initial empty -option so previously-set options are
-    // cleared from the X server even when the user removed the last option;
-    // each desired option is then re-added. (setxkbmap accumulates options
-    // otherwise, so a removal in the UI would never take effect live.)
-    cmd += " -option " + _q("");
-    for (var k = 0; k < opts.length; k++)
-      cmd += " -option " + _q(opts[k]);
-    return cmd;
+    return KeyboardXkb.setxkbmapShellCmd({
+      "model": keyboardModel,
+      "layouts": layouts,
+      "variants": variants,
+      "xkbOptions": xkbOptions,
+      "switchShortcut": switchShortcut,
+      "composeKey": composeKey
+    }, hasSetxkbmap);
   }
 
   function _xsetRepeatCmd() {
-    if (!hasXset)
-      return "";
     // xset r rate <delay-ms> <rate-hz>
-    var d = Math.max(1, Math.round(repeatDelay));
-    var r = Math.max(1, Math.round(repeatRate));
-    return "xset r rate " + _q(String(d)) + " " + _q(String(r));
+    return KeyboardXkb.xsetRepeatShellCmd(repeatDelay, repeatRate, hasXset);
   }
 
   function _numlockCmd() {
