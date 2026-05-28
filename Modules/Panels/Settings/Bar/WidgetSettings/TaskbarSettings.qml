@@ -28,6 +28,8 @@ ColumnLayout {
   property int valueTitleWidth: widgetData.titleWidth !== undefined ? widgetData.titleWidth : widgetMetadata.titleWidth
   property bool valueShowPinnedApps: widgetData.showPinnedApps !== undefined ? widgetData.showPinnedApps : widgetMetadata.showPinnedApps
   property real valueIconScale: widgetData.iconScale !== undefined ? widgetData.iconScale : widgetMetadata.iconScale
+  property string valueGroupingMode: widgetData.groupingMode !== undefined ? widgetData.groupingMode : widgetMetadata.groupingMode
+  property string valueSortMode: widgetData.sortMode !== undefined ? widgetData.sortMode : widgetMetadata.sortMode
 
   Component.onCompleted: {
     if (widgetData && widgetData.hideMode !== undefined) {
@@ -49,6 +51,8 @@ ColumnLayout {
     settings.titleWidth = parseInt(titleWidthInput.text) || widgetMetadata.titleWidth;
     settings.showPinnedApps = valueShowPinnedApps;
     settings.iconScale = valueIconScale;
+    settings.groupingMode = valueGroupingMode;
+    settings.sortMode = valueSortMode;
     settingsChanged(settings);
   }
 
@@ -119,6 +123,56 @@ ColumnLayout {
                  root.valueShowPinnedApps = checked;
                  saveSettings();
                }
+  }
+
+  NComboBox {
+    Layout.fillWidth: true
+    label: I18n.tr("bar.taskbar.grouping-mode-label")
+    description: I18n.tr("bar.taskbar.grouping-mode-description")
+    model: [
+      {
+        "key": "never",
+        "name": I18n.tr("bar.taskbar.grouping-never")
+      },
+      {
+        "key": "always",
+        "name": I18n.tr("bar.taskbar.grouping-always")
+      },
+      {
+        "key": "limited",
+        "name": I18n.tr("bar.taskbar.grouping-limited")
+      }
+    ]
+    currentKey: root.valueGroupingMode
+    onSelected: key => {
+                  root.valueGroupingMode = key;
+                  saveSettings();
+                }
+  }
+
+  NComboBox {
+    Layout.fillWidth: true
+    label: I18n.tr("bar.taskbar.sort-mode-label")
+    description: I18n.tr("bar.taskbar.sort-mode-description")
+    model: [
+      {
+        "key": "none",
+        "name": I18n.tr("bar.taskbar.sort-none")
+      },
+      {
+        "key": "title",
+        "name": I18n.tr("bar.taskbar.sort-title")
+      },
+      {
+        "key": "group",
+        "name": I18n.tr("bar.taskbar.sort-group")
+      }
+    ]
+    currentKey: root.valueSortMode
+    onSelected: key => {
+                  root.valueSortMode = key;
+                  saveSettings();
+                }
   }
 
   NValueSlider {
