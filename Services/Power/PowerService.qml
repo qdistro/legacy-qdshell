@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Services.Hardware
 import qs.Services.UI
 
 Singleton {
@@ -38,15 +39,16 @@ Singleton {
   function init() {
     Logger.i("PowerService", "Service started");
     queryCapabilities();
-    detectLid();
+    detectLid(); // triggers startLidMonitor() via onHasLidChanged when a lid is found
     detectACState();
-    startLidMonitor();
+    swayidleCheck.running = true;
+    checkCriticalBattery();
   }
 
   // ─── Capability detection (loginctl) ─────────────────────────────
   Process {
     id: canSuspendProc
-    command: ["sh", "-c", "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanSuspend 2>/dev/null | sed 's/^s \"//' | sed 's/\"$//' || echo yes"]
+    command: ["sh", "-c", "out=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanSuspend 2>/dev/null) || { echo yes; exit 0; }; echo \"$out\" | sed 's/^s \"//;s/\"$//'"]
     running: false
     stdout: StdioCollector {
       onStreamFinished: {
@@ -59,7 +61,7 @@ Singleton {
 
   Process {
     id: canHibernateProc
-    command: ["sh", "-c", "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHibernate 2>/dev/null | sed 's/^s \"//' | sed 's/\"$//' || echo no"]
+    command: ["sh", "-c", "out=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHibernate 2>/dev/null) || { echo no; exit 0; }; echo \"$out\" | sed 's/^s \"//;s/\"$//'"]
     running: false
     stdout: StdioCollector {
       onStreamFinished: {
@@ -72,7 +74,7 @@ Singleton {
 
   Process {
     id: canHybridSleepProc
-    command: ["sh", "-c", "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHybridSleep 2>/dev/null | sed 's/^s \"//' | sed 's/\"$//' || echo no"]
+    command: ["sh", "-c", "out=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHybridSleep 2>/dev/null) || { echo no; exit 0; }; echo \"$out\" | sed 's/^s \"//;s/\"$//'"]
     running: false
     stdout: StdioCollector {
       onStreamFinished: {
@@ -85,7 +87,7 @@ Singleton {
 
   Process {
     id: canPowerOffProc
-    command: ["sh", "-c", "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanPowerOff 2>/dev/null | sed 's/^s \"//' | sed 's/\"$//' || echo yes"]
+    command: ["sh", "-c", "out=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanPowerOff 2>/dev/null) || { echo yes; exit 0; }; echo \"$out\" | sed 's/^s \"//;s/\"$//'"]
     running: false
     stdout: StdioCollector {
       onStreamFinished: {
@@ -152,24 +154,74 @@ Singleton {
     acDetectProc.running = true;
   }
 
-  // ─── Lid-close monitor (logind PrepareForSleep) ──────────────────
-  Process {
-    id: lidMonitorProc
-    running: false
-    command: ["sh", "-c", "busctl monitor --json=short org.freedesktop.login1 --match \"type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'\" 2>/dev/null || gdbus monitor -y -d org.freedesktop.login1 -o /org/freedesktop/login1 2>/dev/null"]
+  // ─── Lid switch handling ─────────────────────────────────────────
+  // logind decides the default lid action from /etc/systemd/logind.conf
+  // (HandleLidSwitch*), which a user session cannot change. To make the
+  // qdshell lid policy effective we take an inhibitor lock on the handle
+  // events so logind defers to us, then poll the kernel lid state and apply
+  // the configured action ourselves. Power/sleep button actions likewise
+  // require either logind config or evdev access; we surface them in the UI
+  // and apply them when the user invokes them through qdshell, but logind
+  // remains the authority for the physical keys.
+  property string _lidState: "open"
 
-    stdout: SplitParser {
-      onRead: data => {
-        if (data.includes("PrepareForSleep")) {
-          Logger.d("PowerService", "PrepareForSleep signal received");
+  // Hold an inhibitor lock so logind does not run its own lid handler.
+  Process {
+    id: lidInhibitProc
+    running: false
+    command: ["sh", "-c", "systemd-inhibit --what=handle-lid-switch --who=qdshell --why='qdshell power manager lid policy' --mode=block sleep infinity"]
+    stderr: StdioCollector {}
+  }
+
+  Process {
+    id: lidStateProc
+    command: ["sh", "-c", "cat /proc/acpi/button/lid/LID0/state /proc/acpi/button/lid/LID/state 2>/dev/null | head -1"]
+    running: false
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var line = String(text || "").trim().toLowerCase();
+        var newState = line.indexOf("closed") !== -1 ? "closed" : "open";
+        if (newState !== root._lidState) {
+          var wasOpen = root._lidState === "open";
+          root._lidState = newState;
+          if (wasOpen && newState === "closed")
+            root.onLidClosed();
         }
       }
     }
     stderr: StdioCollector {}
   }
 
+  Timer {
+    id: lidPollTimer
+    interval: 2000
+    repeat: true
+    running: false
+    onTriggered: lidStateProc.running = true
+  }
+
+  function onLidClosed() {
+    Logger.i("PowerService", "Lid closed");
+    if (IdleInhibitorService.isInhibited)
+      return;
+    if (lidIgnoreExternalDisplay && Quickshell.screens && Quickshell.screens.length > 1) {
+      Logger.i("PowerService", "Lid close ignored — external display connected");
+      return;
+    }
+    var action = onAC ? lidCloseOnAC : lidCloseOnBattery;
+    executeAction(action);
+  }
+
   function startLidMonitor() {
-    lidMonitorProc.running = true;
+    if (!hasLid)
+      return;
+    lidInhibitProc.running = true;
+    lidPollTimer.start();
+  }
+
+  onHasLidChanged: {
+    if (hasLid && !lidPollTimer.running)
+      startLidMonitor();
   }
 
   // ─── Actions ─────────────────────────────────────────────────────
@@ -220,8 +272,9 @@ Singleton {
       executePowerOff();
       break;
     case "ask":
-      // Open session menu to let user choose
+      // Open the session menu to let the user choose
       Logger.i("PowerService", "Opening session menu for user choice");
+      PanelService.getPanel("sessionMenuPanel")?.toggle();
       break;
     case "nothing":
     default:
@@ -230,40 +283,160 @@ Singleton {
   }
 
   // ─── DPMS / Display off ──────────────────────────────────────────
-  function turnOffDisplay() {
-    Logger.i("PowerService", "Turning off display via DPMS");
-    Quickshell.execDetached(["sh", "-c", "wlopm --off '*' 2>/dev/null || wlr-randr --output '*' --off 2>/dev/null || xset dpms force off 2>/dev/null"]);
+  function dpmsOffCommand() {
+    return "wlopm --off '*' 2>/dev/null || wlr-randr --output '*' --off 2>/dev/null || hyprctl dispatch dpms off 2>/dev/null";
   }
 
-  // ─── Idle timeout handling ───────────────────────────────────────
+  function dpmsOnCommand() {
+    return "wlopm --on '*' 2>/dev/null || wlr-randr --output '*' --on 2>/dev/null || hyprctl dispatch dpms on 2>/dev/null";
+  }
+
+  function turnOffDisplay() {
+    Logger.i("PowerService", "Turning off display via DPMS");
+    Quickshell.execDetached(["sh", "-c", dpmsOffCommand()]);
+  }
+
+  // ─── Idle timeout handling (real input idle via swayidle) ─────────
+  // QML Timers cannot observe Wayland input activity, so a naive timer would
+  // fire while the user is active. Instead we drive swayidle, which is
+  // input-aware, and rebuild its argument list whenever the policy or the
+  // AC/inhibit state changes. The idle inhibitor still gates the whole thing.
   readonly property int activeInactivityTimeout: onAC ? inactivityTimeoutAC : inactivityTimeoutBattery
   readonly property int activeDisplayOffTimeout: onAC ? displayOffAC : displayOffBattery
 
-  Timer {
-    id: inactivityTimer
-    interval: root.activeInactivityTimeout * 60 * 1000
-    repeat: false
-    running: root.activeInactivityTimeout > 0 && root.inactivityAction !== "nothing" && !IdleInhibitorService.isInhibited
-    onTriggered: {
-      Logger.i("PowerService", "Inactivity timeout reached, executing:", root.inactivityAction);
-      root.executeAction(root.inactivityAction);
+  property bool swayidleAvailable: false
+
+  Process {
+    id: swayidleCheck
+    command: ["sh", "-c", "command -v swayidle >/dev/null 2>&1 && echo yes || echo no"]
+    running: false
+    stdout: StdioCollector {
+      onStreamFinished: {
+        root.swayidleAvailable = String(text || "").trim() === "yes";
+        Logger.d("PowerService", "swayidleAvailable:", root.swayidleAvailable);
+        if (root.swayidleAvailable)
+          root.rebuildIdleDaemon();
+      }
+    }
+    stderr: StdioCollector {}
+  }
+
+  Process {
+    id: idleDaemonProc
+    running: false
+    stderr: StdioCollector {}
+  }
+
+  // Rebuild and (re)start the idle daemon whenever the effective policy changes.
+  function rebuildIdleDaemon() {
+    if (!swayidleAvailable)
+      return;
+
+    // Stop any running instance first.
+    if (idleDaemonProc.running)
+      idleDaemonProc.signal(15);
+
+    // When inhibited, leave the daemon stopped entirely.
+    if (IdleInhibitorService.isInhibited) {
+      Logger.d("PowerService", "Idle inhibited — idle daemon stopped");
+      return;
+    }
+
+    var args = ["swayidle", "-w"];
+
+    var dispOff = activeDisplayOffTimeout;
+    if (dispOff > 0) {
+      args.push("timeout");
+      args.push(String(dispOff * 60));
+      args.push(dpmsOffCommand());
+      args.push("resume");
+      args.push(dpmsOnCommand());
+    }
+
+    var inact = activeInactivityTimeout;
+    if (inact > 0 && inactivityAction !== "nothing") {
+      var cmd = "";
+      switch (inactivityAction) {
+      case "suspend":
+        cmd = "systemctl suspend || loginctl suspend";
+        break;
+      case "hibernate":
+        cmd = "systemctl hibernate || loginctl hibernate";
+        break;
+      case "hybrid-sleep":
+        cmd = "systemctl hybrid-sleep || loginctl hybrid-sleep";
+        break;
+      }
+      if (cmd !== "") {
+        args.push("timeout");
+        args.push(String(inact * 60));
+        args.push(cmd);
+      }
+    }
+
+    // Nothing to do — keep the daemon stopped.
+    if (args.length <= 2) {
+      Logger.d("PowerService", "No idle actions configured — idle daemon stopped");
+      return;
+    }
+
+    idleDaemonProc.command = args;
+    idleDaemonProc.running = true;
+    Logger.i("PowerService", "Idle daemon (re)started:", args.join(" "));
+  }
+
+  // React to policy / state changes.
+  onActiveInactivityTimeoutChanged: rebuildIdleDaemon()
+  onActiveDisplayOffTimeoutChanged: rebuildIdleDaemon()
+  onInactivityActionChanged: rebuildIdleDaemon()
+
+  Connections {
+    target: IdleInhibitorService
+    function onIsInhibitedChanged() {
+      root.rebuildIdleDaemon();
     }
   }
 
-  Timer {
-    id: displayOffTimer
-    interval: root.activeDisplayOffTimeout * 60 * 1000
-    repeat: false
-    running: root.activeDisplayOffTimeout > 0 && !IdleInhibitorService.isInhibited
-    onTriggered: {
-      Logger.i("PowerService", "Display off timeout reached");
-      root.turnOffDisplay();
+  // ─── Critical battery handling ───────────────────────────────────
+  // Watch the primary battery and trigger the configured action once when the
+  // level drops to/below the configured threshold while discharging.
+  property bool _criticalActionTaken: false
+
+  Connections {
+    target: BatteryService
+    function onBatteryPercentageChanged() {
+      root.checkCriticalBattery();
+    }
+    function onBatteryChargingChanged() {
+      root.checkCriticalBattery();
+    }
+  }
+
+  function checkCriticalBattery() {
+    // Reset latch once charging or comfortably above the threshold.
+    if (BatteryService.batteryCharging || BatteryService.batteryPluggedIn || BatteryService.batteryPercentage > criticalBatteryLevel + 2) {
+      _criticalActionTaken = false;
+      return;
+    }
+
+    if (!BatteryService.batteryPresent || !BatteryService.batteryReady)
+      return;
+
+    if (_criticalActionTaken)
+      return;
+
+    if (BatteryService.batteryPercentage <= criticalBatteryLevel) {
+      _criticalActionTaken = true;
+      Logger.w("PowerService", "Critical battery level reached, executing:", criticalBatteryAction);
+      executeAction(criticalBatteryAction);
     }
   }
 
   // ─── Cleanup ─────────────────────────────────────────────────────
   Component.onDestruction: {
-    if (lidMonitorProc.running)
-      lidMonitorProc.signal(15);
+    if (lidInhibitProc.running)
+      lidInhibitProc.signal(15);
+    if (idleDaemonProc.running)
+      idleDaemonProc.signal(15);
   }
 }
