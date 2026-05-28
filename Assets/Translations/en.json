@@ -775,6 +775,17 @@
       "update-available": "Update available",
       "view-commit": "View commit on GitHub"
     },
+    "advanced": {
+      "title": "Advanced",
+      "warning-title": "Advanced raw settings editor",
+      "warning-description": "This editor writes raw settings values directly. Changing values here can break the shell or cause unexpected behavior. Only edit settings you understand.",
+      "search-label": "Search settings",
+      "search-description": "Filter the list below by key path (e.g. \"power.lidCloseOnAC\").",
+      "search-placeholder": "Filter by key path…",
+      "result-count": "Showing {count} of {total} settings",
+      "no-results": "No settings match your search.",
+      "reset-tooltip": "Reset this setting to its default value"
+    },
     "accessibility": {
       "title": "Accessibility",
       "tab-find-cursor": "Find cursor",
