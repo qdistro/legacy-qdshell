@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "ClipboardSilo.js" as ClipboardSilo
 
 // spec/10 Phase-1 — compositor-mediated clipboard gate.
 // Track-04 Phase-1 scope. Implements the cross-silo clipboard
@@ -202,26 +203,15 @@ Singleton {
         }
     }
 
-    // Derive a silo string from a (sandboxEngine, appId, instanceId) tuple.
+    // Derive a stable silo string from a (sandboxEngine, appId,
+    // instanceId) tuple.
     // Mirrors the per-engine resolution rules in _onSecurityContext so a
     // wire-sourced tuple (v23 sidecar) and a toplevel-handle-sourced
     // tuple (v13 toplevel_security_context) yield the same silo string
-    // for the same client. Keep the two derivations in lockstep — any
-    // future engine added in _onSecurityContext MUST be mirrored here.
+    // for the same client. instance_id is a launch-correlation token for
+    // qdistro tier2/tier3/tier5 and must not enter clipboard silo identity.
     function _siloFromSecctx(sandboxEngine, appId, instanceId) {
-        if (appId && appId.length > 0 && appId.startsWith("qdistro.tier4.")) {
-            return appId.slice("qdistro.tier4.".length);
-        }
-        if (sandboxEngine === "qdistro-silo" && appId && appId.length > 0) {
-            return appId;
-        }
-        if (instanceId && instanceId.length > 0) {
-            return instanceId;
-        }
-        if (sandboxEngine && sandboxEngine.length > 0) {
-            return "engine:" + sandboxEngine;
-        }
-        return "";
+        return ClipboardSilo.fromSecctx(sandboxEngine, appId, instanceId);
     }
 
     // v23 sidecar handler. Stash the tuple as "pending"; the very next
@@ -239,37 +229,9 @@ Singleton {
     }
 
     function _onSecurityContext(handle, sandboxEngine, appId, instanceId) {
-        // The instance_id in qdistro carries the silo name — that's the
-        // convention from clipboard.md §"compositor-mediated gating". When
-        // sandbox_engine is "qdistro", instance_id IS the silo. For other
-        // engines (flatpak, firejail) we still bucket by instance_id for
-        // policy purposes but tag the engine so policy rules can match.
-        // EXCEPTION — tier-4 (qdistro.tier4.*): spawn-tier4.sh stamps the
-        // instance_id as "$VM_NAME-$$" (pid-suffixed), so the same VM
-        // launched twice would get two different "silo" strings under the
-        // naive instance_id rule. The chrome-paint side (Tier4Apps.qml)
-        // derives silo from the secctx app_id suffix instead — for the
-        // same-silo gate to match, we MUST use the same derivation here.
-        // (P05a security H3 / integration MEDIUM-2.)
-        if (appId && appId.length > 0 && appId.startsWith("qdistro.tier4.")) {
-            root._handleToSilo[handle] = appId.slice("qdistro.tier4.".length);
-        } else if (sandboxEngine === "qdistro-silo" && appId && appId.length > 0) {
-            // engine="qdistro-silo" + app_id=<silo-name> is the canonical
-            // qdwin tag for silo identity (see qdwin/qdwin.c
-            // qdwin_send_toplevel_security_context emit-site comments and
-            // qdwin/test-client/qdwin-test-clipboard-emit.c §"qdwin maps
-            // sandbox_engine='qdistro-silo' + app_id=<name> to a silo").
-            // Take silo from app_id, not instance_id — qdwin-test-clipboard-
-            // emit stamps instance_id with a probe-pid tag that would
-            // otherwise collide with no real silo entry in policy. (Bug-3
-            // ClipboardGate browser-origin gap, P04 round-6.)
-            root._handleToSilo[handle] = appId;
-        } else if (instanceId && instanceId.length > 0) {
-            root._handleToSilo[handle] = instanceId;
-        } else if (sandboxEngine && sandboxEngine.length > 0) {
-            // Engine-only context — bucket by engine. Better than a uid.
-            root._handleToSilo[handle] = "engine:" + sandboxEngine;
-        }
+        const stableSilo = root._siloFromSecctx(sandboxEngine, appId, instanceId);
+        if (stableSilo.length > 0)
+            root._handleToSilo[handle] = stableSilo;
         if (appId && appId.length > 0) {
             root._handleToAppId[handle] = appId;
         }
