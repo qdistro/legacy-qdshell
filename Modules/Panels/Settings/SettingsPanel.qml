@@ -95,6 +95,7 @@ SmartPanel {
     Notifications,
     Plugins,
     Power,
+    Session,
     SessionMenu,
     SystemMonitor,
     UserInterface,

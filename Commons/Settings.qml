@@ -791,9 +791,15 @@ Singleton {
       // Format: [{ "name": "DP-1", "widgets": [...] }, { "name": "HDMI-1", "widgets": [...] }]
     }
 
-    // session / autostart
+    // session / autostart + save/restore (xfce4-session parity)
     property JsonObject session: JsonObject {
       property bool showSystemAutostart: true
+      // Save the running app set automatically on logout.
+      property bool saveOnLogout: false
+      // Restore the last/named session automatically on login.
+      property bool restoreOnLogin: false
+      // Named session snapshots. Each: { name, created, apps:[{command,appId,title}] }.
+      property var savedSessions: []
     }
 
     // accessibility
