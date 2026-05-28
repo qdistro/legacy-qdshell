@@ -19,6 +19,7 @@ import qs.Modules.Panels.Settings.Tabs.Dock
 import qs.Modules.Panels.Settings.Tabs.Hooks
 import qs.Modules.Panels.Settings.Tabs.Launcher
 import qs.Modules.Panels.Settings.Tabs.LockScreen
+import qs.Modules.Panels.Settings.Tabs.Mouse
 import qs.Modules.Panels.Settings.Tabs.Notifications
 import qs.Modules.Panels.Settings.Tabs.Osd
 import qs.Modules.Panels.Settings.Tabs.Plugins
@@ -504,6 +505,10 @@ Item {
     id: autostartTab
     AutostartTab {}
   }
+  Component {
+    id: mouseTab
+    MouseTab {}
+  }
 
   function updateTabsModel() {
     let newTabs = [
@@ -614,6 +619,12 @@ Item {
             "label": "panels.display.title",
             "icon": "settings-display",
             "source": displayTab
+          },
+          {
+            "id": SettingsPanel.Tab.Mouse,
+            "label": "panels.mouse.title",
+            "icon": "mouse",
+            "source": mouseTab
           },
           {
             "id": SettingsPanel.Tab.Power,

@@ -80,6 +80,7 @@ Singleton {
                                             "hooks": SettingsPanel.Tab.Hooks,
                                             "launcher": SettingsPanel.Tab.Launcher,
                                             "location": SettingsPanel.Tab.Location,
+                                            "mouse": SettingsPanel.Tab.Mouse,
                                             "connections": SettingsPanel.Tab.Connections,
                                             "notifications": SettingsPanel.Tab.Notifications,
                                             "plugins": SettingsPanel.Tab.Plugins,

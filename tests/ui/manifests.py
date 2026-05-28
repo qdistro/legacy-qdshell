@@ -33,7 +33,7 @@ class Surface:
 SETTINGS_TABS = [
     "general", "userinterface", "colorscheme", "wallpaper", "bar", "dock",
     "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
-    "display", "location", "osd", "connections", "hooks", "lockscreen",
+    "display", "location", "mouse", "osd", "connections", "hooks", "lockscreen",
     "sessionmenu", "systemmonitor", "plugins",
 ]
 # Notes on tabs we deliberately don't cover:

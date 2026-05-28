@@ -144,6 +144,7 @@ ShellRoot {
           IdleInhibitorService.init();
           PowerProfileService.init();
           PowerService.init();
+          PointerInputService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);

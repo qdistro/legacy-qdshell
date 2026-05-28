@@ -87,6 +87,7 @@ SmartPanel {
     Hooks,
     Launcher,
     Location,
+    Mouse,
     Connections,
     Notifications,
     Plugins,
