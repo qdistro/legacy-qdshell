@@ -71,8 +71,10 @@ Singleton {
   // ── Public state ──────────────────────────────────────────────────────
   // Map from category id -> list of { desktopId, name, icon, exec }
   property var availableApps: ({})
-  // Map from category id -> currently selected desktop-file id (or "" for system default)
+  // Map from category id -> explicit user choice (or "" for system default)
   property var currentDefaults: ({})
+  // Map from category id -> effective resolved handler (for informational display)
+  property var resolvedDefaults: ({})
 
   // Whether the initial scan is finished
   property bool ready: false
@@ -91,14 +93,16 @@ Singleton {
   }
 
   // ── Single scan script ────────────────────────────────────────────────
-  // Outputs JSON with { desktopEntries, systemDefaults, userDefaults }
+  // Outputs JSON with { desktopEntries, systemDefaults, userDefaults }.
+  // Uses StdioCollector (not SplitParser) so the full multi-kilobyte JSON
+  // payload is buffered before parsing.
   Process {
     id: _scanProcess
     command: ["sh", "-c", _scanScript()]
-    stdout: SplitParser {
-      onRead: data => {
+    stdout: StdioCollector {
+      onStreamFinished: {
         try {
-          const parsed = JSON.parse(data);
+          const parsed = JSON.parse(text.trim());
           root._desktopEntries = parsed.desktopEntries || {};
           root._systemDefaults = parsed.systemDefaults || {};
           root._userDefaults = parsed.userDefaults || {};
@@ -246,33 +250,35 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
   }
 
   // ── Build the currentDefaults map ──────────────────────────────────────
+  // currentDefaults holds the *explicit* user-level choice for each category
+  // (qdshell setting or user mimeapps.list). An empty string means "no explicit
+  // override" → the combo shows "System default" selected and the reset button
+  // is hidden. resolvedDefaults holds the system-resolved handler purely for
+  // informational display.
   function _buildCurrentDefaults() {
-    var result = {};
+    var current = {};
+    var resolved = {};
     for (var ci = 0; ci < categories.length; ci++) {
       var cat = categories[ci];
 
-      // Check qdshell settings first
-      var settingsVal = _getSettingsDefault(cat.id);
-      if (settingsVal) {
-        result[cat.id] = settingsVal;
-        continue;
+      // Explicit choice: qdshell settings first, then user mimeapps.list
+      var explicit = _getSettingsDefault(cat.id);
+      if (!explicit && cat.primaryMime && _userDefaults[cat.primaryMime]) {
+        explicit = _userDefaults[cat.primaryMime];
       }
+      current[cat.id] = explicit || "";
 
-      // Then check user mimeapps.list
-      if (cat.primaryMime && _userDefaults[cat.primaryMime]) {
-        result[cat.id] = _userDefaults[cat.primaryMime];
-        continue;
+      // Resolved (effective) handler for display: explicit, else system default
+      if (explicit) {
+        resolved[cat.id] = explicit;
+      } else if (cat.primaryMime && _systemDefaults[cat.primaryMime]) {
+        resolved[cat.id] = _systemDefaults[cat.primaryMime];
+      } else {
+        resolved[cat.id] = "";
       }
-
-      // Then system mimeapps.list
-      if (cat.primaryMime && _systemDefaults[cat.primaryMime]) {
-        result[cat.id] = _systemDefaults[cat.primaryMime];
-        continue;
-      }
-
-      result[cat.id] = "";
     }
-    currentDefaults = result;
+    currentDefaults = current;
+    resolvedDefaults = resolved;
   }
 
   function _getSettingsDefault(categoryId) {
@@ -293,8 +299,31 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
 
   // ── Public: set default for a category ─────────────────────────────────
   function setDefault(categoryId, desktopId) {
+    // Find the category definition
+    var cat = null;
+    for (var i = 0; i < categories.length; i++) {
+      if (categories[i].id === categoryId) {
+        cat = categories[i];
+        break;
+      }
+    }
+
     // Update qdshell settings
     _setSettingsDefault(categoryId, desktopId);
+
+    // Keep in-memory user defaults in sync so the UI reflects the change
+    // immediately (the on-disk write below is asynchronous).
+    if (cat) {
+      var um = Object.assign({}, _userDefaults);
+      for (var mi = 0; mi < cat.allMimes.length; mi++) {
+        if (desktopId) {
+          um[cat.allMimes[mi]] = desktopId;
+        } else {
+          delete um[cat.allMimes[mi]];
+        }
+      }
+      _userDefaults = um;
+    }
 
     // Write to mimeapps.list
     _writeMimeappsList(categoryId, desktopId);
@@ -309,11 +338,35 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
       case "browser": Settings.data.defaultApps.browser = desktopId; break;
       case "mail": Settings.data.defaultApps.mail = desktopId; break;
       case "fileManager": Settings.data.defaultApps.fileManager = desktopId; break;
-      case "terminal": Settings.data.defaultApps.terminal = desktopId; break;
+      case "terminal":
+        Settings.data.defaultApps.terminal = desktopId;
+        _syncTerminalCommand(desktopId);
+        break;
       case "textEditor": Settings.data.defaultApps.textEditor = desktopId; break;
       case "imageViewer": Settings.data.defaultApps.imageViewer = desktopId; break;
       case "audioPlayer": Settings.data.defaultApps.audioPlayer = desktopId; break;
       case "videoPlayer": Settings.data.defaultApps.videoPlayer = desktopId; break;
+    }
+  }
+
+  // Terminal has no standard XDG MIME type. Instead, derive the launcher's
+  // terminal command from the chosen .desktop Exec line so the selection
+  // actually takes effect for qdshell's app launcher.
+  function _syncTerminalCommand(desktopId) {
+    if (!desktopId) {
+      // Reset to the schema default
+      var def = Settings.getDefaultValue("appLauncher.terminalCommand");
+      Settings.data.appLauncher.terminalCommand = (def !== undefined) ? def : "alacritty -e";
+      return;
+    }
+    var entry = _desktopEntries[desktopId];
+    if (!entry || !entry.exec)
+      return;
+    // Strip field codes (%f, %u, %U, etc.) from the Exec line, then append the
+    // "execute command" flag commonly used by terminals (-e).
+    var exec = entry.exec.replace(/%[a-zA-Z]/g, "").trim();
+    if (exec) {
+      Settings.data.appLauncher.terminalCommand = exec + " -e";
     }
   }
 
@@ -340,13 +393,38 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
         Quickshell.execDetached(["xdg-mime", "default", desktopId, cat.allMimes[mi]]);
       }
     } else {
-      // Remove entries from user mimeapps.list using sed
-      for (var mi = 0; mi < cat.allMimes.length; mi++) {
-        // Escape dots and slashes for sed
-        var escaped = cat.allMimes[mi].replace(/\./g, "\\.").replace(/\//g, "\\/");
-        Quickshell.execDetached(["sed", "-i", "/" + escaped + "=/d", _userMimeappsPath]);
-      }
+      // Remove only the [Default Applications] entries for these MIME types.
+      // A naive sed/grep would also strip matching keys from [Added Associations]
+      // and [Removed Associations]; use configparser to scope deletion safely.
+      _removeProcess.mimes = cat.allMimes;
+      _removeProcess.running = true;
     }
+  }
+
+  // Process that removes specific MIME keys from [Default Applications] only,
+  // preserving every other section. Driven via the `mimes` property.
+  Process {
+    id: _removeProcess
+    property var mimes: []
+    command: ["python3", "-c", _removeScript(), JSON.stringify(mimes), _userMimeappsPath]
+  }
+
+  function _removeScript() {
+    return `
+import sys, json, os, configparser
+mimes = json.loads(sys.argv[1])
+path = sys.argv[2]
+if not os.path.isfile(path):
+    sys.exit(0)
+cp = configparser.RawConfigParser()
+cp.optionxform = str
+cp.read(path, encoding="utf-8")
+if cp.has_section("Default Applications"):
+    for m in mimes:
+        cp.remove_option("Default Applications", m)
+with open(path, "w", encoding="utf-8") as f:
+    cp.write(f, space_around_delimiters=False)
+`;
   }
 
   // ── Public: re-scan from disk ──────────────────────────────────────────

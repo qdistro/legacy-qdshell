@@ -1743,7 +1743,8 @@
       "category-audioPlayer": "Audio Player",
       "category-audioPlayer-description": "Application used to play music and audio files.",
       "category-videoPlayer": "Video Player",
-      "category-videoPlayer-description": "Application used to play videos and movies."
+      "category-videoPlayer-description": "Application used to play videos and movies.",
+      "currently-using": "Currently using: {app}"
     },
     "power": {
       "title": "Power",

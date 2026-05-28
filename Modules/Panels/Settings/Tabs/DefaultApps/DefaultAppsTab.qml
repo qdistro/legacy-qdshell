@@ -82,6 +82,18 @@ ColumnLayout {
         Layout.leftMargin: Style.marginL
       }
 
+      // Effective system handler hint (shown when "System default" is selected)
+      NText {
+        readonly property string resolvedId: DefaultAppsService.resolvedDefaults[modelData.id] || ""
+        visible: (DefaultAppsService.currentDefaults[modelData.id] || "") === "" && resolvedId !== ""
+        text: I18n.tr("panels.default-apps.currently-using", {
+          "app": DefaultAppsService.getAppName(resolvedId)
+        })
+        pointSize: Style.fontSizeXS
+        color: Color.mOnSurfaceVariant
+        Layout.leftMargin: Style.marginL
+      }
+
       // Reset button
       NButton {
         visible: (DefaultAppsService.currentDefaults[modelData.id] || "") !== ""
