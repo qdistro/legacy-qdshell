@@ -20,55 +20,55 @@ Singleton {
 
   // Shell-safe quoting: wraps a string in single quotes, escaping embedded single quotes
   function _q(s) {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
+    return "'" + String(s).replace(/'/g, "'\\''") + "'";
   }
 
   // Refresh the full list by scanning both directories
   function refresh() {
     _pendingEntries = [];
-    _scanPhase = "user";
     scanProcess.command = ["sh", "-c", "ls -1 " + _q(userDir) + "/*.desktop 2>/dev/null; echo '---SEPARATOR---'; ls -1 " + _q(systemDir) + "/*.desktop 2>/dev/null"];
     scanProcess.running = true;
   }
 
-  // Enable or disable an entry by toggling the appropriate desktop file key
-  function setEnabled(filePath, enabled) {
-    // For system entries, create/update a user override
-    const isSystem = filePath.startsWith(systemDir);
-    if (isSystem) {
-      const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
-      const userPath = userDir + "/" + fileName;
+  // Enable or disable an entry by toggling the appropriate desktop file key.
+  // 'entry' is one of the objects from the entries list.
+  function setEnabled(entry, enabled) {
+    if (entry.isSystem) {
+      // System entry (possibly with an existing user override). The override
+      // lives at userDir/<fileName> with Hidden=true.
+      const userPath = userDir + "/" + entry.fileName;
       if (!enabled) {
-        // Create user override with Hidden=true
+        // Create a minimal user override that hides the system entry.
+        // We do not copy the full system file (that would shadow future
+        // upstream changes); a small Hidden=true stub is sufficient per spec.
+        var stub = "[Desktop Entry]\nType=Application\nHidden=true\n";
         writeProcess.command = ["sh", "-c",
-          "mkdir -p " + _q(userDir) + " && " +
-          "cp " + _q(filePath) + " " + _q(userPath) + " && " +
-          "sed -i 's/^Hidden=.*/Hidden=true/' " + _q(userPath) + " && " +
-          "grep -q '^Hidden=' " + _q(userPath) + " || echo 'Hidden=true' >> " + _q(userPath)];
+          "mkdir -p " + _q(userDir) + " && cat > " + _q(userPath) + " << 'QDSHELL_EOF'\n" + stub + "QDSHELL_EOF"];
       } else {
-        // Remove the user override to re-enable the system entry
+        // Re-enable by removing the user override so the system entry applies.
         writeProcess.command = ["sh", "-c", "rm -f " + _q(userPath)];
       }
     } else {
-      // User entry: toggle X-GNOME-Autostart-enabled
+      // Plain user entry: toggle X-GNOME-Autostart-enabled / clear Hidden.
+      const filePath = entry.filePath;
       if (enabled) {
         writeProcess.command = ["sh", "-c",
-          "sed -i '/^Hidden=true/d' " + _q(filePath) + " && " +
-          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=true/' " + _q(filePath) + " && " +
-          "grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + " || true"];
+          "sed -i '/^Hidden=/d' " + _q(filePath) + " && " +
+          "if grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + "; then " +
+          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=true/' " + _q(filePath) + "; fi"];
       } else {
         writeProcess.command = ["sh", "-c",
-          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=false/' " + _q(filePath) + " && " +
-          "grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + " || echo 'X-GNOME-Autostart-enabled=false' >> " + _q(filePath)];
+          "if grep -q '^X-GNOME-Autostart-enabled=' " + _q(filePath) + "; then " +
+          "sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=false/' " + _q(filePath) + "; " +
+          "else echo 'X-GNOME-Autostart-enabled=false' >> " + _q(filePath) + "; fi"];
       }
     }
     writeProcess.running = true;
   }
 
-  // Add a new autostart entry
+  // Add a new autostart entry. Picks a non-colliding filename.
   function addEntry(name, comment, exec, workingDir) {
-    const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const filePath = userDir + "/" + safeName + ".desktop";
+    const base = (name.replace(/[^a-zA-Z0-9_-]/g, "_") || "autostart");
     var content = "[Desktop Entry]\n";
     content += "Type=Application\n";
     content += "Name=" + name + "\n";
@@ -79,28 +79,48 @@ Singleton {
       content += "Path=" + workingDir + "\n";
     content += "X-GNOME-Autostart-enabled=true\n";
 
+    // Use a shell loop to find a free filename so we never clobber an
+    // existing user or override .desktop file.
+    const dir = _q(userDir);
+    const heredoc = "cat << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF";
     writeProcess.command = ["sh", "-c",
-      "mkdir -p " + _q(userDir) + " && cat > " + _q(filePath) + " << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF"];
+      "mkdir -p " + dir + "; " +
+      "base=" + _q(base) + "; f=\"" + userDir + "/$base.desktop\"; i=1; " +
+      "while [ -e \"$f\" ]; do f=\"" + userDir + "/$base-$i.desktop\"; i=$((i+1)); done; " +
+      heredoc + " > \"$f\""];
     writeProcess.running = true;
   }
 
-  // Edit an existing user entry
+  // Edit an existing user entry. Updates only Name/Comment/Exec/Path in place,
+  // preserving all other keys (Icon, Terminal, OnlyShowIn, enabled state, ...).
   function editEntry(filePath, name, comment, exec, workingDir) {
     if (filePath.startsWith(systemDir))
       return; // Cannot edit system entries
 
-    var content = "[Desktop Entry]\n";
-    content += "Type=Application\n";
-    content += "Name=" + name + "\n";
-    if (comment)
-      content += "Comment=" + comment + "\n";
-    content += "Exec=" + exec + "\n";
-    if (workingDir)
-      content += "Path=" + workingDir + "\n";
-    content += "X-GNOME-Autostart-enabled=true\n";
+    // Build an upsert command for one key. The replacement value is passed
+    // through an environment variable (QD_KEY / QD_VAL) so awk/sh never
+    // reinterpret backslashes or shell metacharacters in the value.
+    function upsert(idx, key, value) {
+      const fp = _q(filePath);
+      if (value === "" || value === undefined || value === null) {
+        // Remove the key entirely (key is a fixed literal, safe in regex).
+        return "sed -i " + _q("/^" + key + "=/d") + " " + fp + "; ";
+      }
+      const keyVar = "QD_K" + idx;
+      const valVar = "QD_V" + idx;
+      const assigns = keyVar + "=" + _q(key) + " " + valVar + "=" + _q(value) + " ";
+      const awkProg =
+        "BEGIN{done=0; k=ENVIRON[\"" + keyVar + "\"]; v=ENVIRON[\"" + valVar + "\"]} " +
+        "$0 ~ (\"^\" k \"=\") { if(!done){print k\"=\"v; done=1} next } {print} " +
+        "END{ if(!done) print k\"=\"v }";
+      // Apply the env assignment directly to the awk command so the variables
+      // are in awk's environment (env prefixes only affect one simple command).
+      return "tmp=\"$(mktemp)\"; " + assigns + "awk " + _q(awkProg) + " " + fp +
+             " > \"$tmp\" && mv \"$tmp\" " + fp + "; ";
+    }
 
-    writeProcess.command = ["sh", "-c",
-      "cat > " + _q(filePath) + " << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF"];
+    var cmd = upsert(1, "Name", name) + upsert(2, "Comment", comment) + upsert(3, "Exec", exec) + upsert(4, "Path", workingDir);
+    writeProcess.command = ["sh", "-c", cmd];
     writeProcess.running = true;
   }
 
@@ -114,8 +134,6 @@ Singleton {
 
   // --- Internal ---
   property var _pendingEntries: []
-  property string _scanPhase: ""
-  property string _scanOutput: ""
 
   Component.onCompleted: {
     refresh();
@@ -175,13 +193,19 @@ Singleton {
   }
 
   property var _filesToRead: []
+  // Map of fileName -> true for files that exist in systemDir (so we can
+  // detect that a user file is actually a system-entry override).
+  property var _systemFileNames: ({})
 
   function _parseScanOutput(output) {
     _filesToRead = [];
     _pendingEntries = [];
+    _systemFileNames = {};
 
     const lines = output.trim().split("\n");
     let inSystem = false;
+    let userFiles = [];
+    let systemFiles = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -192,12 +216,18 @@ Singleton {
       if (line === "" || !line.endsWith(".desktop"))
         continue;
 
-      _filesToRead.push({
-        "path": line,
-        "isSystem": inSystem
-      });
+      const fileName = line.substring(line.lastIndexOf("/") + 1);
+      if (inSystem) {
+        _systemFileNames[fileName] = true;
+        systemFiles.push({ "path": line, "isSystem": true });
+      } else {
+        userFiles.push({ "path": line, "isSystem": false });
+      }
     }
 
+    // Read user files first, then system files. This ordering lets system
+    // entries detect a pre-existing user override.
+    _filesToRead = userFiles.concat(systemFiles);
     _readNextFile();
   }
 
@@ -216,6 +246,7 @@ Singleton {
 
   function _parseDesktopFile(filePath, content, isSystem) {
     const lines = content.split("\n");
+    let inDesktopEntry = false;
     let name = "";
     let comment = "";
     let exec = "";
@@ -227,8 +258,13 @@ Singleton {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line.startsWith("[") && line !== "[Desktop Entry]" && name !== "")
-        break; // Stop at next group
+      if (line.startsWith("[")) {
+        // Only parse keys inside the [Desktop Entry] group.
+        inDesktopEntry = (line === "[Desktop Entry]");
+        continue;
+      }
+      if (!inDesktopEntry)
+        continue;
 
       if (line.startsWith("Name=") && !line.startsWith("Name["))
         name = line.substring(5);
@@ -248,35 +284,51 @@ Singleton {
         workingDir = line.substring(5);
     }
 
-    // Skip non-application entries
+    const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
+
+    if (isSystem) {
+      // If a user override already exists for this filename, the user entry
+      // has already been pushed; we just need to update its display data and
+      // mark it as a system entry so the UI treats it as read-only.
+      for (let i = 0; i < _pendingEntries.length; i++) {
+        if (_pendingEntries[i].fileName === fileName) {
+          const e = _pendingEntries[i];
+          e.isSystem = true;
+          // System metadata fills in display fields the stub override lacks.
+          if (!e._rawName)
+            e.name = name || fileName.replace(".desktop", "");
+          if (!e._rawComment)
+            e.comment = comment;
+          if (!e._rawExec)
+            e.exec = exec;
+          // Effective enabled state is whatever the override declared.
+          return;
+        }
+      }
+    }
+
+    // Skip non-application entries (only relevant for fresh entries).
     if (type !== "" && type !== "Application")
       return;
 
     // Determine effective enabled state
     const enabled = !hidden && autostartEnabled;
 
-    // For system entries, check if a user override exists that hides it
-    const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
-    if (isSystem) {
-      // Check if there is already a user entry with same filename
-      for (let i = 0; i < _pendingEntries.length; i++) {
-        if (_pendingEntries[i].fileName === fileName) {
-          // User override exists; skip system entry
-          return;
-        }
-      }
-    }
-
     _pendingEntries.push({
       "filePath": filePath,
       "fileName": fileName,
+      // A user file whose name matches a system entry is really a system override.
+      "isSystem": isSystem || (_systemFileNames[fileName] === true),
       "name": name || fileName.replace(".desktop", ""),
       "comment": comment,
       "exec": exec,
       "icon": icon,
       "enabled": enabled,
-      "isSystem": isSystem,
-      "workingDir": workingDir
+      "workingDir": workingDir,
+      // Raw (unfilled) values so a later system pass can detect a stub override
+      "_rawName": name,
+      "_rawComment": comment,
+      "_rawExec": exec
     });
   }
 

@@ -69,9 +69,10 @@ ColumnLayout {
         anchors.margins: Style.marginM
         spacing: Style.marginM
 
-        // Icon
+        // Icon (use a static Tabler icon; .desktop Icon= values are
+        // freedesktop icon names, not qdshell Tabler keys)
         NIcon {
-          icon: modelData.icon || "player-play"
+          icon: "player-play"
           pointSize: Style.fontSizeXXL
           color: modelData.enabled ? Color.mPrimary : Color.mOnSurfaceVariant
           Layout.alignment: Qt.AlignVCenter
@@ -131,7 +132,7 @@ ColumnLayout {
           Layout.alignment: Qt.AlignVCenter
           checked: modelData.enabled
           onToggled: checked => {
-            AutostartService.setEnabled(modelData.filePath, checked);
+            AutostartService.setEnabled(modelData, checked);
           }
         }
 
