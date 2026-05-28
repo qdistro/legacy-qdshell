@@ -80,46 +80,55 @@ Singleton {
     content += "X-GNOME-Autostart-enabled=true\n";
 
     // Use a shell loop to find a free filename so we never clobber an
-    // existing user or override .desktop file.
+    // existing user or override .desktop file. The heredoc redirection must
+    // be on the cat command itself (cat > "$f" << EOF), with the body and
+    // terminator following on their own lines.
     const dir = _q(userDir);
-    const heredoc = "cat << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF";
     writeProcess.command = ["sh", "-c",
       "mkdir -p " + dir + "; " +
-      "base=" + _q(base) + "; f=\"" + userDir + "/$base.desktop\"; i=1; " +
-      "while [ -e \"$f\" ]; do f=\"" + userDir + "/$base-$i.desktop\"; i=$((i+1)); done; " +
-      heredoc + " > \"$f\""];
+      "base=" + _q(base) + "; f=" + _q(userDir) + "/\"$base.desktop\"; i=1; " +
+      "while [ -e \"$f\" ]; do f=" + _q(userDir) + "/\"$base-$i.desktop\"; i=$((i+1)); done; " +
+      "cat > \"$f\" << 'QDSHELL_EOF'\n" + content + "QDSHELL_EOF"];
     writeProcess.running = true;
   }
 
-  // Edit an existing user entry. Updates only Name/Comment/Exec/Path in place,
-  // preserving all other keys (Icon, Terminal, OnlyShowIn, enabled state, ...).
+  // Edit an existing user entry. Updates only Name/Comment/Exec/Path within the
+  // [Desktop Entry] group, preserving all other keys (Icon, Terminal,
+  // OnlyShowIn, enabled state, ...) and not touching later groups. Missing
+  // keys are appended at the end of the [Desktop Entry] group. An empty value
+  // removes the key (only within [Desktop Entry]).
   function editEntry(filePath, name, comment, exec, workingDir) {
     if (filePath.startsWith(systemDir))
       return; // Cannot edit system entries
 
-    // Build an upsert command for one key. The replacement value is passed
-    // through an environment variable (QD_KEY / QD_VAL) so awk/sh never
-    // reinterpret backslashes or shell metacharacters in the value.
-    function upsert(idx, key, value) {
-      const fp = _q(filePath);
-      if (value === "" || value === undefined || value === null) {
-        // Remove the key entirely (key is a fixed literal, safe in regex).
-        return "sed -i " + _q("/^" + key + "=/d") + " " + fp + "; ";
-      }
-      const keyVar = "QD_K" + idx;
-      const valVar = "QD_V" + idx;
-      const assigns = keyVar + "=" + _q(key) + " " + valVar + "=" + _q(value) + " ";
-      const awkProg =
-        "BEGIN{done=0; k=ENVIRON[\"" + keyVar + "\"]; v=ENVIRON[\"" + valVar + "\"]} " +
-        "$0 ~ (\"^\" k \"=\") { if(!done){print k\"=\"v; done=1} next } {print} " +
-        "END{ if(!done) print k\"=\"v }";
-      // Apply the env assignment directly to the awk command so the variables
-      // are in awk's environment (env prefixes only affect one simple command).
-      return "tmp=\"$(mktemp)\"; " + assigns + "awk " + _q(awkProg) + " " + fp +
-             " > \"$tmp\" && mv \"$tmp\" " + fp + "; ";
+    // Values are passed through the environment so awk never reinterprets
+    // backslashes or shell metacharacters. Empty/undefined => remove the key.
+    const env = {
+      "QD_NAME": (name === undefined || name === null) ? "" : String(name),
+      "QD_COMMENT": (comment === undefined || comment === null) ? "" : String(comment),
+      "QD_EXEC": (exec === undefined || exec === null) ? "" : String(exec),
+      "QD_PATH": (workingDir === undefined || workingDir === null) ? "" : String(workingDir)
+    };
+
+    // Single awk pass: track whether we are inside [Desktop Entry]. Update or
+    // drop the four managed keys inside the group; on leaving the group (or at
+    // EOF) emit any managed keys that were not already present and have a value.
+    const awkProg =
+      "BEGIN{ split(\"Name:QD_NAME Comment:QD_COMMENT Exec:QD_EXEC Path:QD_PATH\", a, \" \"); " +
+      "for(j in a){ split(a[j], p, \":\"); keys[j]=p[1]; vals[p[1]]=ENVIRON[p[2]] } } " +
+      "function flush(){ for(j=1;j<=4;j++){ kk=keys[j]; if(!seen[kk] && length(vals[kk])>0){ print kk\"=\"vals[kk] } seen[kk]=1 } } " +
+      "/^\\[/{ if(ingroup){ flush() } ingroup=($0==\"[Desktop Entry]\"); print; next } " +
+      "{ if(ingroup){ for(j=1;j<=4;j++){ kk=keys[j]; if(index($0, kk\"=\")==1){ if(length(vals[kk])>0 && !seen[kk]){ print kk\"=\"vals[kk] } seen[kk]=1; next } } } print } " +
+      "END{ if(ingroup){ flush() } }";
+
+    let assigns = "";
+    for (var k in env) {
+      assigns += k + "=" + _q(env[k]) + " ";
     }
 
-    var cmd = upsert(1, "Name", name) + upsert(2, "Comment", comment) + upsert(3, "Exec", exec) + upsert(4, "Path", workingDir);
+    const fp = _q(filePath);
+    const cmd = "tmp=\"$(mktemp)\"; " + assigns + "awk " + _q(awkProg) + " " + fp +
+                " > \"$tmp\" && mv \"$tmp\" " + fp;
     writeProcess.command = ["sh", "-c", cmd];
     writeProcess.running = true;
   }
@@ -193,14 +202,10 @@ Singleton {
   }
 
   property var _filesToRead: []
-  // Map of fileName -> true for files that exist in systemDir (so we can
-  // detect that a user file is actually a system-entry override).
-  property var _systemFileNames: ({})
 
   function _parseScanOutput(output) {
     _filesToRead = [];
     _pendingEntries = [];
-    _systemFileNames = {};
 
     const lines = output.trim().split("\n");
     let inSystem = false;
@@ -216,9 +221,7 @@ Singleton {
       if (line === "" || !line.endsWith(".desktop"))
         continue;
 
-      const fileName = line.substring(line.lastIndexOf("/") + 1);
       if (inSystem) {
-        _systemFileNames[fileName] = true;
         systemFiles.push({ "path": line, "isSystem": true });
       } else {
         userFiles.push({ "path": line, "isSystem": false });
@@ -287,23 +290,27 @@ Singleton {
     const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
 
     if (isSystem) {
-      // If a user override already exists for this filename, the user entry
-      // has already been pushed; we just need to update its display data and
-      // mark it as a system entry so the UI treats it as read-only.
+      // If a user file with this filename was already read, it shadows this
+      // system entry. We only treat it as a managed system override (read-only,
+      // toggled by creating/deleting the stub) when it is a minimal hide-stub:
+      // Hidden=true with no own Exec. A full user .desktop that merely shares
+      // the name stays a normal, editable user entry.
       for (let i = 0; i < _pendingEntries.length; i++) {
-        if (_pendingEntries[i].fileName === fileName) {
-          const e = _pendingEntries[i];
+        const e = _pendingEntries[i];
+        if (e.fileName !== fileName)
+          continue;
+
+        if (e._hidden && !e._rawExec) {
+          // Managed hide-stub override of this system entry.
           e.isSystem = true;
-          // System metadata fills in display fields the stub override lacks.
-          if (!e._rawName)
-            e.name = name || fileName.replace(".desktop", "");
-          if (!e._rawComment)
-            e.comment = comment;
-          if (!e._rawExec)
-            e.exec = exec;
-          // Effective enabled state is whatever the override declared.
-          return;
+          e.name = name || fileName.replace(".desktop", "");
+          e.comment = comment;
+          e.exec = exec;
+          // Effective enabled state is whatever the stub declared (disabled).
         }
+        // Either way, the system entry itself is shadowed by the user file;
+        // do not add a separate system row.
+        return;
       }
     }
 
@@ -317,17 +324,15 @@ Singleton {
     _pendingEntries.push({
       "filePath": filePath,
       "fileName": fileName,
-      // A user file whose name matches a system entry is really a system override.
-      "isSystem": isSystem || (_systemFileNames[fileName] === true),
+      "isSystem": isSystem,
       "name": name || fileName.replace(".desktop", ""),
       "comment": comment,
       "exec": exec,
       "icon": icon,
       "enabled": enabled,
       "workingDir": workingDir,
-      // Raw (unfilled) values so a later system pass can detect a stub override
-      "_rawName": name,
-      "_rawComment": comment,
+      // Internal flags used during the later system pass.
+      "_hidden": hidden,
       "_rawExec": exec
     });
   }
