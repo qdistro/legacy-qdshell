@@ -8,3 +8,4 @@ What must be visible when this panel is open:
 
 Notes:
 - To exercise the populated rendering, seed a tray item via DBus before the capture (out of scope for this harness). The PanelShell refactor doesn't touch tray rendering, so the empty-state check is enough to detect a regression that breaks the panel from opening at all.
+- The tray **known-items policy** UI (per-item show/hide + "Reset" button) is NOT part of this drawer surface. It lives in the Tray bar widget's settings dialog (TraySettings.qml), opened via right-click → widget settings on the Tray widget. That transient dialog has no dedicated UI-test manifest surface, so it is not screenshot-asserted here; its logic is covered by the Node test `tests/test_tray_known_items.js`.

@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
 import qs.Widgets
+import "../../../../../Services/System/TrayKnownItems.js" as TrayKnownItems
 
 ColumnLayout {
   id: root
@@ -16,6 +17,9 @@ ColumnLayout {
 
   // Local state
   property var localBlacklist: widgetData.blacklist || []
+  // Known-items list: normalized [{id, title, policy}] (treated as opaque,
+  // untrusted data — see Services/System/TrayKnownItems.js).
+  property var localKnownItems: TrayKnownItems.normalizeList(widgetData.knownItems || [])
   property bool valueColorizeIcons: widgetData.colorizeIcons !== undefined ? widgetData.colorizeIcons : widgetMetadata.colorizeIcons
   property string valueChevronColor: widgetData.chevronColor !== undefined ? widgetData.chevronColor : widgetMetadata.chevronColor
   property bool valueDrawerEnabled: widgetData.drawerEnabled !== undefined ? widgetData.drawerEnabled : widgetMetadata.drawerEnabled
@@ -23,6 +27,10 @@ ColumnLayout {
 
   ListModel {
     id: blacklistModel
+  }
+
+  ListModel {
+    id: knownItemsModel
   }
 
   function populateBlacklist() {
@@ -33,8 +41,21 @@ ColumnLayout {
     }
   }
 
+  function populateKnownItems() {
+    knownItemsModel.clear();
+    for (var i = 0; i < localKnownItems.length; i++) {
+      var it = localKnownItems[i];
+      knownItemsModel.append({
+                               "itemId": it.id,
+                               "title": it.title,
+                               "policy": it.policy
+                             });
+    }
+  }
+
   Component.onCompleted: {
     Qt.callLater(populateBlacklist);
+    Qt.callLater(populateKnownItems);
   }
 
   spacing: Style.marginM
@@ -176,6 +197,102 @@ ColumnLayout {
     }
   }
 
+  NDivider {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginM
+  }
+
+  // Known items: per-item show/hide policy for tray items qdshell has seen.
+  ColumnLayout {
+    Layout.fillWidth: true
+    spacing: Style.marginS
+
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.marginS
+
+      NLabel {
+        Layout.fillWidth: true
+        label: I18n.tr("bar.tray.known-items-label")
+        description: I18n.tr("bar.tray.known-items-description")
+      }
+
+      NButton {
+        text: I18n.tr("bar.tray.known-items-reset")
+        icon: "rotate-ccw"
+        tooltipText: I18n.tr("bar.tray.known-items-reset-tooltip")
+        outlined: true
+        onClicked: {
+          // Clear the remembered list (TrayKnownItems.reset()).
+          root.localKnownItems = TrayKnownItems.reset();
+          knownItemsModel.clear();
+          saveSettings();
+        }
+      }
+    }
+
+    NText {
+      Layout.fillWidth: true
+      visible: knownItemsModel.count === 0
+      text: I18n.tr("bar.tray.known-items-empty")
+      color: Color.mOnSurfaceVariant
+      wrapMode: Text.WordWrap
+    }
+
+    NListView {
+      Layout.fillWidth: true
+      Layout.preferredHeight: 180
+      Layout.topMargin: Style.marginS
+      visible: knownItemsModel.count > 0
+      gradientColor: Color.mSurface
+
+      model: knownItemsModel
+      delegate: Item {
+        width: ListView.width
+        height: 44
+
+        RowLayout {
+          anchors.fill: parent
+          anchors.leftMargin: Style.marginS
+          anchors.rightMargin: Style.marginS
+          spacing: Style.marginS
+
+          NText {
+            Layout.fillWidth: true
+            // Untrusted tray title/id — rendered as plain text only.
+            textFormat: Text.PlainText
+            text: (model.title && model.title.length > 0) ? model.title : model.itemId
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+          }
+
+          NComboBox {
+            Layout.preferredWidth: 140
+            model: [
+              {
+                "key": "default",
+                "name": I18n.tr("options.tray-known-item-policy.default")
+              },
+              {
+                "key": "show",
+                "name": I18n.tr("options.tray-known-item-policy.show")
+              },
+              {
+                "key": "hide",
+                "name": I18n.tr("options.tray-known-item-policy.hide")
+              }
+            ]
+            currentKey: model.policy || "default"
+            onSelected: key => {
+                          knownItemsModel.setProperty(index, "policy", key);
+                          saveSettings();
+                        }
+          }
+        }
+      }
+    }
+  }
+
   // This function will be called by the dialog to get the new settings
   function saveSettings() {
     var newBlacklist = [];
@@ -183,9 +300,22 @@ ColumnLayout {
       newBlacklist.push(blacklistModel.get(i).rule);
     }
 
+    var newKnownItems = [];
+    for (var k = 0; k < knownItemsModel.count; k++) {
+      var entry = knownItemsModel.get(k);
+      newKnownItems.push({
+                           "id": entry.itemId,
+                           "title": entry.title,
+                           "policy": entry.policy
+                         });
+    }
+    // Normalize (dedup by id, sanitize policy) before persisting.
+    newKnownItems = TrayKnownItems.normalizeList(newKnownItems);
+
     // Return the updated settings for this widget instance
     var settings = Object.assign({}, widgetData || {});
     settings.blacklist = newBlacklist;
+    settings.knownItems = newKnownItems;
     settings.colorizeIcons = root.valueColorizeIcons;
     settings.chevronColor = root.valueChevronColor;
     settings.drawerEnabled = root.valueDrawerEnabled;

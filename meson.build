@@ -32,4 +32,6 @@ if node.found()
   test('settings-tree', node, args: files('tests/test_settings_tree.js'))
   test('gtk-settings', node, args: files('tests/test_gtk_settings.js'))
   test('shortcut-conflicts', node, args: files('tests/test_shortcut_conflicts.js'))
+  test('tray-known-items', node, args: files('tests/test_tray_known_items.js'))
+  test('notification-detail', node, args: files('tests/test_notification_detail.js'))
 endif

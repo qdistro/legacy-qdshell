@@ -437,7 +437,9 @@
     "appPolicy": {},
     "enableMediaToast": false,
     "enableKeyboardLayoutToast": true,
-    "enableBatteryToast": true
+    "enableBatteryToast": true,
+    "minWidth": 440,
+    "detailMode": "normal"
   },
   "osd": {
     "enabled": true,

@@ -9,6 +9,7 @@ import qs.Commons
 import qs.Modules.Bar.Extras
 import qs.Services.UI
 import qs.Widgets
+import "../../../Services/System/TrayKnownItems.js" as TrayKnownItems
 
 Item {
   id: root
@@ -63,6 +64,8 @@ Item {
   readonly property int iconSize: Style.toOdd(capsuleHeight * 0.65)
 
   property var blacklist: widgetSettings.blacklist || widgetMetadata.blacklist || [] // Read from settings
+  // Known-items policy list: normalized [{id, title, policy}] (opaque, untrusted).
+  property var knownItems: TrayKnownItems.normalizeList(widgetSettings.knownItems || widgetMetadata.knownItems || [])
   property var pinned: widgetSettings.pinned || widgetMetadata.pinned || [] // Pinned items (shown inline)
   property bool drawerEnabled: widgetSettings.drawerEnabled !== undefined ? widgetSettings.drawerEnabled : (widgetMetadata.drawerEnabled !== undefined ? widgetMetadata.drawerEnabled : true) // Enable drawer panel
   property bool hidePassive: widgetSettings.hidePassive !== undefined ? widgetSettings.hidePassive : true // Hide passive status items
@@ -132,6 +135,13 @@ Item {
       root.blacklist = currentSettings.blacklist;
     if (currentSettings.pinned !== undefined)
       root.pinned = currentSettings.pinned;
+    if (currentSettings.knownItems !== undefined)
+      root.knownItems = TrayKnownItems.normalizeList(currentSettings.knownItems);
+
+    // Work on a copy of the known-items list; record any newly-seen items and
+    // persist the list back if it grew (treat id/title as opaque, untrusted).
+    let workingKnown = TrayKnownItems.normalizeList(root.knownItems);
+    let knownChanged = false;
 
     let newItems = [];
     if (SystemTray.items && SystemTray.items.values) {
@@ -143,28 +153,50 @@ Item {
         }
 
         const title = item.tooltipTitle || item.name || item.id || "";
+        const stableId = item.id || title;
+
+        // Remember this item (no-op if already known; never duplicates).
+        if (stableId) {
+          const beforeLen = workingKnown.length;
+          workingKnown = TrayKnownItems.mergeSeenItem(workingKnown, {
+                                                        "id": stableId,
+                                                        "title": title
+                                                      }, TrayKnownItems.POLICY_DEFAULT);
+          if (workingKnown.length !== beforeLen)
+            knownChanged = true;
+        }
+
+        // Default visibility from passive + blacklist filtering.
+        let defaultVisible = true;
 
         // Skip passive items if hidePassive is enabled
         if (root.hidePassive && item.status !== undefined && (item.status === SystemTray.Passive || item.status === 0)) {
-          continue;
+          defaultVisible = false;
         }
 
         // Check if blacklisted
-        let isBlacklisted = false;
-        if (root.blacklist && root.blacklist.length > 0) {
+        if (defaultVisible && root.blacklist && root.blacklist.length > 0) {
           for (var j = 0; j < root.blacklist.length; j++) {
             const rule = root.blacklist[j];
             if (wildCardMatch(title, rule)) {
-              isBlacklisted = true;
+              defaultVisible = false;
               break;
             }
           }
         }
 
-        if (!isBlacklisted) {
+        // Apply the per-item known-items policy (show/hide overrides default).
+        const policy = TrayKnownItems.policyForId(workingKnown, stableId);
+        if (TrayKnownItems.effectiveVisible(policy, defaultVisible)) {
           newItems.push(item);
         }
       }
+    }
+
+    // Persist newly-seen items so they appear in the known-items settings list.
+    if (knownChanged) {
+      root.knownItems = workingKnown;
+      _persistKnownItems(workingKnown);
     }
 
     // If drawer is disabled, show all items inline
@@ -215,6 +247,31 @@ Item {
 
   function updateFilteredItems() {
     updateDebounceTimer.restart();
+  }
+
+  // Persist the known-items list back into this widget's settings so it shows
+  // up in the Tray widget settings dialog and survives restarts. Mirrors the
+  // write path BarService uses when the settings dialog saves.
+  function _persistKnownItems(items) {
+    if (!section || sectionWidgetIndex < 0 || !screenName)
+      return;
+    var patch = {
+      "knownItems": items
+    };
+    if (Settings.hasScreenOverride(screenName, "widgets")) {
+      var overrideWidgets = Settings.getBarWidgetsForScreen(screenName);
+      if (overrideWidgets && overrideWidgets[section] && sectionWidgetIndex < overrideWidgets[section].length) {
+        overrideWidgets[section][sectionWidgetIndex] = Object.assign({}, overrideWidgets[section][sectionWidgetIndex], patch);
+        Settings.setScreenOverride(screenName, "widgets", overrideWidgets);
+      }
+    } else {
+      var widgets = Settings.data.bar.widgets[section];
+      if (widgets && sectionWidgetIndex < widgets.length) {
+        widgets[sectionWidgetIndex] = Object.assign({}, widgets[sectionWidgetIndex], patch);
+        Settings.data.bar.widgets[section] = widgets;
+        Settings.saveImmediate();
+      }
+    }
   }
 
   function wildCardMatch(str, rule) {

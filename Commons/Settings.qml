@@ -666,6 +666,8 @@ Singleton {
       property bool enableMediaToast: false
       property bool enableKeyboardLayoutToast: true
       property bool enableBatteryToast: true
+      property int minWidth: 440 // minimum toast width (px, pre-scale)
+      property string detailMode: "normal" // "compact" | "normal" | "detailed"
     }
 
     // on-screen display
