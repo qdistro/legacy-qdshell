@@ -38,6 +38,12 @@ Singleton {
   property var lastSoundTime: 0
   readonly property int minSoundInterval: 100
 
+  // Duplicate suppression: maps content-hash -> timestamp of last seen
+  property var recentSignatures: ({})
+
+  // Known apps that have sent notifications (for per-app policy UI)
+  property var knownApps: ({})  // app_id -> { lastSeen: timestamp }
+
   // Notification server
   property var notificationServerLoader: null
 
@@ -142,18 +148,109 @@ Singleton {
                                           }));
   }
 
+  // ---- Per-app policy helpers ----
+  function getAppPolicy(appName) {
+    const policies = Settings.data.notifications?.appPolicy;
+    if (!policies || typeof policies !== "object") return null;
+    const key = (appName || "").toLowerCase();
+    return policies[key] || null;
+  }
+
+  function isAppMuted(appName) {
+    const policy = getAppPolicy(appName);
+    return policy ? (policy.muted === true) : false;
+  }
+
+  function isAppUrgentAllowed(appName) {
+    const policy = getAppPolicy(appName);
+    if (!policy) return true; // default: allow urgent
+    return policy.allowUrgent !== false;
+  }
+
+  function isAppLogEnabled(appName) {
+    const policy = getAppPolicy(appName);
+    if (!policy) return true; // default: log enabled
+    return policy.logEnabled !== false;
+  }
+
+  function registerKnownApp(appName) {
+    if (!appName) return;
+    const key = appName.toLowerCase();
+    const apps = root.knownApps;
+    apps[key] = { lastSeen: Date.now(), displayName: appName };
+    root.knownApps = apps;
+  }
+
+  function getKnownApps() {
+    return Object.keys(root.knownApps).sort();
+  }
+
+  function getKnownAppDisplayName(appKey) {
+    const entry = root.knownApps[appKey];
+    return entry ? entry.displayName : appKey;
+  }
+
+  function setAppPolicy(appName, property, value) {
+    const key = (appName || "").toLowerCase();
+    if (!key) return;
+    var policies = JSON.parse(JSON.stringify(Settings.data.notifications.appPolicy || {}));
+    if (!policies[key]) policies[key] = {};
+    policies[key][property] = value;
+    Settings.data.notifications.appPolicy = policies;
+  }
+
+  function resetAppPolicy(appName) {
+    const key = (appName || "").toLowerCase();
+    if (!key) return;
+    var policies = JSON.parse(JSON.stringify(Settings.data.notifications.appPolicy || {}));
+    delete policies[key];
+    Settings.data.notifications.appPolicy = policies;
+    // Also remove from known apps
+    var apps = root.knownApps;
+    delete apps[key];
+    root.knownApps = apps;
+  }
+
+  // ---- Duplicate suppression with TTL ----
+  function isDuplicateWithinWindow(data) {
+    if (!Settings.data.notifications?.suppressDuplicates) return false;
+    const windowMs = (Settings.data.notifications?.suppressDuplicateWindowSec || 3) * 1000;
+    const sig = getContentId(data.summary, data.body, data.appName);
+    const now = Date.now();
+
+    // Prune expired entries (keep map small)
+    for (const k in recentSignatures) {
+      if (now - recentSignatures[k] > windowMs) {
+        delete recentSignatures[k];
+      }
+    }
+
+    if (recentSignatures[sig] && (now - recentSignatures[sig]) < windowMs) {
+      return true; // duplicate
+    }
+    recentSignatures[sig] = now;
+    return false;
+  }
+
   // Main handler
   function handleNotification(notification) {
     const quickshellId = notification.id;
     const data = createData(notification);
+    const appName = data.appName;
 
     // Phase-5 hook: forward a one-line summary to the qdistro broker
     // for the admin audit log. Fire-and-forget; broker absence is OK.
     Notifications.audit(notification);
 
-    // Check if we should save to history based on urgency
+    // Track known apps for per-app policy UI
+    registerKnownApp(appName);
+
+    // Per-app policy: check if logging is disabled for this app
+    const appLogEnabled = isAppLogEnabled(appName);
+
+    // Check if we should save to history based on urgency and per-app policy
     const saveToHistorySettings = Settings.data.notifications?.saveToHistory;
-    if (saveToHistorySettings && !notification.transient) {
+    if (appLogEnabled && saveToHistorySettings && !notification.transient) {
       let shouldSave = true;
       switch (data.urgency) {
       case 0: // low
@@ -169,13 +266,28 @@ Singleton {
       if (shouldSave) {
         addToHistory(data);
       }
-    } else if (!notification.transient) {
+    } else if (appLogEnabled && !notification.transient) {
       // Default behavior: save all if settings not configured
       addToHistory(data);
     }
 
     if (root.doNotDisturb || PowerProfileService.qdshellPerformanceMode)
       return;
+
+    // Per-app mute policy: suppress visual notification for muted apps
+    // Exception: allow urgent notifications if allowUrgent is true
+    if (isAppMuted(appName)) {
+      if (data.urgency !== 2 || !isAppUrgentAllowed(appName)) {
+        Logger.i("NotificationService", `Suppressed notification from muted app: ${appName}`);
+        return;
+      }
+    }
+
+    // Duplicate suppression with time window
+    if (isDuplicateWithinWindow(data)) {
+      Logger.i("NotificationService", `Suppressed duplicate notification: ${data.summary}`);
+      return;
+    }
 
     // Check if this is a replacement notification
     const existingInternalId = quickshellIdToInternalId[quickshellId];
@@ -646,6 +758,9 @@ Singleton {
 
   // History management
   function addToHistory(data) {
+    // Inject read state (new notifications are unread)
+    data.read = false;
+
     // Defer list insertion to prevent re-entrant QML incubation crash.
     // See addNewNotification for full explanation.
     Qt.callLater(() => {
@@ -698,6 +813,7 @@ Singleton {
         const n = historyList.get(i);
         const copy = Object.assign({}, n);
         copy.timestamp = n.timestamp.getTime();
+        copy.read = n.read || false;
         items.push(copy);
       }
       adapter.notifications = items;
@@ -729,8 +845,14 @@ Singleton {
                              "urgency": item.urgency < 0 || item.urgency > 2 ? 1 : item.urgency,
                              "timestamp": time,
                              "originalImage": item.originalImage || "",
-                             "cachedImage": cachedImage
+                             "cachedImage": cachedImage,
+                             "read": item.read || false
                            });
+
+        // Populate known apps from history for per-app policy UI
+        if (item.appName) {
+          registerKnownApp(item.appName);
+        }
       }
     } catch (e) {
       Logger.e("Notifications", "Load failed:", e);
@@ -1082,6 +1204,64 @@ Singleton {
 
     historyList.clear();
     saveHistory();
+  }
+
+  // ---- Read/unread management ----
+  function markRead(notificationId) {
+    for (var i = 0; i < historyList.count; i++) {
+      if (historyList.get(i).id === notificationId) {
+        historyList.setProperty(i, "read", true);
+        saveHistory();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function markUnread(notificationId) {
+    for (var i = 0; i < historyList.count; i++) {
+      if (historyList.get(i).id === notificationId) {
+        historyList.setProperty(i, "read", false);
+        saveHistory();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function markAllRead() {
+    var changed = false;
+    for (var i = 0; i < historyList.count; i++) {
+      if (!historyList.get(i).read) {
+        historyList.setProperty(i, "read", true);
+        changed = true;
+      }
+    }
+    if (changed) saveHistory();
+  }
+
+  function getUnreadCount() {
+    var count = 0;
+    for (var i = 0; i < historyList.count; i++) {
+      if (!historyList.get(i).read) count++;
+    }
+    return count;
+  }
+
+  function copyNotificationText(notificationId) {
+    for (var i = 0; i < historyList.count; i++) {
+      const n = historyList.get(i);
+      if (n.id === notificationId) {
+        var text = "";
+        if (n.summary) text += n.summary;
+        if (n.body) text += (text ? "\n" : "") + n.body;
+        if (text) {
+          Quickshell.execDetached(["sh", "-c", "printf '%s' " + Qt.btoa(text) + " | base64 -d | wl-copy"]);
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   function getHistorySnapshot() {

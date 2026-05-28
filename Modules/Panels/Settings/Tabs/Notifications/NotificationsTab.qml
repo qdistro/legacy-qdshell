@@ -68,6 +68,11 @@ ColumnLayout {
       tabIndex: 4
       checked: subTabBar.currentIndex === 4
     }
+    NTabButton {
+      text: I18n.tr("common.apps") || "Apps"
+      tabIndex: 5
+      checked: subTabBar.currentIndex === 5
+    }
   }
 
   Item {
@@ -92,6 +97,7 @@ ColumnLayout {
       onOpenCriticalPicker: root.openCriticalSoundPicker()
     }
     ToastSubTab {}
+    AppPolicySubTab {}
   }
 
   // File Pickers for Sound Files

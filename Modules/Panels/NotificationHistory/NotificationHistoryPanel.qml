@@ -41,6 +41,12 @@ SmartPanel {
         onClicked: NotificationService.doNotDisturb = !NotificationService.doNotDisturb
       },
       NIconButton {
+        icon: "checks"
+        tooltipText: I18n.tr("actions.mark-all-read") || "Mark all read"
+        baseSize: Style.baseWidgetSize * 0.8
+        onClicked: NotificationService.markAllRead()
+      },
+      NIconButton {
         icon: "trash"
         tooltipText: I18n.tr("actions.clear-history")
         baseSize: Style.baseWidgetSize * 0.8
@@ -510,6 +516,7 @@ SmartPanel {
 
                   property int listIndex: index
                   property string notificationId: model.id
+                  property bool isRead: model.read || false
                   property bool isExpanded: scrollView.expandedId === notificationId
                   property bool canExpand: summaryText.truncated || bodyText.truncated
                   property real swipeOffset: 0
@@ -652,17 +659,59 @@ SmartPanel {
                     }
                   }
 
+                  // Context menu for per-entry actions
+                  NContextMenu {
+                    id: notifContextMenu
+                    model: [
+                      {
+                        "label": notificationDelegate.isRead
+                                 ? (I18n.tr("actions.mark-unread") || "Mark as unread")
+                                 : (I18n.tr("actions.mark-read") || "Mark as read"),
+                        "action": "toggleRead",
+                        "icon": notificationDelegate.isRead ? "mail" : "mail-opened"
+                      },
+                      {
+                        "label": I18n.tr("actions.copy-text") || "Copy text",
+                        "action": "copy",
+                        "icon": "copy"
+                      },
+                      {
+                        "label": I18n.tr("actions.delete") || "Delete",
+                        "action": "delete",
+                        "icon": "trash"
+                      }
+                    ]
+                    onTriggered: action => {
+                      if (action === "toggleRead") {
+                        if (notificationDelegate.isRead)
+                          NotificationService.markUnread(notificationDelegate.notificationId);
+                        else
+                          NotificationService.markRead(notificationDelegate.notificationId);
+                      } else if (action === "copy") {
+                        NotificationService.copyNotificationText(notificationDelegate.notificationId);
+                      } else if (action === "delete") {
+                        NotificationService.removeFromHistory(notificationDelegate.notificationId);
+                      }
+                    }
+                  }
+
                   // Click to expand/collapse
                   MouseArea {
                     id: historyInteractionArea
                     anchors.fill: parent
                     anchors.rightMargin: notificationDelegate.buttonClusterWidth + Style.marginM
                     enabled: !notificationDelegate.isRemoving
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     hoverEnabled: true
                     cursorShape: Qt.ArrowCursor
                     onPressed: mouse => {
                                  panelContent.focusIndex = index;
                                  panelContent.actionIndex = -1;
+
+                                 if (mouse.button === Qt.RightButton) {
+                                   notifContextMenu.openAtItem(historyInteractionArea, mouse.x, mouse.y);
+                                   return;
+                                 }
 
                                  if (notificationDelegate.isExpanded) {
                                    const link = notificationDelegate.linkAtPoint(mouse.x, mouse.y);
@@ -791,6 +840,16 @@ SmartPanel {
                           width: parent.width
                           spacing: Style.marginS
 
+                          // Unread indicator dot
+                          Rectangle {
+                            width: 6
+                            height: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            radius: 3
+                            visible: !notificationDelegate.isRead
+                            color: Color.mPrimary
+                          }
+
                           // Urgency indicator
                           Rectangle {
                             width: 6
@@ -824,13 +883,14 @@ SmartPanel {
                           }
                         }
 
-                        // Summary
+                        // Summary (bold for unread, normal for read)
                         NText {
                           id: summaryText
                           width: parent.width
                           text: (Settings.data.notifications.enableMarkdown && notificationDelegate.isExpanded) ? (model.summaryMarkdown || I18n.tr("common.no-summary")) : (model.summary || I18n.tr("common.no-summary"))
                           pointSize: Style.fontSizeM
-                          color: Color.mOnSurface
+                          font.weight: notificationDelegate.isRead ? Font.Normal : Font.Bold
+                          color: notificationDelegate.isRead ? Color.mOnSurfaceVariant : Color.mOnSurface
                           textFormat: notificationDelegate.notificationTextFormat
                           wrapMode: Text.Wrap
                           maximumLineCount: notificationDelegate.isExpanded ? 999 : 2
