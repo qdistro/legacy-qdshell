@@ -161,6 +161,16 @@
     "keyboard-layout": {
       "show-icon-description": "Display the keyboard layout icon."
     },
+    "launcher": {
+      "command-placeholder": "e.g. firefox or thunar ~/Documents",
+      "icon-placeholder": "e.g. folder-open",
+      "items-description": "Custom launcher buttons. Each item runs its own command when clicked. Reorder with the arrows, edit fields inline, or remove with the close button.",
+      "items-empty": "No custom launcher items yet. Add one above.",
+      "items-label": "Custom launcher items",
+      "name-placeholder": "e.g. Files",
+      "show-launcher-button-description": "Show the button that opens the launcher panel alongside any custom items.",
+      "show-launcher-button-label": "Show launcher panel button"
+    },
     "lock-keys": {
       "hide-when-off-description": "Hide the indicator when the key is not active.",
       "hide-when-off-label": "Hide when off",
@@ -471,6 +481,7 @@
     "memory": "Memory",
     "minimize": "Minimize",
     "monitors": "Monitors",
+    "name": "Name",
     "network": "Network",
     "next": "Next",
     "night-light": "Night Light",
