@@ -78,6 +78,7 @@ Singleton {
                                             "dock": SettingsPanel.Tab.Dock,
                                             "general": SettingsPanel.Tab.General,
                                             "hooks": SettingsPanel.Tab.Hooks,
+                                            "keyboard": SettingsPanel.Tab.Keyboard,
                                             "launcher": SettingsPanel.Tab.Launcher,
                                             "location": SettingsPanel.Tab.Location,
                                             "connections": SettingsPanel.Tab.Connections,

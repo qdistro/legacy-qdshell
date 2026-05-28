@@ -751,6 +751,31 @@ Singleton {
     property JsonObject session: JsonObject {
       property bool showSystemAutostart: true
     }
+
+    // keyboard input (repeat, blink, layouts, NumLock, XKB)
+    property JsonObject keyboard: JsonObject {
+      // Key repeat: delay before repeat (ms) and repeats per second (Hz).
+      property int repeatDelay: 500
+      property int repeatRate: 25
+      // Text cursor blink: enable + period in ms (0 disables blink when off).
+      property bool cursorBlink: true
+      property int cursorBlinkRate: 1200
+      // Layout management.
+      property string model: "pc105"
+      property list<string> layouts: ["us"]
+      // Per-layout variant map, keyed by layout code, e.g. { "us": "intl" }.
+      property var variants: ({})
+      // XKB option group for switching layouts, e.g. "grp:alt_shift_toggle".
+      property string switchShortcut: ""
+      // Compose key XKB option, e.g. "compose:ralt".
+      property string composeKey: ""
+      // Extra XKB options (caps remap, etc.) as full "group:option" tokens.
+      property list<string> xkbOptions: []
+      // Restore NumLock on at session start.
+      property bool restoreNumLock: false
+      // When true, qdshell does not override layout/repeat (use system config).
+      property bool useSystemDefaults: true
+    }
   }
 
   // -----------------------------------------------------
