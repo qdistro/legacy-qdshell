@@ -1735,7 +1735,7 @@
       "category-fileManager": "File Manager",
       "category-fileManager-description": "Application used to browse files and directories.",
       "category-terminal": "Terminal Emulator",
-      "category-terminal-description": "Terminal application used to run command-line programs.",
+      "category-terminal-description": "Preferred terminal emulator. The command used to launch terminals from the app launcher is configured in Launcher settings.",
       "category-textEditor": "Text Editor",
       "category-textEditor-description": "Application used to open and edit plain text files.",
       "category-imageViewer": "Image Viewer",

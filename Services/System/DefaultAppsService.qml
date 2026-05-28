@@ -338,35 +338,15 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
       case "browser": Settings.data.defaultApps.browser = desktopId; break;
       case "mail": Settings.data.defaultApps.mail = desktopId; break;
       case "fileManager": Settings.data.defaultApps.fileManager = desktopId; break;
-      case "terminal":
-        Settings.data.defaultApps.terminal = desktopId;
-        _syncTerminalCommand(desktopId);
-        break;
+      // Terminal has no standard XDG MIME type, so it is only persisted here.
+      // The launcher terminal command is configured separately in the Launcher
+      // settings (appLauncher.terminalCommand) to avoid fragile Exec-line
+      // rewriting and to respect the launcher's app2unit handling.
+      case "terminal": Settings.data.defaultApps.terminal = desktopId; break;
       case "textEditor": Settings.data.defaultApps.textEditor = desktopId; break;
       case "imageViewer": Settings.data.defaultApps.imageViewer = desktopId; break;
       case "audioPlayer": Settings.data.defaultApps.audioPlayer = desktopId; break;
       case "videoPlayer": Settings.data.defaultApps.videoPlayer = desktopId; break;
-    }
-  }
-
-  // Terminal has no standard XDG MIME type. Instead, derive the launcher's
-  // terminal command from the chosen .desktop Exec line so the selection
-  // actually takes effect for qdshell's app launcher.
-  function _syncTerminalCommand(desktopId) {
-    if (!desktopId) {
-      // Reset to the schema default
-      var def = Settings.getDefaultValue("appLauncher.terminalCommand");
-      Settings.data.appLauncher.terminalCommand = (def !== undefined) ? def : "alacritty -e";
-      return;
-    }
-    var entry = _desktopEntries[desktopId];
-    if (!entry || !entry.exec)
-      return;
-    // Strip field codes (%f, %u, %U, etc.) from the Exec line, then append the
-    // "execute command" flag commonly used by terminals (-e).
-    var exec = entry.exec.replace(/%[a-zA-Z]/g, "").trim();
-    if (exec) {
-      Settings.data.appLauncher.terminalCommand = exec + " -e";
     }
   }
 
