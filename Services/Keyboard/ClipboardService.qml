@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Services.UI
+import "ClipboardActions.js" as ClipboardActions
 
 // Clipboard history service using cliphist + local content cache
 Singleton {
@@ -294,44 +295,22 @@ Singleton {
       // this with a watcher command that filters before `cliphist store`.
       // The preview is UNTRUSTED text used only as a length-capped RegExp
       // subject, never as a shell fragment.
-      const ignoreRe = root._ignoreRegex();
-      if (ignoreRe) {
-        const kept = [];
-        for (let i = 0; i < filtered.length; i++) {
-          const it = filtered[i];
-          let matched = false;
-          try {
-            matched = ignoreRe.test(root._regexSubject(it.preview));
-          } catch (e) {
-            matched = false;
-          }
-          if (matched) {
-            root._purgeId(it.id);
-          } else {
-            kept.push(it);
-          }
-        }
-        filtered = kept;
+      const ignorePat = Settings.data.appLauncher.clipboardIgnorePattern || "";
+      const ignoreRes = ClipboardActions.applyIgnoreFilter(filtered, ignorePat, root._regexSubjectCap);
+      for (let i = 0; i < ignoreRes.purged.length; i++) {
+        root._purgeId(ignoreRes.purged[i]);
       }
+      filtered = ignoreRes.kept;
 
       // Retention: drop entries older than the configured max age (best
       // effort, based on session first-seen timestamps; entries copied before
       // this shell session started have no timestamp and are left intact).
       const maxAgeDays = Number(Settings.data.appLauncher.clipboardMaxAgeDays) || 0;
-      if (maxAgeDays > 0) {
-        const cutoff = Time.timestamp - maxAgeDays * 86400;
-        const kept = [];
-        for (let i = 0; i < filtered.length; i++) {
-          const it = filtered[i];
-          const seen = root.firstSeenById[it.id];
-          if (seen !== undefined && seen < cutoff) {
-            root._purgeId(it.id);
-          } else {
-            kept.push(it);
-          }
-        }
-        filtered = kept;
+      const ageRes = ClipboardActions.applyAgeExpiry(filtered, root.firstSeenById, maxAgeDays, Time.timestamp);
+      for (let i = 0; i < ageRes.purged.length; i++) {
+        root._purgeId(ageRes.purged[i]);
       }
+      filtered = ageRes.kept;
 
       // Record the most-recently-copied id BEFORE any reordering. cliphist
       // lists most-recent-first, so this is filtered[0] at this point. We use
@@ -342,29 +321,16 @@ Singleton {
 
       // Ordering: cliphist lists most-recent-first natively. For "most-used"
       // we sort by this session's usage counts, falling back to recency.
-      if (Settings.data.appLauncher.clipboardOrdering === "most-used") {
-        const idx = {};
-        filtered.forEach((it, i) => idx[it.id] = i);
-        filtered = filtered.slice().sort((a, b) => {
-                                           const ua = root.usageCountById[a.id] || 0;
-                                           const ub = root.usageCountById[b.id] || 0;
-                                           if (ua !== ub)
-                                           return ub - ua;
-                                           // Stable tie-break: preserve cliphist recency order.
-                                           return idx[a.id] - idx[b.id];
-                                         });
-      }
+      filtered = ClipboardActions.orderEntries(filtered, Settings.data.appLauncher.clipboardOrdering, root.usageCountById);
 
       // Size limit: keep only the first N entries (after ordering). Excess
       // entries are deleted from cliphist so the DB itself is bounded.
       const maxEntries = Number(Settings.data.appLauncher.clipboardMaxEntries) || 0;
-      if (maxEntries > 0 && filtered.length > maxEntries) {
-        const overflow = filtered.slice(maxEntries);
-        for (let i = 0; i < overflow.length; i++) {
-          root._purgeId(overflow[i].id);
-        }
-        filtered = filtered.slice(0, maxEntries);
+      const trimRes = ClipboardActions.trimToMax(filtered, maxEntries);
+      for (let i = 0; i < trimRes.purged.length; i++) {
+        root._purgeId(trimRes.purged[i]);
       }
+      filtered = trimRes.kept;
 
       items = filtered;
       loading = false;
@@ -817,12 +783,10 @@ Singleton {
     const pat = Settings.data.appLauncher.clipboardIgnorePattern || "";
     if (pat.length === 0)
       return null;
-    try {
-      return new RegExp(pat);
-    } catch (e) {
-      Logger.w("ClipboardService", "invalid clipboardIgnorePattern; ignoring:", e);
-      return null;
-    }
+    const re = ClipboardActions.compileRegex(pat);
+    if (re === null && pat.length > 0)
+      Logger.w("ClipboardService", "invalid clipboardIgnorePattern; ignoring");
+    return re;
   }
 
   // Delete an entry from cliphist WITHOUT re-listing (loop-safe). The id is
@@ -853,45 +817,16 @@ Singleton {
   readonly property int _regexSubjectCap: 16384
 
   function _regexSubject(text) {
-    const s = String(text || "");
-    return s.length > root._regexSubjectCap ? s.slice(0, root._regexSubjectCap) : s;
+    return ClipboardActions.regexSubject(text, root._regexSubjectCap);
   }
 
   // Return the action rules whose regex matches the given text.
   // Each rule is { name, regexPattern, command }. The text is UNTRUSTED — it is
   // only ever used as a RegExp.test() subject (length-capped), never as code.
   function matchingActions(text) {
-    const out = [];
     const actions = Settings.data.appLauncher.clipboardActions || [];
-    const subject = root._regexSubject(text);
-    for (let i = 0; i < actions.length; i++) {
-      const a = actions[i];
-      if (!a || !a.command)
-        continue;
-      const pat = a.regexPattern || "";
-      let re = null;
-      if (pat.length > 0) {
-        try {
-          re = new RegExp(pat);
-        } catch (e) {
-          continue; // skip rules with invalid patterns
-        }
-      }
-      // Empty pattern matches everything (XFCE clipman treats a blank regex as
-      // "always"); otherwise require a match against the untrusted subject.
-      let matched = (re === null);
-      if (re !== null) {
-        try {
-          matched = re.test(subject);
-        } catch (e) {
-          matched = false;
-        }
-      }
-      if (matched) {
-        out.push(a);
-      }
-    }
-    return out;
+    const matched = ClipboardActions.matchingActions(actions, text, root._regexSubjectCap);
+    return matched.map(m => m.rule);
   }
 
   // Execute a regex-action rule against UNTRUSTED clipboard text. Rule is
@@ -919,33 +854,19 @@ Singleton {
   function runActionRule(rule, text) {
     if (!rule || !rule.command)
       return;
-    const subject = root._regexSubject(text);
-    const pat = rule.regexPattern || "";
-    let group1 = "";
-    if (pat.length > 0) {
-      let re = null;
-      try {
-        re = new RegExp(pat);
-      } catch (e) {
-        return; // invalid pattern → do not run
-      }
-      let m = null;
-      try {
-        m = subject.match(re);
-      } catch (e) {
-        return;
-      }
-      if (!m)
-        return; // re-validation: decoded text must actually match
-      if (m.length > 1 && m[1] !== undefined)
-        group1 = String(m[1]);
-    }
-    // Pass full (uncapped) text on stdin so the command sees complete content;
-    // env values carry the same/derived data. None of it enters the command
-    // line. printf reads $QD_CLIP so even the stdin payload isn't interpolated.
-    const wrapper = "printf '%s' \"$QD_CLIP\" | { " + String(rule.command) + " ; }";
-    _actionProc.environment = ["QD_CLIP=" + String(text || ""), "QD_CLIP_1=" + group1];
-    _actionProc.command = ["sh", "-c", wrapper];
+    // Re-validate the rule's regex against the (decoded) text so a
+    // preview-vs-full-content mismatch can never cause an action to fire on
+    // text its pattern doesn't match. null → do not run.
+    const group1 = ClipboardActions.revalidateActionGroup(rule, text, root._regexSubjectCap);
+    if (group1 === null)
+      return;
+    // Build the injection-safe payload: the matched text is carried ONLY via
+    // env values ($QD_CLIP / $QD_CLIP_1) and stdin, never concatenated into the
+    // command line. printf reads $QD_CLIP so even the stdin payload isn't
+    // interpolated. A payload like `; rm -rf ~` lands as the VALUE of $QD_CLIP.
+    const exec = ClipboardActions.buildActionExecution(rule, text, group1);
+    _actionProc.environment = exec.environment;
+    _actionProc.command = exec.command;
     _actionProc.running = true;
   }
 
