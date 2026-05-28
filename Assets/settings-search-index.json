@@ -1,12 +1,35 @@
 [
   {
-    "labelKey": "panels.about.telemetry-enabled",
-    "descriptionKey": "panels.about.telemetry-desc",
-    "widget": "NToggle",
-    "tab": 25,
-    "tabLabel": "panels.about.title",
-    "subTab": 0,
-    "subTabLabel": "common.info"
+    "labelKey": "panels.appearance.workspace-count-label",
+    "descriptionKey": "panels.appearance.workspace-count-description",
+    "widget": "NSpinBox",
+    "tab": 2,
+    "tabLabel": "panels.appearance.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.appearance.icon-theme-label",
+    "descriptionKey": "panels.appearance.icon-theme-description",
+    "widget": "NComboBox",
+    "tab": 2,
+    "tabLabel": "panels.appearance.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.appearance.cursor-theme-label",
+    "descriptionKey": "panels.appearance.cursor-theme-description",
+    "widget": "NComboBox",
+    "tab": 2,
+    "tabLabel": "panels.appearance.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.appearance.cursor-size-label",
+    "descriptionKey": "panels.appearance.cursor-size-description",
+    "widget": "NSpinBox",
+    "tab": 2,
+    "tabLabel": "panels.appearance.title",
+    "subTab": null
   },
   {
     "labelKey": "panels.audio.devices-output-device-label",
@@ -124,6 +147,33 @@
     "tabLabel": "panels.audio.title",
     "subTab": 0,
     "subTabLabel": "common.volumes"
+  },
+  {
+    "labelKey": "panels.autostart.show-system-label",
+    "descriptionKey": "panels.autostart.show-system-description",
+    "widget": "NToggle",
+    "tab": 15,
+    "tabLabel": "panels.autostart.title",
+    "subTab": 0,
+    "subTabLabel": "common.general"
+  },
+  {
+    "labelKey": "panels.autostart.info-label",
+    "descriptionKey": "panels.autostart.info-description",
+    "widget": "NLabel",
+    "tab": 15,
+    "tabLabel": "panels.autostart.title",
+    "subTab": 0,
+    "subTabLabel": "common.general"
+  },
+  {
+    "labelKey": "panels.autostart.empty",
+    "descriptionKey": "panels.autostart.empty-description",
+    "widget": "NLabel",
+    "tab": 15,
+    "tabLabel": "panels.autostart.title",
+    "subTab": 1,
+    "subTabLabel": "panels.autostart.applications"
   },
   {
     "labelKey": "panels.bar.appearance-position-label",
@@ -297,12 +347,39 @@
     "subTabLabel": "common.appearance"
   },
   {
+    "labelKey": "panels.bar.behavior-workspace-scroll-label",
+    "descriptionKey": "panels.bar.behavior-workspace-scroll-description",
+    "widget": "NComboBox",
+    "tab": 5,
+    "tabLabel": "panels.bar.title",
+    "subTab": 2,
+    "subTabLabel": "common.behavior"
+  },
+  {
+    "labelKey": "panels.general.reverse-scrolling-label",
+    "descriptionKey": "panels.general.reverse-scrolling-description",
+    "widget": "NToggle",
+    "tab": 5,
+    "tabLabel": "panels.bar.title",
+    "subTab": 2,
+    "subTabLabel": "common.behavior"
+  },
+  {
+    "labelKey": "panels.bar.behavior-wheel-wrap-label",
+    "descriptionKey": "panels.bar.behavior-wheel-wrap-description",
+    "widget": "NToggle",
+    "tab": 5,
+    "tabLabel": "panels.bar.title",
+    "subTab": 2,
+    "subTabLabel": "common.behavior"
+  },
+  {
     "labelKey": "panels.bar.monitor-override-settings",
     "descriptionKey": "panels.bar.monitor-override-settings-description",
     "widget": "NToggle",
     "tab": 5,
     "tabLabel": "panels.bar.title",
-    "subTab": 2,
+    "subTab": 3,
     "subTabLabel": "common.monitors"
   },
   {
@@ -475,6 +552,14 @@
     "tabLabel": "panels.control-center.title",
     "subTab": 0,
     "subTabLabel": "common.appearance"
+  },
+  {
+    "labelKey": "panels.default-apps.category-",
+    "descriptionKey": "panels.default-apps.category-",
+    "widget": "NComboBox",
+    "tab": 10,
+    "tabLabel": "panels.default-apps.title",
+    "subTab": null
   },
   {
     "labelKey": "panels.desktop-widgets.enabled-label",
@@ -727,14 +812,6 @@
     "labelKey": "panels.general.fonts-monospace-scale-label",
     "descriptionKey": "panels.general.fonts-monospace-scale-description",
     "widget": "NValueSlider",
-    "tab": 0,
-    "tabLabel": "common.general",
-    "subTab": null
-  },
-  {
-    "labelKey": "panels.general.reverse-scrolling-label",
-    "descriptionKey": "panels.general.reverse-scrolling-description",
-    "widget": "NToggle",
     "tab": 0,
     "tabLabel": "common.general",
     "subTab": null
@@ -1161,6 +1238,147 @@
     "subTabLabel": "common.appearance"
   },
   {
+    "labelKey": "panels.mouse.no-devices-label",
+    "descriptionKey": "panels.mouse.no-devices-description",
+    "widget": "NLabel",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.accel-profile-label",
+    "descriptionKey": "panels.mouse.accel-profile-description",
+    "widget": "NComboBox",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.speed-label",
+    "descriptionKey": "panels.mouse.speed-description",
+    "widget": "NValueSlider",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.left-handed-label",
+    "descriptionKey": "panels.mouse.left-handed-description",
+    "widget": "NToggle",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.natural-scroll-label",
+    "descriptionKey": "panels.mouse.natural-scroll-description",
+    "widget": "NToggle",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.horizontal-scroll-label",
+    "descriptionKey": "panels.mouse.horizontal-scroll-description",
+    "widget": "NToggle",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.scroll-method-label",
+    "descriptionKey": "panels.mouse.scroll-method-description",
+    "widget": "NComboBox",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.tap-to-click-label",
+    "descriptionKey": "panels.mouse.tap-to-click-description",
+    "widget": "NToggle",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.disable-while-typing-label",
+    "descriptionKey": "panels.mouse.disable-while-typing-description",
+    "widget": "NToggle",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.double-click-time-label",
+    "descriptionKey": "panels.mouse.double-click-time-description",
+    "widget": "NSpinBox",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.double-click-distance-label",
+    "descriptionKey": "panels.mouse.double-click-distance-description",
+    "widget": "NSpinBox",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.mouse.drag-threshold-label",
+    "descriptionKey": "panels.mouse.drag-threshold-description",
+    "widget": "NSpinBox",
+    "tab": 18,
+    "tabLabel": "panels.mouse.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.notifications.suppress-duplicates-label",
+    "descriptionKey": "panels.notifications.suppress-duplicates-description",
+    "widget": "NToggle",
+    "tab": 11,
+    "tabLabel": "common.notifications",
+    "subTab": 5,
+    "subTabLabel": "common.apps"
+  },
+  {
+    "labelKey": "panels.notifications.suppress-duplicates-window-label",
+    "descriptionKey": "panels.notifications.suppress-duplicates-window-description",
+    "widget": "NValueSlider",
+    "tab": 11,
+    "tabLabel": "common.notifications",
+    "subTab": 5,
+    "subTabLabel": "common.apps"
+  },
+  {
+    "labelKey": "panels.notifications.app-policy-muted-label",
+    "descriptionKey": "panels.notifications.app-policy-muted-description",
+    "widget": "NToggle",
+    "tab": 11,
+    "tabLabel": "common.notifications",
+    "subTab": 5,
+    "subTabLabel": "common.apps"
+  },
+  {
+    "labelKey": "panels.notifications.app-policy-allow-urgent-label",
+    "descriptionKey": "panels.notifications.app-policy-allow-urgent-description",
+    "widget": "NToggle",
+    "tab": 11,
+    "tabLabel": "common.notifications",
+    "subTab": 5,
+    "subTabLabel": "common.apps"
+  },
+  {
+    "labelKey": "panels.notifications.app-policy-log-label",
+    "descriptionKey": "panels.notifications.app-policy-log-description",
+    "widget": "NToggle",
+    "tab": 11,
+    "tabLabel": "common.notifications",
+    "subTab": 5,
+    "subTabLabel": "common.apps"
+  },
+  {
     "labelKey": "panels.notifications.duration-respect-expire-label",
     "descriptionKey": "panels.notifications.duration-respect-expire-description",
     "widget": "NToggle",
@@ -1447,6 +1665,102 @@
     "tabLabel": "panels.plugins.title",
     "subTab": 2,
     "subTabLabel": "common.sources"
+  },
+  {
+    "labelKey": "panels.power.power-button-action-label",
+    "descriptionKey": "panels.power.power-button-action-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.sleep-button-action-label",
+    "descriptionKey": "panels.power.sleep-button-action-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.lid-close-battery-label",
+    "descriptionKey": "panels.power.lid-close-battery-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.lid-close-ac-label",
+    "descriptionKey": "panels.power.lid-close-ac-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.lid-ignore-external-label",
+    "descriptionKey": "panels.power.lid-ignore-external-description",
+    "widget": "NToggle",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.inactivity-battery-label",
+    "descriptionKey": "panels.power.inactivity-battery-description",
+    "widget": "NSpinBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.inactivity-ac-label",
+    "descriptionKey": "panels.power.inactivity-ac-description",
+    "widget": "NSpinBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.inactivity-action-label",
+    "descriptionKey": "panels.power.inactivity-action-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.critical-level-label",
+    "descriptionKey": "panels.power.critical-level-description",
+    "widget": "NSpinBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.critical-action-label",
+    "descriptionKey": "panels.power.critical-action-description",
+    "widget": "NComboBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.display-off-battery-label",
+    "descriptionKey": "panels.power.display-off-battery-description",
+    "widget": "NSpinBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.display-off-ac-label",
+    "descriptionKey": "panels.power.display-off-ac-description",
+    "widget": "NSpinBox",
+    "tab": 19,
+    "tabLabel": "panels.power.title",
+    "subTab": null
   },
   {
     "labelKey": "panels.location.date-time-use-analog-label",
@@ -1933,239 +2247,5 @@
     "tabLabel": "common.wallpaper",
     "subTab": 1,
     "subTabLabel": "common.look"
-  },
-  {
-    "labelKey": "panels.appearance.workspace-count-label",
-    "descriptionKey": "panels.appearance.workspace-count-description",
-    "widget": "NSpinBox",
-    "tab": 2,
-    "tabLabel": "panels.appearance.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.appearance.icon-theme-label",
-    "descriptionKey": "panels.appearance.icon-theme-description",
-    "widget": "NComboBox",
-    "tab": 2,
-    "tabLabel": "panels.appearance.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.appearance.cursor-theme-label",
-    "descriptionKey": "panels.appearance.cursor-theme-description",
-    "widget": "NComboBox",
-    "tab": 2,
-    "tabLabel": "panels.appearance.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.appearance.cursor-size-label",
-    "descriptionKey": "panels.appearance.cursor-size-description",
-    "widget": "NSpinBox",
-    "tab": 2,
-    "tabLabel": "panels.appearance.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-browser",
-    "descriptionKey": "panels.default-apps.category-browser-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-mail",
-    "descriptionKey": "panels.default-apps.category-mail-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-fileManager",
-    "descriptionKey": "panels.default-apps.category-fileManager-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-terminal",
-    "descriptionKey": "panels.default-apps.category-terminal-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-textEditor",
-    "descriptionKey": "panels.default-apps.category-textEditor-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-imageViewer",
-    "descriptionKey": "panels.default-apps.category-imageViewer-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-audioPlayer",
-    "descriptionKey": "panels.default-apps.category-audioPlayer-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.default-apps.category-videoPlayer",
-    "descriptionKey": "panels.default-apps.category-videoPlayer-description",
-    "widget": "NComboBox",
-    "tab": 10,
-    "tabLabel": "panels.default-apps.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.autostart.show-system-label",
-    "descriptionKey": "panels.autostart.show-system-description",
-    "widget": "NToggle",
-    "tab": 15,
-    "tabLabel": "panels.autostart.title",
-    "subTab": 0,
-    "subTabLabel": "common.general"
-  },
-  {
-    "labelKey": "panels.autostart.info-label",
-    "descriptionKey": "panels.autostart.info-description",
-    "widget": "NLabel",
-    "tab": 15,
-    "tabLabel": "panels.autostart.title",
-    "subTab": 0,
-    "subTabLabel": "common.general"
-  },
-  {
-    "labelKey": "panels.power.power-button-action-label",
-    "descriptionKey": "panels.power.power-button-action-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.sleep-button-action-label",
-    "descriptionKey": "panels.power.sleep-button-action-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.lid-close-battery-label",
-    "descriptionKey": "panels.power.lid-close-battery-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.lid-close-ac-label",
-    "descriptionKey": "panels.power.lid-close-ac-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.lid-ignore-external-label",
-    "descriptionKey": "panels.power.lid-ignore-external-description",
-    "widget": "NToggle",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.inactivity-battery-label",
-    "descriptionKey": "panels.power.inactivity-battery-description",
-    "widget": "NSpinBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.inactivity-ac-label",
-    "descriptionKey": "panels.power.inactivity-ac-description",
-    "widget": "NSpinBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.inactivity-action-label",
-    "descriptionKey": "panels.power.inactivity-action-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.critical-level-label",
-    "descriptionKey": "panels.power.critical-level-description",
-    "widget": "NSpinBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.critical-action-label",
-    "descriptionKey": "panels.power.critical-action-description",
-    "widget": "NComboBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.display-off-battery-label",
-    "descriptionKey": "panels.power.display-off-battery-description",
-    "widget": "NSpinBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
-  },
-  {
-    "labelKey": "panels.power.display-off-ac-label",
-    "descriptionKey": "panels.power.display-off-ac-description",
-    "widget": "NSpinBox",
-    "tab": 18,
-    "tabLabel": "panels.power.title",
-    "subTab": null,
-    "subTabLabel": null
   }
 ]
