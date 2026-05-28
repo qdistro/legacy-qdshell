@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Modules.Panels.Settings.Tabs
 // qdshell: About tab stripped (Noctalia phone-home/supporters/version)
 import qs.Modules.Panels.Settings.Tabs.Accessibility
+import qs.Modules.Panels.Settings.Tabs.Advanced
 import qs.Modules.Panels.Settings.Tabs.Appearance
 import qs.Modules.Panels.Settings.Tabs.Audio
 import qs.Modules.Panels.Settings.Tabs.Autostart
@@ -524,6 +525,10 @@ Item {
     id: windowManagerTab
     WindowManagerTab {}
   }
+  Component {
+    id: advancedTab
+    AdvancedTab {}
+  }
 
   function updateTabsModel() {
     let newTabs = [
@@ -700,6 +705,12 @@ Item {
             "label": "panels.vault.title",
             "icon": "lock",
             "source": vaultTab
+          },
+          {
+            "id": SettingsPanel.Tab.Advanced,
+            "label": "panels.advanced.title",
+            "icon": "code",
+            "source": advancedTab
           },
           // qdshell: About tab entry stripped.
         ];

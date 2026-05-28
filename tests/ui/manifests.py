@@ -38,7 +38,7 @@ SETTINGS_TABS = [
     "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
     "display", "location", "mouse", "keyboard", "accessibility", "osd",
     "connections", "hooks", "lockscreen", "sessionmenu", "systemmonitor",
-    "plugins", "windowmanager",
+    "plugins", "windowmanager", "advanced",
 ]
 # Notes on tabs we deliberately don't cover:
 #  - "about" — qdshell strips the upstream About box. The IPC map keeps the

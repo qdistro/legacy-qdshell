@@ -72,6 +72,7 @@ SmartPanel {
   enum Tab {
     About,
     Accessibility,
+    Advanced,
     Appearance,
     Audio,
     Autostart,

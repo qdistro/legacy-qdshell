@@ -67,6 +67,7 @@ Singleton {
   readonly property var _settingsTabMap: ({
                                             "about": SettingsPanel.Tab.About,
                                             "accessibility": SettingsPanel.Tab.Accessibility,
+                                            "advanced": SettingsPanel.Tab.Advanced,
                                             "appearance": SettingsPanel.Tab.Appearance,
                                             "audio": SettingsPanel.Tab.Audio,
                                             "bar": SettingsPanel.Tab.Bar,
