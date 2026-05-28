@@ -665,6 +665,7 @@ Singleton {
       property bool enableBatteryToast: true
       property int minWidth: 440 // minimum toast width (px, pre-scale)
       property string detailMode: "normal" // "compact" | "normal" | "detailed"
+      property string notificationTheme: "default" // toast visual style: "default" | "compact" | "rounded" | "minimal" | "accent-bar"
     }
 
     // on-screen display

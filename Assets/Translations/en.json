@@ -713,6 +713,13 @@
       "detailed": "Detailed (title, body, actions, time)",
       "normal": "Normal (title and body)"
     },
+    "notification-theme": {
+      "accent-bar": "Accent bar (colored side strip)",
+      "compact": "Compact (tight padding)",
+      "default": "Default",
+      "minimal": "Minimal (no icon or border)",
+      "rounded": "Rounded (soft, roomy)"
+    },
     "tray-known-item-policy": {
       "default": "Default",
       "hide": "Always hide",
@@ -1591,6 +1598,8 @@
       "settings-detail-mode-label": "Detail mode",
       "settings-min-width-description": "Minimum width of notification toasts, in pixels (before UI scaling).",
       "settings-min-width-label": "Minimum width",
+      "settings-theme-description": "Visual style applied to notification toasts: corner shape, padding, icon, border, and accent treatment.",
+      "settings-theme-label": "Toast theme",
       "settings-do-not-disturb-description": "Disable all notification popups when enabled.",
       "settings-enabled-description": "Enable or disable the notification daemon, requires a restart of Qdshell shell.",
       "settings-enabled-label": "Enable notifications",

@@ -63,6 +63,36 @@ ColumnLayout {
     defaultValue: Settings.getDefaultValue("notifications.detailMode")
   }
 
+  NComboBox {
+    label: I18n.tr("panels.notifications.settings-theme-label")
+    description: I18n.tr("panels.notifications.settings-theme-description")
+    model: [
+      {
+        "key": "default",
+        "name": I18n.tr("options.notification-theme.default")
+      },
+      {
+        "key": "compact",
+        "name": I18n.tr("options.notification-theme.compact")
+      },
+      {
+        "key": "rounded",
+        "name": I18n.tr("options.notification-theme.rounded")
+      },
+      {
+        "key": "minimal",
+        "name": I18n.tr("options.notification-theme.minimal")
+      },
+      {
+        "key": "accent-bar",
+        "name": I18n.tr("options.notification-theme.accent-bar")
+      }
+    ]
+    currentKey: Settings.data.notifications.notificationTheme || "default"
+    onSelected: key => Settings.data.notifications.notificationTheme = key
+    defaultValue: Settings.getDefaultValue("notifications.notificationTheme")
+  }
+
   NSpinBox {
     Layout.fillWidth: true
     label: I18n.tr("panels.notifications.settings-min-width-label")

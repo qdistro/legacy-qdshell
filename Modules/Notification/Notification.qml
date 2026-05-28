@@ -9,6 +9,7 @@ import qs.Commons
 import qs.Services.System
 import qs.Widgets
 import "NotificationLayout.js" as NotificationLayout
+import "NotificationTheme.js" as NotificationTheme
 
 // Simple notification popup - displays multiple notifications
 Variants {
@@ -114,6 +115,67 @@ Variants {
       // Effective toast width: max(density base, user minimum) * UI scale.
       readonly property int notifWidth: NotificationLayout.effectiveWidth(Settings.data.notifications.density === "compact" ? 320 : 440, Settings.data.notifications.minWidth, Style.uiScaleRatio)
       readonly property int shadowPadding: Style.shadowBlurMax + Style.marginL
+
+      // Notification theme: a named set of *semantic* visual parameters resolved
+      // by the pure NotificationTheme.js module. The mapping helpers below turn
+      // those semantic keys into concrete qs.Commons Style/Color tokens so that
+      // no colors or pixel sizes are hardcoded here.
+      readonly property var theme: NotificationTheme.resolveTheme(Settings.data.notifications.notificationTheme)
+      function themeRadius() {
+        switch (theme.cornerRadius) {
+        case "none":
+          return 0;
+        case "small":
+          return Style.radiusXS;
+        case "medium":
+          return Style.radiusM;
+        default:
+          return Style.radiusL;
+        }
+      }
+      function themeBorderWidth() {
+        switch (theme.borderWidth) {
+        case "none":
+          return 0;
+        case "thick":
+          return Style.borderM;
+        default:
+          return Style.borderS;
+        }
+      }
+      function themePadding() {
+        switch (theme.padding) {
+        case "tight":
+          return Style.marginS;
+        case "roomy":
+          return Style.marginL;
+        default:
+          return Style.marginM;
+        }
+      }
+      function themeBackgroundColor() {
+        return theme.background === "surfaceVariant" ? Color.mSurfaceVariant : Color.mSurface;
+      }
+      function themeIconSize() {
+        switch (theme.iconSize) {
+        case "small":
+          return Math.round(24 * Style.uiScaleRatio);
+        case "large":
+          return Math.round(48 * Style.uiScaleRatio);
+        default:
+          return Math.round(40 * Style.uiScaleRatio);
+        }
+      }
+      // Resolve the accent/urgency color for a given urgency level per the
+      // theme's accentSource. "none" yields a neutral outline tint.
+      function themeAccentColor(urgency) {
+        if (theme.accentSource === "primary")
+          return Color.mPrimary;
+        if (theme.accentSource === "none")
+          return Color.mOutline;
+        // "urgency" (default): critical -> error, low -> on-surface, else primary.
+        return urgency === 2 ? Color.mError : urgency === 0 ? Color.mOnSurface : Color.mPrimary;
+      }
 
       // Calculate bar and frame offsets for each edge separately
       readonly property int barOffsetTop: {
@@ -287,10 +349,34 @@ Variants {
               id: cardBackground
               anchors.fill: parent
               anchors.margins: notifWindow.shadowPadding
-              radius: Style.radiusL
+              radius: notifWindow.themeRadius()
               border.color: Qt.alpha(Color.mOutline, Settings.data.notifications.backgroundOpacity || 1.0)
-              border.width: Style.borderS
-              color: Qt.alpha(Color.mSurface, Settings.data.notifications.backgroundOpacity || 1.0)
+              border.width: notifWindow.themeBorderWidth()
+              color: Qt.alpha(notifWindow.themeBackgroundColor(), Settings.data.notifications.backgroundOpacity || 1.0)
+
+              // Accent bar: a vertical colored strip on the left (leading) edge,
+              // shown only by themes that opt in (e.g. "accent-bar"). Always on
+              // the left so it reads consistently regardless of toast position
+              // and never collides with the close button (top-right). Its outer
+              // corner radii are clamped to its own width so it follows the
+              // card's rounded corner without bleeding past it.
+              Rectangle {
+                id: accentBar
+                visible: notifWindow.theme.accentBar && notifWindow.theme.accentBarWidth > 0
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                width: Math.round(notifWindow.theme.accentBarWidth * Style.uiScaleRatio)
+                // Match the card's left corner radius exactly so the bar's
+                // rounded corners trace the card's edge with no bleed. (Using a
+                // smaller radius would round inside the card and expose the
+                // background at the corner.)
+                topLeftRadius: parent.radius
+                bottomLeftRadius: parent.radius
+                topRightRadius: 0
+                bottomRightRadius: 0
+                color: Qt.alpha(notifWindow.themeAccentColor(model.urgency), Settings.data.notifications.backgroundOpacity || 1.0)
+              }
 
               // Progress bar
               Rectangle {
@@ -627,7 +713,8 @@ Variants {
               id: notificationContent
               visible: !notifWindow.isCompact
               anchors.fill: cardBackground
-              anchors.margins: Style.marginM
+              anchors.margins: notifWindow.themePadding()
+              anchors.leftMargin: notifWindow.themePadding() + (notifWindow.theme.accentBar ? Math.round(notifWindow.theme.accentBarWidth * Style.uiScaleRatio) : 0)
               spacing: Style.marginM
 
               RowLayout {
@@ -639,8 +726,9 @@ Variants {
                 Layout.bottomMargin: Style.marginM
 
                 NImageRounded {
-                  Layout.preferredWidth: Math.round(40 * Style.uiScaleRatio)
-                  Layout.preferredHeight: Math.round(40 * Style.uiScaleRatio)
+                  visible: notifWindow.theme.iconPlacement !== "hidden"
+                  Layout.preferredWidth: visible ? notifWindow.themeIconSize() : 0
+                  Layout.preferredHeight: notifWindow.themeIconSize()
                   Layout.alignment: Qt.AlignVCenter
                   radius: Math.min(Style.radiusL, Layout.preferredWidth / 2)
                   imagePath: model.originalImage || ""
@@ -786,11 +874,13 @@ Variants {
               id: compactContent
               visible: notifWindow.isCompact
               anchors.fill: cardBackground
-              anchors.margins: Style.marginM
+              anchors.margins: notifWindow.themePadding()
+              anchors.leftMargin: notifWindow.themePadding() + (notifWindow.theme.accentBar ? Math.round(notifWindow.theme.accentBarWidth * Style.uiScaleRatio) : 0)
               spacing: Style.marginS
 
               NImageRounded {
-                Layout.preferredWidth: Math.round(24 * Style.uiScaleRatio)
+                visible: notifWindow.theme.iconPlacement !== "hidden"
+                Layout.preferredWidth: visible ? Math.round(24 * Style.uiScaleRatio) : 0
                 Layout.preferredHeight: Math.round(24 * Style.uiScaleRatio)
                 Layout.alignment: Qt.AlignVCenter
                 radius: Style.radiusXS
