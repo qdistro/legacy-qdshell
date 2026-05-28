@@ -229,10 +229,25 @@ Singleton {
 
     function _onSecurityContext(handle, sandboxEngine, appId, instanceId) {
         const stableSilo = root._siloFromSecctx(sandboxEngine, appId, instanceId);
-        if (stableSilo.length > 0)
+        if (stableSilo.length > 0) {
             root._handleToSilo[handle] = stableSilo;
+        } else {
+            // A security_context event arrived but carries no stable
+            // identity (e.g. missing app_id). This is a TAGGED client we
+            // cannot pin to a silo, so it must fail safe — overwrite the
+            // uid-derived placeholder from _onToplevelAdded with "unknown"
+            // rather than let it silently group same-silo by uid. (The uid
+            // placeholder is only meant for clients that NEVER get a
+            // security_context event.)
+            root._handleToSilo[handle] = "unknown";
+        }
         if (appId && appId.length > 0) {
             root._handleToAppId[handle] = appId;
+        } else {
+            // No app_id on a tagged client — drop any stale app_id so the
+            // tier MIME-strip / broker action key can't be derived from a
+            // leftover placeholder.
+            delete root._handleToAppId[handle];
         }
         root._handleToSandboxEngine[handle] = sandboxEngine || "";
         // Stash the secctx tuple on the identity entry so the broker
@@ -291,8 +306,14 @@ Singleton {
         root._pendingSrcIdentity = null;
         let srcSilo;
         if (pending !== null) {
+            // Tagged source: trust the wire identity, NOT the focus-handle
+            // map (sourceHandle here can name the focused destination/admin
+            // toplevel, not the tagged source). If the wire tuple yields no
+            // stable silo — e.g. app_id missing — fail safe to "unknown"
+            // rather than borrowing the focus handle's (possibly uid-
+            // placeholder) silo, which could falsely read as same-silo.
             const wireSilo = root._siloFromSecctx(pending.sandboxEngine, pending.appId, pending.instanceId);
-            srcSilo = wireSilo.length > 0 ? wireSilo : (root._handleToSilo[sourceHandle] || "unknown");
+            srcSilo = wireSilo.length > 0 ? wireSilo : "unknown";
         } else {
             srcSilo = root._handleToSilo[sourceHandle] || "unknown";
         }
