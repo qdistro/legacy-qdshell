@@ -245,10 +245,55 @@ Singleton {
     // Track known apps for per-app policy UI
     registerKnownApp(appName);
 
-    // Per-app policy: check if logging is disabled for this app
-    const appLogEnabled = isAppLogEnabled(appName);
+    // Check if this is a replacement notification (replaces_id). Handle
+    // replacements early -- before duplicate suppression -- because a
+    // client may send an updated notification with the same summary/body
+    // but different hints/progress/actions. Suppressing it would break
+    // live-update patterns (file-op progress bars, etc.).
+    const existingInternalId = quickshellIdToInternalId[quickshellId];
+    if (existingInternalId && activeNotifications[existingInternalId]) {
+      // Still save to history for replacement notifications
+      saveToHistoryIfAllowed(data, notification, appName);
+      updateExistingNotification(existingInternalId, notification, data);
+      return;
+    }
 
-    // Check if we should save to history based on urgency and per-app policy
+    // Duplicate suppression with time window. Run BEFORE addToHistory so
+    // suppressed duplicates don't pollute the log or bump unread count.
+    if (isDuplicateWithinWindow(data)) {
+      Logger.i("NotificationService", `Suppressed duplicate notification: ${data.summary}`);
+      return;
+    }
+
+    // Save to history (per-app and per-urgency policy)
+    saveToHistoryIfAllowed(data, notification, appName);
+
+    if (root.doNotDisturb || PowerProfileService.qdshellPerformanceMode)
+      return;
+
+    // Per-app mute policy: suppress visual notification for muted apps
+    // Exception: allow urgent notifications if allowUrgent is true
+    if (isAppMuted(appName)) {
+      if (data.urgency !== 2 || !isAppUrgentAllowed(appName)) {
+        Logger.i("NotificationService", `Suppressed notification from muted app: ${appName}`);
+        return;
+      }
+    }
+
+    // Check for duplicate content in active list (replace visual)
+    const duplicateId = findDuplicateNotification(data);
+    if (duplicateId) {
+      removeNotification(duplicateId);
+    }
+
+    // Add new notification
+    addNewNotification(quickshellId, notification, data);
+    playNotificationSound(data.urgency, notification.appName);
+  }
+
+  // Helper: save a notification to history based on per-app and per-urgency policy
+  function saveToHistoryIfAllowed(data, notification, appName) {
+    const appLogEnabled = isAppLogEnabled(appName);
     const saveToHistorySettings = Settings.data.notifications?.saveToHistory;
     if (appLogEnabled && saveToHistorySettings && !notification.transient) {
       let shouldSave = true;
@@ -270,41 +315,6 @@ Singleton {
       // Default behavior: save all if settings not configured
       addToHistory(data);
     }
-
-    if (root.doNotDisturb || PowerProfileService.qdshellPerformanceMode)
-      return;
-
-    // Per-app mute policy: suppress visual notification for muted apps
-    // Exception: allow urgent notifications if allowUrgent is true
-    if (isAppMuted(appName)) {
-      if (data.urgency !== 2 || !isAppUrgentAllowed(appName)) {
-        Logger.i("NotificationService", `Suppressed notification from muted app: ${appName}`);
-        return;
-      }
-    }
-
-    // Duplicate suppression with time window
-    if (isDuplicateWithinWindow(data)) {
-      Logger.i("NotificationService", `Suppressed duplicate notification: ${data.summary}`);
-      return;
-    }
-
-    // Check if this is a replacement notification
-    const existingInternalId = quickshellIdToInternalId[quickshellId];
-    if (existingInternalId && activeNotifications[existingInternalId]) {
-      updateExistingNotification(existingInternalId, notification, data);
-      return;
-    }
-
-    // Check for duplicate content
-    const duplicateId = findDuplicateNotification(data);
-    if (duplicateId) {
-      removeNotification(duplicateId);
-    }
-
-    // Add new notification
-    addNewNotification(quickshellId, notification, data);
-    playNotificationSound(data.urgency, notification.appName);
   }
 
   function playNotificationSound(urgency, appName) {
