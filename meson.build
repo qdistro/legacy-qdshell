@@ -28,4 +28,6 @@ if node.found()
   test('pointer-parse', node, args: files('tests/test_pointer_parse.js'))
   test('keyboard-xkb', node, args: files('tests/test_keyboard_xkb.js'))
   test('taskbar-logic', node, args: files('tests/test_taskbar_logic.js'))
+  test('tray-known-items', node, args: files('tests/test_tray_known_items.js'))
+  test('notification-detail', node, args: files('tests/test_notification_detail.js'))
 endif

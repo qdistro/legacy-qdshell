@@ -41,6 +41,41 @@ ColumnLayout {
     defaultValue: Settings.getDefaultValue("notifications.density")
   }
 
+  NComboBox {
+    label: I18n.tr("panels.notifications.settings-detail-mode-label")
+    description: I18n.tr("panels.notifications.settings-detail-mode-description")
+    model: [
+      {
+        "key": "compact",
+        "name": I18n.tr("options.notification-detail-mode.compact")
+      },
+      {
+        "key": "normal",
+        "name": I18n.tr("options.notification-detail-mode.normal")
+      },
+      {
+        "key": "detailed",
+        "name": I18n.tr("options.notification-detail-mode.detailed")
+      }
+    ]
+    currentKey: Settings.data.notifications.detailMode || "normal"
+    onSelected: key => Settings.data.notifications.detailMode = key
+    defaultValue: Settings.getDefaultValue("notifications.detailMode")
+  }
+
+  NSpinBox {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.notifications.settings-min-width-label")
+    description: I18n.tr("panels.notifications.settings-min-width-description")
+    minimum: 200
+    maximum: 1200
+    stepSize: 10
+    suffix: " px"
+    value: Settings.data.notifications.minWidth
+    onValueChanged: Settings.data.notifications.minWidth = value
+    defaultValue: Settings.getDefaultValue("notifications.minWidth")
+  }
+
   NToggle {
     label: I18n.tr("tooltips.do-not-disturb-enabled")
     description: I18n.tr("panels.notifications.settings-do-not-disturb-description")

@@ -8,6 +8,7 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Services.System
 import qs.Widgets
+import "NotificationLayout.js" as NotificationLayout
 
 // Simple notification popup - displays multiple notifications
 Variants {
@@ -101,8 +102,17 @@ Variants {
       readonly property bool isFramed: Settings.data.bar.barType === "framed"
       readonly property real frameThickness: Settings.data.bar.frameThickness ?? 8
 
-      readonly property bool isCompact: Settings.data.notifications.density === "compact"
-      readonly property int notifWidth: Math.round((isCompact ? 320 : 440) * Style.uiScaleRatio)
+      // Detail mode: "compact" (title only) | "normal" (title + body) |
+      // "detailed" (title + body + actions + timestamp).
+      readonly property string detailMode: NotificationLayout.sanitizeDetailMode(Settings.data.notifications.detailMode)
+      // "compact" layout is driven either by the density preset or by the
+      // compact detail mode.
+      readonly property bool isCompact: Settings.data.notifications.density === "compact" || detailMode === NotificationLayout.MODE_COMPACT
+      readonly property bool showBody: NotificationLayout.showBody(detailMode)
+      readonly property bool showActions: NotificationLayout.showActions(detailMode)
+      readonly property bool showTimestamp: NotificationLayout.showTimestamp(detailMode)
+      // Effective toast width: max(density base, user minimum) * UI scale.
+      readonly property int notifWidth: NotificationLayout.effectiveWidth(Settings.data.notifications.density === "compact" ? 320 : 440, Settings.data.notifications.minWidth, Style.uiScaleRatio)
       readonly property int shadowPadding: Style.shadowBlurMax + Style.marginL
 
       // Calculate bar and frame offsets for each edge separately
@@ -665,6 +675,7 @@ Variants {
                     }
 
                     NText {
+                      visible: notifWindow.showTimestamp
                       textFormat: Text.PlainText
                       text: " " + Time.formatRelativeTime(model.timestamp)
                       pointSize: Style.fontSizeXXS
@@ -700,7 +711,7 @@ Variants {
 
                     maximumLineCount: 5
                     elide: Text.ElideRight
-                    visible: text.length > 0
+                    visible: notifWindow.showBody && text.length > 0
                     Layout.fillWidth: true
                     Layout.rightMargin: Style.marginXL
                   }
@@ -720,7 +731,7 @@ Variants {
                         return [];
                       }
                     }
-                    visible: parsedActions.length > 0
+                    visible: notifWindow.showActions && parsedActions.length > 0
 
                     Repeater {
                       model: parent.parsedActions

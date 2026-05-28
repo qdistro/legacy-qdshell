@@ -289,7 +289,12 @@
       "drawer-enabled-description": "When enabled, unpinned tray items are shown in a drawer panel.<br>When disabled, all tray items are shown inline.",
       "drawer-enabled-label": "Enable drawer",
       "hide-passive-description": "When enabled, tray items with 'Passive' status will be hidden.",
-      "hide-passive-label": "Hide passive items"
+      "hide-passive-label": "Hide passive items",
+      "known-items-description": "Tray items Qdshell has seen. Set each to always show, always hide, or follow the default filtering.",
+      "known-items-empty": "No tray items have been seen yet. They appear here once an application registers a tray icon.",
+      "known-items-label": "Known items",
+      "known-items-reset": "Reset",
+      "known-items-reset-tooltip": "Forget all remembered tray items"
     },
     "volume": {
       "display-mode-description": "Choose how you'd like this value to appear."
@@ -699,6 +704,16 @@
     "notification-density": {
       "compact": "Compact",
       "default": "Default"
+    },
+    "notification-detail-mode": {
+      "compact": "Compact (title only)",
+      "detailed": "Detailed (title, body, actions, time)",
+      "normal": "Normal (title and body)"
+    },
+    "tray-known-item-policy": {
+      "default": "Default",
+      "hide": "Always hide",
+      "show": "Always show"
     },
     "scrolling-modes": {
       "always": "Scroll always",
@@ -1529,6 +1544,10 @@
       "settings-density-description": "Choose the notification card density.",
       "settings-density-label": "Density",
       "settings-desc": "Configure notifications appearance and behavior.",
+      "settings-detail-mode-description": "How much of each notification to show: title only, title and body, or full detail with actions and timestamp.",
+      "settings-detail-mode-label": "Detail mode",
+      "settings-min-width-description": "Minimum width of notification toasts, in pixels (before UI scaling).",
+      "settings-min-width-label": "Minimum width",
       "settings-do-not-disturb-description": "Disable all notification popups when enabled.",
       "settings-enabled-description": "Enable or disable the notification daemon, requires a restart of Qdshell shell.",
       "settings-enabled-label": "Enable notifications",

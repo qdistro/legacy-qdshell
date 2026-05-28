@@ -264,7 +264,8 @@ Singleton {
                                     "chevronColor": "none",
                                     "pinned": [],
                                     "drawerEnabled": true,
-                                    "hidePassive": false
+                                    "hidePassive": false,
+                                    "knownItems": []
                                   },
                                   "VPN": {
                                     "displayMode": "onhover",
