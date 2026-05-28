@@ -121,6 +121,38 @@ if [ "$QUICK" = 1 ]; then
     exit 0
 fi
 
+# --- 1b. jstest (node unit tests) ----------------------------------
+#
+# Pure-logic modules (Services/**/*.js) are unit-tested with plain Node
+# scripts under tests/test_*.js (CommonJS; see tests/test_clipboard_silo.js).
+# They are also declared as meson test() targets, but qci's qdshell host
+# step runs this script rather than `meson test`, so run them here too so
+# both qci and local `ci-local.sh` cover them. Node-less hosts skip.
+
+JSTEST_PASS=0
+JSTEST_FAIL=0
+JSTEST_FILES=0
+
+step "jstest (node)"
+NODE_BIN="${NODE:-$(command -v node || true)}"
+if [ -z "$NODE_BIN" ]; then
+    warn "  node not found — skipping JS unit tests"
+else
+    for f in tests/test_*.js; do
+        if [ ! -f "$f" ]; then continue; fi
+        JSTEST_FILES=$((JSTEST_FILES + 1))
+        if out="$("$NODE_BIN" "$f" 2>&1)"; then
+            ok  "  $f: ok"
+            JSTEST_PASS=$((JSTEST_PASS + 1))
+        else
+            err "  $f: FAIL"
+            printf '%s\n' "$out" | tail -20 | sed 's/^/    /'
+            JSTEST_FAIL=$((JSTEST_FAIL + 1))
+        fi
+    done
+    echo "  $JSTEST_FILES file(s); $JSTEST_PASS passed, $JSTEST_FAIL failed"
+fi
+
 # --- 2. qmllint -----------------------------------------------------
 
 step "qmllint"
@@ -245,6 +277,8 @@ echo
 step "summary"
 printf '  qmltest:     %d passed, %d failed across %d files\n' \
     "$QMLTEST_PASS" "$QMLTEST_FAIL" "$QMLTEST_FILES"
+printf '  jstest:      %d passed, %d failed across %d files\n' \
+    "$JSTEST_PASS" "$JSTEST_FAIL" "$JSTEST_FILES"
 printf '  qmllint:     %d warnings, %d errors\n' \
     "$LINT_WARN_COUNT" "$LINT_ERR_COUNT"
 printf '  qmlformat:   %d files need reformatting (Services/Qdshell only)\n' \
@@ -255,6 +289,10 @@ echo
 EXIT=0
 if [ "$QMLTEST_FAIL" -gt 0 ]; then
     err "FAIL — qmltest"
+    EXIT=1
+fi
+if [ "$JSTEST_FAIL" -gt 0 ]; then
+    err "FAIL — jstest"
     EXIT=1
 fi
 if [ "$INT_RESULT" = "fail" ]; then

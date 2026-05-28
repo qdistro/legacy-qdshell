@@ -25,4 +25,7 @@ if node.found()
   test('clipboard-actions', node, args: files('tests/test_clipboard_actions.js'))
   test('clipboard-broker', node, args: files('tests/test_clipboard_broker.js'))
   test('broker-gate', node, args: files('tests/test_broker_gate.js'))
+  test('pointer-parse', node, args: files('tests/test_pointer_parse.js'))
+  test('keyboard-xkb', node, args: files('tests/test_keyboard_xkb.js'))
+  test('taskbar-logic', node, args: files('tests/test_taskbar_logic.js'))
 endif
