@@ -331,6 +331,35 @@ Item {
                    });
     }
 
+    // Regex/text actions (xfce4-clipman parity). Only text entries can match;
+    // the matched text is passed to the command injection-safely by the
+    // service (via $QD_CLIP / stdin), never interpolated into a shell.
+    if (!item.isImage) {
+      var subject = item.preview || "";
+      var cached = ClipboardService.getContent(item.clipboardId);
+      if (cached)
+        subject = cached;
+      var rules = ClipboardService.matchingActions(subject);
+      rules.forEach(function (rule) {
+        actions.push({
+                       "icon": "player-play",
+                       "tooltip": (rule.name && rule.name.length > 0) ? rule.name : I18n.tr("launcher.providers.clipboard-run-action"),
+                       "action": function () {
+                         // Authoritatively decode THIS entry's exact content
+                         // (bypassing the heuristic cache, which could be
+                         // mis-associated when the PRIMARY watcher is on), then
+                         // let runActionRule re-validate the regex before
+                         // executing. The menu match on preview is cosmetic.
+                         ClipboardService.decodeAuthoritative(item.clipboardId, function (content) {
+                           ClipboardService.runActionRule(rule, content || "");
+                         });
+                         if (launcher)
+                           launcher.close();
+                       }
+                     });
+      });
+    }
+
     // Delete action
     actions.push({
                    "icon": "trash",

@@ -38,6 +38,28 @@ Singleton {
   // Approximate first-seen timestamps for entries this session (seconds)
   property var firstSeenById: ({})
 
+  // Per-entry usage counts this session (for "most-used" ordering). Bumped
+  // whenever the user copies/pastes an entry back to the clipboard.
+  property var usageCountById: ({})
+
+  // Baseline tracking for age-retention: ids present at the first list of an
+  // active session for which we have NO persisted timestamp are NOT
+  // timestamped (we can't date them), so max-age never deletes history we
+  // can't date. Persisted first-seen timestamps (see firstSeenFilePath) let
+  // age-based expiry survive shell restarts for entries we have dated.
+  property bool _baselineSeeded: false
+  property var _baselineIds: ({})
+
+  // Persisted first-seen timestamps so clipboardMaxAgeDays works across
+  // restarts. Keyed by cliphist id → unix seconds.
+  readonly property string firstSeenFilePath: Settings.cacheDir + "clipboard_first_seen.json"
+  property bool _firstSeenLoaded: false
+
+  // Id of the most-recently-copied entry in cliphist recency order, captured
+  // before any display reordering. Used to associate live clipboard content
+  // with the correct entry regardless of the configured ordering.
+  property string _recencyNewestId: ""
+
   // Internal: store callback for decode
   property var _decodeCallback: null
   property int _decodeRequestId: 0
@@ -52,7 +74,70 @@ Singleton {
 
   // Check if cliphist is available
   Component.onCompleted: {
+    firstSeenFile.reload();
     checkCliphistAvailability();
+  }
+
+  // --- Persisted first-seen timestamps (for cross-restart age expiry) ------
+  FileView {
+    id: firstSeenFile
+    path: root.firstSeenFilePath
+    printErrors: false
+    watchChanges: false
+    onLoaded: {
+      try {
+        const content = text();
+        if (content && content.trim() !== "") {
+          const parsed = JSON.parse(content);
+          if (parsed && typeof parsed === "object") {
+            root.firstSeenById = parsed;
+          }
+        }
+      } catch (e) {
+        // Corrupt cache → start fresh; not fatal.
+        root.firstSeenById = {};
+      }
+      root._firstSeenLoaded = true;
+    }
+    onLoadFailed: function (error) {
+      root.firstSeenById = {};
+      root._firstSeenLoaded = true;
+    }
+  }
+
+  Timer {
+    id: firstSeenSaveTimer
+    interval: 1500
+    repeat: false
+    onTriggered: root._doSaveFirstSeen()
+  }
+
+  function _saveFirstSeen() {
+    firstSeenSaveTimer.restart();
+  }
+
+  // Persist the firstSeenById map. The JSON value is fully shell-controlled
+  // (numeric ids → numeric timestamps), but we still pass it via the
+  // environment so no clipboard-derived data could ever reach the command
+  // line, and quote the destination path with _q.
+  function _doSaveFirstSeen() {
+    if (!root._firstSeenLoaded)
+      return;
+    try {
+      const content = JSON.stringify(root.firstSeenById);
+      const path = root.firstSeenFilePath;
+      _firstSeenSaveProc.environment = ["QD_JSON=" + content];
+      _firstSeenSaveProc.command = ["sh", "-c", "mkdir -p \"$(dirname " + root._q(path) + ")\" && printf '%s' \"$QD_JSON\" > " + root._q(path)];
+      _firstSeenSaveProc.running = true;
+    } catch (e) {
+      Logger.w("ClipboardService", "failed to persist first-seen cache:", e);
+    }
+  }
+
+  Process {
+    id: _firstSeenSaveProc
+    stdout: StdioCollector {}
+    stderr: StdioCollector {}
   }
 
   // Check dependency availability
@@ -93,6 +178,10 @@ Singleton {
       stopWatchers();
       loading = false;
       items = [];
+      // Re-seed the baseline next time the service becomes active.
+      root._baselineSeeded = false;
+      root._baselineIds = {};
+      root._recencyNewestId = "";
     }
   }
 
@@ -111,6 +200,8 @@ Singleton {
     onExited: (exitCode, exitStatus) => {
       const out = String(stdout.text);
       const lines = out.split('\n').filter(l => l.length > 0);
+      // Set true if we stamp any newly-seen id this pass → persist afterwards.
+      let newlyStamped = false;
       // cliphist list default format: "<id> <preview>" or "<id>\t<preview>"
       const parsed = lines.map(l => {
                                  let id = "";
@@ -140,9 +231,17 @@ Singleton {
                                    else
                                    mime = "image/*";
                                  }
-                                 // Record first seen time for new ids (approximate copy time)
-                                 if (!root.firstSeenById[id]) {
+                                 // Record first-seen time for ids we observe
+                                 // for the FIRST time after the baseline list.
+                                 // Entries already present when this session
+                                 // started AND without a persisted timestamp
+                                 // (the baseline) are left undated so max-age
+                                 // expiry never deletes history we can't date.
+                                 // Entries with a persisted timestamp keep it,
+                                 // so age expiry survives shell restarts.
+                                 if (root._baselineSeeded && root.firstSeenById[id] === undefined && !root._baselineIds[id]) {
                                    root.firstSeenById[id] = Time.timestamp;
+                                   newlyStamped = true;
                                  }
                                  return {
                                    "id": id,
@@ -152,26 +251,133 @@ Singleton {
                                  };
                                });
 
+      // Seed the baseline id set on the first successful list so that
+      // pre-existing entries we cannot date are never treated as "freshly
+      // copied" by the age-retention path. Ids that already carry a PERSISTED
+      // first-seen timestamp are NOT added to the baseline — they remain
+      // datable so age expiry survives shell restarts. Done once per active
+      // session (requires the persisted cache to have loaded first).
+      if (!root._baselineSeeded && root._firstSeenLoaded) {
+        const base = {};
+        for (let i = 0; i < parsed.length; i++) {
+          const pid = parsed[i].id;
+          if (root.firstSeenById[pid] === undefined) {
+            base[pid] = true;
+          }
+        }
+        root._baselineIds = base;
+        root._baselineSeeded = true;
+      }
+
       // Filter out browser junk when copying images
-      const filtered = parsed.filter(item => {
-                                       if (item.isImage)
-                                       return true;
-                                       const p = item.preview;
-                                       // Skip UTF-16 encoded text (has null bytes between chars), chromium browser artifact
-                                       const nullCount = (p.match(/\x00/g) || []).length;
-                                       if (nullCount > p.length * 0.2)
-                                       return false;
-                                       // Skip browser-generated HTML wrapper, firefox
-                                       if (p.toLowerCase().startsWith("<meta http-equiv="))
-                                       return false;
-                                       return true;
-                                     });
+      let filtered = parsed.filter(item => {
+                                     if (item.isImage)
+                                     return true;
+                                     const p = item.preview;
+                                     // Skip UTF-16 encoded text (has null bytes between chars), chromium browser artifact
+                                     const nullCount = (p.match(/\x00/g) || []).length;
+                                     if (nullCount > p.length * 0.2)
+                                     return false;
+                                     // Skip browser-generated HTML wrapper, firefox
+                                     if (p.toLowerCase().startsWith("<meta http-equiv="))
+                                     return false;
+                                     return true;
+                                   });
+
+      // Privacy: drop entries whose preview matches the user ignore pattern.
+      // We physically delete the underlying cliphist entry so secrets don't
+      // linger in the DB. NOTE: this is BEST-EFFORT — cliphist has already
+      // stored the entry by the time we list it, and we only test the
+      // truncated PREVIEW (~100 chars), so a secret beyond the preview window
+      // or arriving between watcher store and the next list() poll can persist
+      // briefly until matched-and-deleted. For a hard privacy boundary, pair
+      // this with a watcher command that filters before `cliphist store`.
+      // The preview is UNTRUSTED text used only as a length-capped RegExp
+      // subject, never as a shell fragment.
+      const ignoreRe = root._ignoreRegex();
+      if (ignoreRe) {
+        const kept = [];
+        for (let i = 0; i < filtered.length; i++) {
+          const it = filtered[i];
+          let matched = false;
+          try {
+            matched = ignoreRe.test(root._regexSubject(it.preview));
+          } catch (e) {
+            matched = false;
+          }
+          if (matched) {
+            root._purgeId(it.id);
+          } else {
+            kept.push(it);
+          }
+        }
+        filtered = kept;
+      }
+
+      // Retention: drop entries older than the configured max age (best
+      // effort, based on session first-seen timestamps; entries copied before
+      // this shell session started have no timestamp and are left intact).
+      const maxAgeDays = Number(Settings.data.appLauncher.clipboardMaxAgeDays) || 0;
+      if (maxAgeDays > 0) {
+        const cutoff = Time.timestamp - maxAgeDays * 86400;
+        const kept = [];
+        for (let i = 0; i < filtered.length; i++) {
+          const it = filtered[i];
+          const seen = root.firstSeenById[it.id];
+          if (seen !== undefined && seen < cutoff) {
+            root._purgeId(it.id);
+          } else {
+            kept.push(it);
+          }
+        }
+        filtered = kept;
+      }
+
+      // Record the most-recently-copied id BEFORE any reordering. cliphist
+      // lists most-recent-first, so this is filtered[0] at this point. We use
+      // this stable id (not the post-sort display order) to associate the
+      // current wl-paste output with the right entry, so "most-used" ordering
+      // can't cache live clipboard content under an unrelated older id.
+      root._recencyNewestId = (filtered.length > 0 && !filtered[0].isImage) ? filtered[0].id : "";
+
+      // Ordering: cliphist lists most-recent-first natively. For "most-used"
+      // we sort by this session's usage counts, falling back to recency.
+      if (Settings.data.appLauncher.clipboardOrdering === "most-used") {
+        const idx = {};
+        filtered.forEach((it, i) => idx[it.id] = i);
+        filtered = filtered.slice().sort((a, b) => {
+                                           const ua = root.usageCountById[a.id] || 0;
+                                           const ub = root.usageCountById[b.id] || 0;
+                                           if (ua !== ub)
+                                           return ub - ua;
+                                           // Stable tie-break: preserve cliphist recency order.
+                                           return idx[a.id] - idx[b.id];
+                                         });
+      }
+
+      // Size limit: keep only the first N entries (after ordering). Excess
+      // entries are deleted from cliphist so the DB itself is bounded.
+      const maxEntries = Number(Settings.data.appLauncher.clipboardMaxEntries) || 0;
+      if (maxEntries > 0 && filtered.length > maxEntries) {
+        const overflow = filtered.slice(maxEntries);
+        for (let i = 0; i < overflow.length; i++) {
+          root._purgeId(overflow[i].id);
+        }
+        filtered = filtered.slice(0, maxEntries);
+      }
 
       items = filtered;
       loading = false;
 
-      // Try to capture current clipboard and associate with newest item
-      if (filtered.length > 0 && !filtered[0].isImage && !root.contentCache[filtered[0].id]) {
+      // Persist newly-stamped first-seen times (debounced) so age expiry
+      // survives restarts.
+      if (newlyStamped) {
+        root._saveFirstSeen();
+      }
+
+      // Try to capture current clipboard and associate with the most-recently
+      // copied entry (recency order, independent of display ordering).
+      if (root._recencyNewestId !== "" && !root.contentCache[root._recencyNewestId]) {
         root.captureCurrentClipboard();
       }
 
@@ -263,6 +469,31 @@ Singleton {
     }
   }
 
+  // PRIMARY selection watcher (X/Wayland middle-click selection). Separate
+  // from the CLIPBOARD watchers above and gated by clipboardWatchPrimary so
+  // the PRIMARY selection is only captured into history when explicitly
+  // enabled. The compositor-side ClipboardGate still governs cross-silo
+  // PRIMARY transfers independently; this only affects local history capture.
+  Process {
+    id: watchPrimary
+    stdout: StdioCollector {}
+    onExited: (exitCode, exitStatus) => {
+      if (root.autoWatch && root.watchersStarted && Settings.data.appLauncher.clipboardWatchPrimary) {
+        Qt.callLater(() => {
+                       watchPrimary.running = true;
+                     });
+      }
+    }
+  }
+
+  // Quiet purge process used by retention/ignore enforcement. Unlike
+  // deleteProc it does NOT re-trigger list() (the caller is already inside a
+  // list() result handler), avoiding a refresh loop.
+  Process {
+    id: purgeProc
+    stdout: StdioCollector {}
+  }
+
   // Capture current clipboard text when needed
   Process {
     id: captureTextProc
@@ -272,13 +503,13 @@ Singleton {
         const content = String(stdout.text);
         if (content.length > 0) {
           root._latestTextContent = content;
-          // Associate with newest item if we have one
-          if (root.items.length > 0 && !root.items[0].isImage) {
-            const newestId = root.items[0].id;
-            if (!root.contentCache[newestId]) {
-              root.contentCache[newestId] = content;
-              root.revision++;
-            }
+          // Associate with the most-recently-copied entry (recency order),
+          // NOT the first displayed item, which under "most-used" ordering
+          // may be an unrelated older entry.
+          const newestId = root._recencyNewestId;
+          if (newestId !== "" && !root.contentCache[newestId]) {
+            root.contentCache[newestId] = content;
+            root.revision++;
           }
         }
       }
@@ -297,6 +528,9 @@ Singleton {
     // Image watcher
     watchImage.command = ["sh", "-c", Settings.data.appLauncher.clipboardWatchImageCommand];
     watchImage.running = true;
+
+    // PRIMARY selection watcher (opt-in)
+    _syncPrimaryWatcher();
   }
 
   function stopWatchers() {
@@ -304,7 +538,56 @@ Singleton {
       return;
     watchText.running = false;
     watchImage.running = false;
+    watchPrimary.running = false;
     watchersStarted = false;
+  }
+
+  // Start/stop the PRIMARY watcher to match the current setting. Safe to call
+  // any time; only acts while the service is actively watching.
+  function _syncPrimaryWatcher() {
+    if (!root.watchersStarted)
+      return;
+    const want = Settings.data.appLauncher.clipboardWatchPrimary;
+    if (want && !watchPrimary.running) {
+      watchPrimary.command = ["sh", "-c", Settings.data.appLauncher.clipboardWatchPrimaryCommand];
+      watchPrimary.running = true;
+    } else if (!want && watchPrimary.running) {
+      watchPrimary.running = false;
+    }
+  }
+
+  // React to live changes of the PRIMARY-capture toggle.
+  Connections {
+    target: Settings.data.appLauncher
+    function onClipboardWatchPrimaryChanged() {
+      root._syncPrimaryWatcher();
+    }
+  }
+
+  // Clear history on screen lock (privacy). Mirrors HooksService's lock-edge
+  // detection: wipe when transitioning unlocked → locked.
+  property bool _wasLocked: false
+  Connections {
+    target: PanelService
+    function onLockScreenChanged() {
+      if (PanelService.lockScreen) {
+        _lockConn.target = PanelService.lockScreen;
+        root._wasLocked = PanelService.lockScreen.active;
+      }
+    }
+  }
+  Connections {
+    id: _lockConn
+    target: PanelService.lockScreen
+    function onActiveChanged() {
+      if (!PanelService.lockScreen)
+        return;
+      const nowLocked = PanelService.lockScreen.active;
+      if (!root._wasLocked && nowLocked && Settings.data.appLauncher.clipboardClearOnLock && root.active) {
+        root.wipeAll();
+      }
+      root._wasLocked = nowLocked;
+    }
   }
 
   // Capture current clipboard text and cache it
@@ -370,6 +653,50 @@ Singleton {
     decodeProc.running = true;
   }
 
+  // Authoritative decode for SECURITY-SENSITIVE paths (regex actions). Unlike
+  // decode(), this NEVER trusts root.contentCache — that cache is populated by
+  // a best-effort newest-id heuristic that, with the PRIMARY watcher enabled,
+  // could associate CLIPBOARD text with a PRIMARY entry's id (or vice versa).
+  // For actions we must run against the EXACT content of the requested id, so
+  // we always ask cliphist directly. Result is NOT written into contentCache.
+  property var _authDecodeCb: null
+  property string _authDecodeId: ""
+  function decodeAuthoritative(id, cb) {
+    if (!root.cliphistAvailable) {
+      if (cb)
+        cb("");
+      return;
+    }
+    const idStr = String(id).trim();
+    if (!/^\d+$/.test(idStr)) {
+      if (cb)
+        cb("");
+      return;
+    }
+    root._authDecodeCb = cb || null;
+    root._authDecodeId = idStr;
+    _authDecodeProc.command = ["cliphist", "decode", idStr];
+    _authDecodeProc.running = true;
+  }
+
+  Process {
+    id: _authDecodeProc
+    stdout: StdioCollector {}
+    onExited: (exitCode, exitStatus) => {
+      const out = (exitCode === 0) ? String(stdout.text) : "";
+      const cb = root._authDecodeCb;
+      root._authDecodeCb = null;
+      root._authDecodeId = "";
+      if (cb) {
+        try {
+          cb(out);
+        } catch (e) {
+          Logger.w("ClipboardService", "decodeAuthoritative callback raised:", e);
+        }
+      }
+    }
+  }
+
   function decodeToDataUrl(id, mime, cb) {
     if (!root.cliphistAvailable) {
       if (cb)
@@ -415,6 +742,7 @@ Singleton {
     if (!root.cliphistAvailable) {
       return;
     }
+    root.bumpUsage(id);
     copyProc.command = ["sh", "-c", `cliphist decode ${id} | wl-copy`];
     copyProc.running = true;
   }
@@ -423,6 +751,7 @@ Singleton {
     if (!root.cliphistAvailable) {
       return;
     }
+    root.bumpUsage(id);
     const isImage = mime && mime.startsWith("image/");
     const typeArg = isImage ? ` --type ${mime}` : "";
     const pasteKeys = isImage ? "wtype -M ctrl -k v" : "wtype -M ctrl -M shift v";
@@ -461,12 +790,174 @@ Singleton {
     // Clear caches
     root.contentCache = {};
     root.imageDataById = {};
+    root.firstSeenById = {};
+    root.usageCountById = {};
     root._latestTextContent = "";
     root._latestTextId = "";
 
     Quickshell.execDetached(["cliphist", "wipe"]);
+    // Persist the now-empty first-seen map so a wipe survives restart.
+    root._saveFirstSeen();
     revision++;
     Qt.callLater(() => list());
+  }
+
+  // Shell-safe single-quote wrapper (mirrors AutostartService._q). Used only
+  // for paths/ids we control; clipboard content is NEVER passed through this
+  // into a shell — see runActionRule for the env/stdin-based contract.
+  function _q(s) {
+    return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  // Compile the user's ignore pattern into a RegExp, or null if unset/invalid.
+  // The pattern itself is user-authored (trusted as a setting); the SUBJECT it
+  // is tested against (clipboard preview) is untrusted but only ever used as a
+  // RegExp.test() input, never as code or a shell fragment.
+  function _ignoreRegex() {
+    const pat = Settings.data.appLauncher.clipboardIgnorePattern || "";
+    if (pat.length === 0)
+      return null;
+    try {
+      return new RegExp(pat);
+    } catch (e) {
+      Logger.w("ClipboardService", "invalid clipboardIgnorePattern; ignoring:", e);
+      return null;
+    }
+  }
+
+  // Delete an entry from cliphist WITHOUT re-listing (loop-safe). The id is
+  // numeric from cliphist; we quote it defensively anyway.
+  function _purgeId(id) {
+    if (!root.cliphistAvailable)
+      return;
+    const idStr = String(id).trim();
+    if (!/^\d+$/.test(idStr))
+      return;
+    delete root.contentCache[idStr];
+    delete root.firstSeenById[idStr];
+    delete root.usageCountById[idStr];
+    root._saveFirstSeen();
+    Quickshell.execDetached(["sh", "-c", "echo " + root._q(idStr) + " | cliphist delete"]);
+  }
+
+  // Record that an entry was used (for "most-used" ordering).
+  function bumpUsage(id) {
+    const idStr = String(id);
+    root.usageCountById[idStr] = (root.usageCountById[idStr] || 0) + 1;
+  }
+
+  // Upper bound on how much UNTRUSTED clipboard text we feed into a user
+  // RegExp. A locally-configured catastrophic-backtracking pattern run against
+  // megabytes of hostile clipboard content could otherwise freeze the QML
+  // main thread; capping the subject bounds the worst case.
+  readonly property int _regexSubjectCap: 16384
+
+  function _regexSubject(text) {
+    const s = String(text || "");
+    return s.length > root._regexSubjectCap ? s.slice(0, root._regexSubjectCap) : s;
+  }
+
+  // Return the action rules whose regex matches the given text.
+  // Each rule is { name, regexPattern, command }. The text is UNTRUSTED — it is
+  // only ever used as a RegExp.test() subject (length-capped), never as code.
+  function matchingActions(text) {
+    const out = [];
+    const actions = Settings.data.appLauncher.clipboardActions || [];
+    const subject = root._regexSubject(text);
+    for (let i = 0; i < actions.length; i++) {
+      const a = actions[i];
+      if (!a || !a.command)
+        continue;
+      const pat = a.regexPattern || "";
+      let re = null;
+      if (pat.length > 0) {
+        try {
+          re = new RegExp(pat);
+        } catch (e) {
+          continue; // skip rules with invalid patterns
+        }
+      }
+      // Empty pattern matches everything (XFCE clipman treats a blank regex as
+      // "always"); otherwise require a match against the untrusted subject.
+      let matched = (re === null);
+      if (re !== null) {
+        try {
+          matched = re.test(subject);
+        } catch (e) {
+          matched = false;
+        }
+      }
+      if (matched) {
+        out.push(a);
+      }
+    }
+    return out;
+  }
+
+  // Execute a regex-action rule against UNTRUSTED clipboard text. Rule is
+  // { name, regexPattern, command }; the first capture group (if any) is
+  // exposed as $QD_CLIP_1 alongside the full text in $QD_CLIP.
+  //
+  // SECURITY INVARIANT: clipboard content (and regex capture groups) are
+  // attacker-controlled. They are NEVER interpolated into the `sh -c` command
+  // line. Instead:
+  //   - The user-authored `command` is the ONLY thing the shell parses as a
+  //     template. The matched text is exposed solely through the environment
+  //     variables $QD_CLIP / $QD_CLIP_1 (set via Process.environment, never
+  //     concatenated into the script). A payload like `; rm -rf ~` therefore
+  //     lands as the VALUE of $QD_CLIP, not as a new command. This mirrors the
+  //     AutostartService env-passing pattern. (The user MUST quote references,
+  //     i.e. write "$QD_CLIP"; an unquoted $QD_CLIP still undergoes word-
+  //     splitting/globbing but cannot start a new command — the settings UI
+  //     documents the quoting requirement.)
+  //   - The full text is also piped on stdin so commands can consume it with
+  //     no interpolation whatsoever.
+  // Only the clipboard text is untrusted; the `command` template is a local
+  // user setting. We additionally RE-VALIDATE the rule's regex against the
+  // (decoded) text here, so a preview-vs-full-content mismatch in the caller
+  // can never cause an action to fire on text its pattern doesn't match.
+  function runActionRule(rule, text) {
+    if (!rule || !rule.command)
+      return;
+    const subject = root._regexSubject(text);
+    const pat = rule.regexPattern || "";
+    let group1 = "";
+    if (pat.length > 0) {
+      let re = null;
+      try {
+        re = new RegExp(pat);
+      } catch (e) {
+        return; // invalid pattern → do not run
+      }
+      let m = null;
+      try {
+        m = subject.match(re);
+      } catch (e) {
+        return;
+      }
+      if (!m)
+        return; // re-validation: decoded text must actually match
+      if (m.length > 1 && m[1] !== undefined)
+        group1 = String(m[1]);
+    }
+    // Pass full (uncapped) text on stdin so the command sees complete content;
+    // env values carry the same/derived data. None of it enters the command
+    // line. printf reads $QD_CLIP so even the stdin payload isn't interpolated.
+    const wrapper = "printf '%s' \"$QD_CLIP\" | { " + String(rule.command) + " ; }";
+    _actionProc.environment = ["QD_CLIP=" + String(text || ""), "QD_CLIP_1=" + group1];
+    _actionProc.command = ["sh", "-c", wrapper];
+    _actionProc.running = true;
+  }
+
+  Process {
+    id: _actionProc
+    stdout: StdioCollector {}
+    stderr: StdioCollector {}
+    onExited: (exitCode, exitStatus) => {
+      if (exitCode !== 0) {
+        Logger.w("ClipboardService", "clipboard action exited", exitCode);
+      }
+    }
   }
 
   // Parse image metadata from cliphist preview string

@@ -414,6 +414,30 @@ Singleton {
       property bool clipboardWrapText: true
       property string clipboardWatchTextCommand: "wl-paste --type text --watch cliphist store"
       property string clipboardWatchImageCommand: "wl-paste --type image --watch cliphist store"
+      // --- Clipboard history size & ordering (xfce4-clipman parity) ---
+      // Max number of entries to keep/display. 0 = unlimited.
+      property int clipboardMaxEntries: 0
+      // Display/trim ordering: "recent" (most-recent-first) or "most-used".
+      property string clipboardOrdering: "recent"
+      // --- PRIMARY selection (X/Wayland middle-click) controls ---
+      // Capture the PRIMARY selection into history (separate from CLIPBOARD).
+      property bool clipboardWatchPrimary: false
+      // Command used to watch the PRIMARY selection when the above is enabled.
+      property string clipboardWatchPrimaryCommand: "wl-paste --primary --type text --watch cliphist store"
+      // --- Regex / text actions (xfce4-clipman "Actions") ---
+      // Each entry: { name, regexPattern, command } where {command} runs with
+      // the matched clipboard text passed as a single argv element (NEVER
+      // interpolated into a shell). See ClipboardService.runAction for the
+      // injection-safe execution contract.
+      property list<var> clipboardActions: []
+      // --- Retention / privacy ---
+      // Drop entries older than this many days. 0 = no age-based expiry.
+      property int clipboardMaxAgeDays: 0
+      // Wipe the whole clipboard history when the screen locks.
+      property bool clipboardClearOnLock: false
+      // Skip (never store / immediately delete) entries whose preview text
+      // matches this regex. Empty = no ignore rule. Treated as untrusted text.
+      property string clipboardIgnorePattern: ""
       property string position: "center"  // Position: center, top_left, top_right, bottom_left, bottom_right, bottom_center, top_center
       property list<string> pinnedApps: []
       property bool useApp2Unit: false
