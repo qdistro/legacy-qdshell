@@ -30,88 +30,36 @@ ColumnLayout {
     color: Color.mOnSurfaceVariant
   }
 
-  // Category combo boxes
-  Repeater {
-    model: DefaultAppsService.ready ? DefaultAppsService.categories : []
+  // Sub-tabs: the per-category choosers (kept as-is) and the new full
+  // MIME-type-level association editor.
+  NTabBar {
+    id: subTabBar
+    Layout.fillWidth: true
+    Layout.bottomMargin: Style.marginM
+    distributeEvenly: true
+    currentIndex: tabView.currentIndex
 
-    ColumnLayout {
-      required property var modelData
-      required property int index
-
-      Layout.fillWidth: true
-      spacing: Style.marginS
-
-      NComboBox {
-        id: combo
-        Layout.fillWidth: true
-        label: I18n.tr("panels.default-apps.category-" + modelData.id)
-        description: I18n.tr("panels.default-apps.category-" + modelData.id + "-description")
-
-        property var apps: DefaultAppsService.availableApps[modelData.id] || []
-
-        model: {
-          var items = [
-            {
-              "key": "",
-              "name": I18n.tr("panels.default-apps.system-default")
-            }
-          ];
-          for (var i = 0; i < apps.length; i++) {
-            items.push({
-              "key": apps[i].desktopId,
-              "name": apps[i].name
-            });
-          }
-          return items;
-        }
-
-        currentKey: DefaultAppsService.currentDefaults[modelData.id] || ""
-        defaultValue: ""
-
-        onSelected: function (key) {
-          DefaultAppsService.setDefault(modelData.id, key);
-        }
-      }
-
-      // No applications found hint
-      NText {
-        visible: (DefaultAppsService.availableApps[modelData.id] || []).length === 0
-        text: I18n.tr("panels.default-apps.no-apps-found")
-        pointSize: Style.fontSizeXS
-        color: Color.mOnSurfaceVariant
-        Layout.leftMargin: Style.marginL
-      }
-
-      // Effective system handler hint (shown when "System default" is selected)
-      NText {
-        readonly property string resolvedId: DefaultAppsService.resolvedDefaults[modelData.id] || ""
-        visible: (DefaultAppsService.currentDefaults[modelData.id] || "") === "" && resolvedId !== ""
-        text: I18n.tr("panels.default-apps.currently-using", {
-          "app": DefaultAppsService.getAppName(resolvedId)
-        })
-        pointSize: Style.fontSizeXS
-        color: Color.mOnSurfaceVariant
-        Layout.leftMargin: Style.marginL
-      }
-
-      // Reset button
-      NButton {
-        visible: (DefaultAppsService.currentDefaults[modelData.id] || "") !== ""
-        text: I18n.tr("panels.default-apps.reset-to-default")
-        icon: "rotate-clockwise"
-        outlined: true
-        Layout.alignment: Qt.AlignRight
-        onClicked: DefaultAppsService.resetDefault(modelData.id)
-      }
-
-      NDivider {
-        visible: index < DefaultAppsService.categories.length - 1
-        Layout.fillWidth: true
-      }
+    NTabButton {
+      text: I18n.tr("panels.default-apps.subtab-categories")
+      tabIndex: 0
+      checked: subTabBar.currentIndex === 0
+    }
+    NTabButton {
+      text: I18n.tr("panels.default-apps.subtab-mime-editor")
+      tabIndex: 1
+      checked: subTabBar.currentIndex === 1
     }
   }
 
-  // Rescan button
+  NTabView {
+    id: tabView
+    currentIndex: subTabBar.currentIndex
+
+    CategoriesSubTab {}
+    MimeEditorSubTab {}
+  }
+
+  // Rescan button (applies to both subtabs)
   NButton {
     visible: DefaultAppsService.ready
     Layout.fillWidth: true

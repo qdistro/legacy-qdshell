@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "MimeAssociations.js" as MimeAssoc
 
 // Service to manage default application / MIME type associations.
 // Reads from ~/.config/mimeapps.list and /usr/share/applications/mimeapps.list,
@@ -79,6 +80,13 @@ Singleton {
   // Whether the initial scan is finished
   property bool ready: false
 
+  // ── MIME-type-level association editor state ───────────────────────────
+  // Full catalog of MIME types discovered from installed .desktop files'
+  // MimeType= entries: array of { mime, description, handlers:[desktopId,...] }.
+  property var mimeCatalog: []
+  // Map mime -> friendly description (from /usr/share/mime where available).
+  property var mimeDescriptions: ({})
+
   signal defaultsChanged
 
   // ── Internal ──────────────────────────────────────────────────────────
@@ -106,8 +114,10 @@ Singleton {
           root._desktopEntries = parsed.desktopEntries || {};
           root._systemDefaults = parsed.systemDefaults || {};
           root._userDefaults = parsed.userDefaults || {};
+          root.mimeDescriptions = parsed.mimeDescriptions || {};
           root._buildAvailableApps();
           root._buildCurrentDefaults();
+          root._buildMimeCatalog();
           root.ready = true;
         } catch (e) {
           Logger.e("DefaultAppsService", "Failed to parse scan output: " + e);
@@ -208,7 +218,38 @@ user_path = os.path.join(
 )
 user_defaults = parse_mimeapps(user_path) if os.path.isfile(user_path) else {}
 
-print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "userDefaults": user_defaults}))
+# Friendly descriptions for the MIME types that installed apps declare support
+# for. The shared /usr/share/mime/types lists known types; the per-type
+# <comment> lives in /usr/share/mime/<type>.xml. To keep the scan cheap we only
+# look up descriptions for MIME types actually referenced by a .desktop file.
+import re
+referenced = set()
+for ent in entries.values():
+    for m in ent.get("mimeTypes", []):
+        referenced.add(m)
+
+mime_descriptions = {}
+mime_dirs = []
+for d in [xdg_data_home] + [x.strip() for x in xdg_data_dirs.split(":") if x.strip()]:
+    mime_dirs.append(os.path.join(d, "mime"))
+comment_re = re.compile(r"<comment>([^<]*)</comment>")
+for mt in referenced:
+    if "/" not in mt:
+        continue
+    for md in mime_dirs:
+        xml_path = os.path.join(md, mt + ".xml")
+        if os.path.isfile(xml_path):
+            try:
+                with open(xml_path, "r", encoding="utf-8") as fh:
+                    head = fh.read(4096)
+                m = comment_re.search(head)
+                if m:
+                    mime_descriptions[mt] = m.group(1).strip()
+            except Exception:
+                pass
+            break
+
+print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "userDefaults": user_defaults, "mimeDescriptions": mime_descriptions}))
 '`;
   }
 
@@ -262,6 +303,112 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
       result[cat.id] = apps;
     }
     availableApps = result;
+  }
+
+  // ── Build the MIME-type catalog ────────────────────────────────────────
+  // Aggregate every MIME type declared by an installed .desktop file (plus the
+  // ones already known to mimeapps.list) into a searchable, sorted catalog.
+  // Delegates the pure aggregation/validation to MimeAssociations.js so the
+  // exact same logic is unit-tested under Node.
+  function _buildMimeCatalog() {
+    // Seed extra types from any MIME present in the system/user mimeapps.list
+    // even if no installed .desktop declares it (so a stale default is still
+    // visible and clearable).
+    var extra = [];
+    var k;
+    for (k in _systemDefaults)
+      if (Object.prototype.hasOwnProperty.call(_systemDefaults, k))
+        extra.push(k);
+    for (k in _userDefaults)
+      if (Object.prototype.hasOwnProperty.call(_userDefaults, k))
+        extra.push(k);
+    mimeCatalog = MimeAssoc.buildMimeCatalog(_desktopEntries, extra, mimeDescriptions);
+  }
+
+  // ── Public: current default handler for an arbitrary MIME type ─────────
+  // Returns the explicit user override (mimeapps.list [Default Applications]),
+  // or "" when none is set.
+  function mimeUserDefault(mime) {
+    if (!MimeAssoc.isValidMimeType(mime))
+      return "";
+    return _userDefaults[mime] || "";
+  }
+
+  // Returns the effective resolved handler (user override else system default),
+  // for informational display.
+  function mimeResolvedDefault(mime) {
+    if (!MimeAssoc.isValidMimeType(mime))
+      return "";
+    return _userDefaults[mime] || _systemDefaults[mime] || "";
+  }
+
+  // List of installed apps { desktopId, name, icon } that declare support for
+  // `mime`, sorted by display name.
+  function appsForMime(mime) {
+    var out = [];
+    if (!MimeAssoc.isValidMimeType(mime))
+      return out;
+    for (var i = 0; i < mimeCatalog.length; i++) {
+      if (mimeCatalog[i].mime === mime) {
+        var handlers = mimeCatalog[i].handlers || [];
+        for (var j = 0; j < handlers.length; j++) {
+          var entry = _desktopEntries[handlers[j]];
+          out.push({
+            "desktopId": handlers[j],
+            "name": entry ? entry.name : handlers[j],
+            "icon": entry ? entry.icon : ""
+          });
+        }
+        break;
+      }
+    }
+    out.sort(function (a, b) {
+      return a.name.localeCompare(b.name);
+    });
+    return out;
+  }
+
+  // ── Public: set / clear the default handler for an arbitrary MIME type ──
+  // SECURITY: both `mime` and `desktopId` are validated before any command is
+  // built; an invalid value is refused (no command runs, nothing is written).
+  function setMimeDefault(mime, desktopId) {
+    if (!MimeAssoc.isValidMimeType(mime)) {
+      Logger.w("DefaultAppsService", "Refusing to set invalid MIME type: " + mime);
+      return;
+    }
+    if (desktopId && !MimeAssoc.isValidDesktopId(desktopId)) {
+      Logger.w("DefaultAppsService", "Refusing invalid desktop id: " + desktopId);
+      return;
+    }
+
+    // Keep in-memory user defaults in sync for immediate UI feedback.
+    var um = Object.assign({}, _userDefaults);
+    if (desktopId)
+      um[mime] = desktopId;
+    else
+      delete um[mime];
+    _userDefaults = um;
+
+    if (desktopId) {
+      // Fully-tokenized argv — never a shell string.
+      var argv = MimeAssoc.buildXdgMimeDefaultArgv(desktopId, mime);
+      if (argv === null) {
+        Logger.w("DefaultAppsService", "buildXdgMimeDefaultArgv rejected input");
+        return;
+      }
+      Quickshell.execDetached(argv);
+    } else {
+      // Remove just this key from [Default Applications].
+      _removeProcess.mimes = [mime];
+      _removeProcess.running = true;
+    }
+
+    _buildCurrentDefaults();
+    defaultsChanged();
+  }
+
+  function clearMimeDefault(mime) {
+    setMimeDefault(mime, "");
   }
 
   // ── Build the currentDefaults map ──────────────────────────────────────
