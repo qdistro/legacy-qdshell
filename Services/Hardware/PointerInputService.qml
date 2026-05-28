@@ -31,10 +31,20 @@ Singleton {
 
   // ─── Public state ────────────────────────────────────────────────
   // Detected pointer devices. Each entry:
-  //   { id, name, type ("mouse"|"touchpad"|"trackpoint"|"pointer"),
+  //   { id, name, type ("mouse"|"touchpad"|"trackpoint"|"tablet"|"pointer"),
   //     hasTap (bool), hasNaturalScroll (bool), hasDisableWhileTyping (bool),
   //     hasScrollMethod (bool) }
+  // Tablet/Wacom digitizers are enumerated as type "tablet" so the Mouse tab
+  // can expose area-to-output mapping for them.
   property list<var> devices: []
+
+  // Devices the user has not disabled (disabledDevices filtered out), and the
+  // subset that are tablets — both derived purely so the UI can bind directly.
+  readonly property var enabledDevices: PointerInputParse.filterEnabledDevices(devices, Settings.data.pointer.disabledDevices)
+  readonly property var tabletDevices: (devices || []).filter(function (d) {
+    return d && d.type === "tablet";
+  })
+  readonly property bool hasTablet: tabletDevices.length > 0
 
   // Whether the backend can apply pointer settings live. qdwin_shell_v1 has no
   // pointer-config request yet, so this is currently false (persist-only);
@@ -64,6 +74,93 @@ Singleton {
   readonly property int doubleClickTime: Settings.data.pointer.doubleClickTime
   readonly property int doubleClickDistance: Settings.data.pointer.doubleClickDistance
   readonly property int dragThreshold: Settings.data.pointer.dragThreshold
+  readonly property string clickMethod: Settings.data.pointer.clickMethod
+  readonly property bool middleClickEmulation: Settings.data.pointer.middleClickEmulation
+
+  // ─── Advanced per-device helpers (pure, persist-only) ────────────
+  // Effective settings for a device id: global policy folded with that device's
+  // override (or the globals when none). qdwin will read these once it gains a
+  // pointer-config request; nothing here builds or dispatches a command.
+  function effectiveSettings(deviceId) {
+    var g = {
+      "accelProfile": Settings.data.pointer.accelProfile,
+      "pointerSpeed": Settings.data.pointer.pointerSpeed,
+      "naturalScroll": Settings.data.pointer.naturalScroll,
+      "scrollMethod": Settings.data.pointer.scrollMethod,
+      "tapToClick": Settings.data.pointer.tapToClick,
+      "disableWhileTyping": Settings.data.pointer.disableWhileTyping,
+      "leftHanded": Settings.data.pointer.leftHanded,
+      "horizontalScroll": Settings.data.pointer.horizontalScroll
+    };
+    return PointerInputParse.resolveDeviceSettings(g, Settings.data.pointer.perDeviceOverrides, deviceId);
+  }
+
+  function hasOverride(deviceId) {
+    return PointerInputParse.hasDeviceOverride(Settings.data.pointer.perDeviceOverrides, deviceId);
+  }
+
+  function isDisabled(deviceId) {
+    return PointerInputParse.isDeviceDisabled(Settings.data.pointer.disabledDevices, deviceId);
+  }
+
+  // Set a single override key for a device (or clear the whole override when
+  // value === undefined). Reassigns the map so QML change-notifies and persists.
+  // Uses null-prototype clones so an UNTRUSTED device id such as "__proto__" or
+  // "toString" becomes a plain own key instead of mutating object internals, and
+  // only whitelisted OVERRIDABLE_KEYS may be persisted (canonical settings).
+  function setOverride(deviceId, key, value) {
+    if (deviceId === undefined || deviceId === null)
+      return;
+    if (value !== undefined && PointerInputParse.OVERRIDABLE_KEYS.indexOf(key) === -1) {
+      Logger.w("PointerInputService", "ignoring non-overridable key", key);
+      return;
+    }
+    var src = Settings.data.pointer.perDeviceOverrides || {};
+    var map = Object.create(null);
+    var keys = Object.keys(src);
+    for (var i = 0; i < keys.length; i++)
+      map[keys[i]] = src[keys[i]];
+    if (value === undefined) {
+      delete map[deviceId];
+    } else {
+      var prev = (Object.prototype.hasOwnProperty.call(map, deviceId) && map[deviceId] && typeof map[deviceId] === "object") ? map[deviceId] : {};
+      var entry = Object.create(null);
+      // Carry forward only whitelisted keys so a stale/manual non-overridable
+      // key cannot survive in persisted state (canonical settings).
+      for (var j = 0; j < PointerInputParse.OVERRIDABLE_KEYS.length; j++) {
+        var ok = PointerInputParse.OVERRIDABLE_KEYS[j];
+        if (Object.prototype.hasOwnProperty.call(prev, ok))
+          entry[ok] = prev[ok];
+      }
+      entry[key] = value;
+      map[deviceId] = entry;
+    }
+    Settings.data.pointer.perDeviceOverrides = map;
+  }
+
+  // Clear all overrides for a device (revert it to the global policy).
+  function clearOverride(deviceId) {
+    setOverride(deviceId, undefined, undefined);
+  }
+
+  // Enable/disable a device by id (persist-only filter; never shelled).
+  function setDeviceEnabled(deviceId, enabled) {
+    if (deviceId === undefined || deviceId === null)
+      return;
+    var list = (Settings.data.pointer.disabledDevices || []).slice();
+    var idx = list.indexOf(deviceId);
+    if (enabled && idx !== -1) {
+      list.splice(idx, 1);
+    } else if (!enabled && idx === -1) {
+      list.push(deviceId);
+    }
+    Settings.data.pointer.disabledDevices = list;
+  }
+
+  // Normalize + persist the tablet mapping (clamps area into 0..1).
+  function setTabletMapping(raw) {
+    Settings.data.pointer.tabletMapping = PointerInputParse.normalizeTabletMapping(raw);
+  }
 
   // ─── Init ────────────────────────────────────────────────────────
   function init() {
