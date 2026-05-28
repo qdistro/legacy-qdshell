@@ -34,10 +34,20 @@ import "ClipboardSilo.js" as ClipboardSilo
 // §"focus-aware-clear"). On every seatFocusChanged, if the newly
 // focused toplevel's silo differs from the silo that set the active
 // selection, call clearSelection. Phase-1 only gates set-time.
-// TODO(track-04-phase-3): receive-time gate using qdwin_shell_v1 v15
-// `data_offer_receive_pending`. Per-MIME, per-app, with extension /
-// qdbrowser metadata (passwordField, codeBlock, ...) feeding finer
-// policy. Phase-1 has no metadata channel yet.
+// Receive-time gate (qdwin_shell_v1 v15+ `data_offer_receive_pending`).
+// IMPLEMENTED: on every gated `wl_data_offer.receive`, qdwin blocks the
+// destination fd (~2s timeout → deny) and emits dataOfferReceivePending
+// (requestHandle, seat, sourceHandle, targetHandle, mimeType). Unlike
+// set-time, the target is explicit (the receiving client) rather than
+// the keyboard-focused toplevel, and the broker is consulted per single
+// MIME via CheckClipboardReceive. _onDataOfferReceivePending resolves
+// src/dst silos from the handle→silo map, applies the same tier-4 MIME
+// allow-list, unknown-identity fail-closed, and Option-B identity
+// verification as the set-time path, then ALWAYS answers the compositor
+// exactly once via sendDataOfferReceiveDecision(requestHandle, allow) —
+// every error/fallback path denies. Per-app metadata (passwordField,
+// codeBlock, ...) remains a future refinement; there is no metadata
+// channel yet.
 Singleton {
     id: root
 
@@ -72,6 +82,13 @@ Singleton {
         // focus-handle path verbatim.
         if (binding.selectionSetSourceIdentity !== undefined) {
             binding.selectionSetSourceIdentity.connect(root._onSelectionSetSourceIdentity);
+        }
+        // Receive-time gate (qdwin_shell_v1 v15+). Older bindings never
+        // emit; cross-app paste then relies on the set-time gate +
+        // focus-aware-clear, and the compositor's own ~2s deny timeout
+        // for any gated receive that no shell answers.
+        if (binding.dataOfferReceivePending !== undefined) {
+            binding.dataOfferReceivePending.connect(root._onDataOfferReceivePending);
         }
         root._wired = true;
         ClipboardPolicy.load();
@@ -386,5 +403,86 @@ Singleton {
             brokerResult.exitCode, brokerResult.stdout || "");
         root._logDecisionAndMaybeClear(decisionEntry, decision.verdict,
                                       decision.reason);
+    }
+
+    // -- receive-time gate (qdwin_shell_v1 v15+) ------------------------
+    // Mirrors _onSelectionSet but for a SINGLE requested mime and answers
+    // the compositor SYNCHRONOUSLY: qdwin blocks the destination fd for
+    // ~2s awaiting sendDataOfferReceiveDecision(requestHandle, allow). We
+    // MUST send exactly once on every path — every error/fallback denies
+    // (fail-closed) rather than letting the compositor time out.
+    function _logReceiveDecision(seat, srcSilo, dstSilo, mimeType, verdict, reason) {
+        Logger.i("ClipboardGate", "CLIPBOARD_RECEIVE_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "mime=" + mimeType, "verdict=" + verdict, "reason=" + reason);
+    }
+
+    // Single-exit decision sink: log + answer the compositor exactly once.
+    // The decision MUST always be sent — any path reaching here was
+    // triggered by dataOfferReceivePending, which only a v15+ binding
+    // emits, and that same binding always exposes
+    // sendDataOfferReceiveDecision (added in lockstep). We therefore call
+    // it unconditionally on the live binding rather than guarding with
+    // `!== undefined`, so a gated receive can never be silently dropped
+    // (which would let qdwin time out instead of getting our deny). A
+    // missing method here can only mean a build mismatch — log loudly.
+    function _answerReceive(requestHandle, seat, srcSilo, dstSilo, mimeType, verdict, reason) {
+        root._logReceiveDecision(seat, srcSilo, dstSilo, mimeType, verdict, reason);
+        if (root._binding && root._binding.sendDataOfferReceiveDecision !== undefined) {
+            root._binding.sendDataOfferReceiveDecision(requestHandle, verdict === "allow");
+        } else {
+            // Unreachable in a correctly-built shell: the event can only
+            // originate from a binding that also has the sender. If it
+            // happens, the compositor falls back to its own ~2s deny.
+            Logger.e("ClipboardGate", "CLIPBOARD_RECEIVE_GATE cannot send decision: binding missing sendDataOfferReceiveDecision", "request_handle=" + requestHandle, "intended_verdict=" + verdict);
+        }
+    }
+
+    function _onDataOfferReceivePending(requestHandle, seat, sourceHandle, targetHandle, mimeType) {
+        const mime = mimeType || "";
+        // UINT32_MAX (no toplevel maps) → "unknown" → fail-closed below.
+        const srcSilo = root._handleToSilo[sourceHandle] || "unknown";
+        // Receive carries an explicit target_handle (the receiving client),
+        // not the keyboard-focused toplevel as at set time.
+        const dstSilo = root._handleToSilo[targetHandle] || "unknown";
+        const srcAppId = root._handleToAppId[sourceHandle] || "";
+
+        // Tier-4 source → strict MIME allow-list (text/plain + text/uri-list).
+        // A single requested mime that strips to empty → deny.
+        if (srcAppId.startsWith("qdistro.tier4.")) {
+            const kept = root._stripTier4Mimes([mime]);
+            if (kept.length === 0) {
+                root._answerReceive(requestHandle, seat, srcSilo, dstSilo, mime, "deny", "tier4-no-allowed-mimes");
+                return;
+            }
+        }
+
+        // Unknown source or destination identity → fail-closed: no
+        // trustworthy action key for rules/cache lookup.
+        if (!ClipboardBroker.hasKnownIdentity(srcSilo, dstSilo)) {
+            root._answerReceive(requestHandle, seat, srcSilo, dstSilo, mime, "deny", "unknown-identity");
+            return;
+        }
+
+        // Option-B identity verification — both ends. UINT32_MAX handles
+        // are never verified (_ensureVerified returns false on no identity).
+        const srcVerified = (sourceHandle !== 4294967295) ? root._ensureVerified(sourceHandle) : false;
+        const dstVerified = (targetHandle !== 4294967295) ? root._ensureVerified(targetHandle) : false;
+        const identityVerified = srcVerified && dstVerified;
+
+        if (!root._binding || root._binding.checkClipboardReceive === undefined) {
+            root._answerReceive(requestHandle, seat, srcSilo, dstSilo, mime, "deny", "broker-unavailable");
+            return;
+        }
+
+        const dstAppId = root._handleToAppId[targetHandle] || "";
+        const sourceSandboxEngine = root._handleToSandboxEngine[sourceHandle] || "";
+        const brokerResult = root._binding.checkClipboardReceive(
+            srcSilo, dstSilo, mime, srcAppId, dstAppId,
+            sourceSandboxEngine, identityVerified);
+        // The broker returns a bare "allow"/"deny" string (busctl prints
+        // `s "allow"`). Reuse the set-time parser — same wire format,
+        // same fail-closed semantics on nonzero exit/timeout/malformed.
+        const decision = ClipboardBroker.parseCheckClipboardTransferResult(
+            brokerResult.exitCode, brokerResult.stdout || "");
+        root._answerReceive(requestHandle, seat, srcSilo, dstSilo, mime, decision.verdict, decision.reason);
     }
 }

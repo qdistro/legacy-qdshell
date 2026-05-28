@@ -251,9 +251,22 @@ struct QdwinBindingDispatch {
         emit b->overlayKeyCountChanged();
         emit b->overlayKey(role, sym, b->lastOverlayUtf8_, state);
     }
-    static void data_offer_receive_pending(void *, qdwin_shell_v1 *,
-                                           uint32_t, const char *,
-                                           uint32_t, uint32_t, const char *) {}
+    // spec/10 receive-time gate — forward to QML so ClipboardGate can
+    // consult the broker (CheckClipboardReceive) and echo the verdict
+    // back via sendDataOfferReceiveDecision. The compositor blocks the
+    // receive() until we answer (or ~2s timeout → deny), so the QML
+    // handler MUST answer exactly once on every path.
+    static void data_offer_receive_pending(void *d, qdwin_shell_v1 *,
+                                           uint32_t request_handle,
+                                           const char *seat_name,
+                                           uint32_t source_handle,
+                                           uint32_t target_handle,
+                                           const char *mime_type) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->dataOfferReceivePending(request_handle, qstr(seat_name),
+                                        source_handle, target_handle,
+                                        qstr(mime_type));
+    }
     static void hotkey_pressed(void *, qdwin_shell_v1 *, uint32_t) {}
     static void chrome_button(void *, qdwin_shell_v1 *,
                               uint32_t, uint32_t, wl_fixed_t, wl_fixed_t,
@@ -507,6 +520,17 @@ void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
     if (display_) wl_display_flush(display_);
 }
 
+// spec/10 §"receive-time gating" — echo the broker verdict back for a
+// pending wl_data_offer.receive. "allow" runs the source's original
+// send; anything else (incl. our "deny") closes the destination fd.
+void QdwinBinding::sendDataOfferReceiveDecision(quint32 requestHandle,
+                                                bool allow) {
+    if (!shell_) return;
+    qdwin_shell_v1_data_offer_receive_decision(shell_, requestHandle,
+                                               allow ? "allow" : "deny");
+    if (display_) wl_display_flush(display_);
+}
+
 void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
                                        const QString &reason) {
     if (!shell_) return;
@@ -706,6 +730,70 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     args.append(sourceSandboxEngine);
     args.append(identityVerified ? QStringLiteral("true")
                                  : QStringLiteral("false"));
+
+    QProcess proc;
+    proc.setProgram(QStringLiteral("busctl"));
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(kBrokerStartTimeoutMs)) {
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"), QString()},
+            {QStringLiteral("stderr"), proc.errorString()},
+            {QStringLiteral("timedOut"), false},
+        };
+    }
+    if (!proc.waitForFinished(kBrokerDefaultTimeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(50);
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"),
+             QString::fromUtf8(proc.readAllStandardOutput())},
+            {QStringLiteral("stderr"), QStringLiteral("timeout")},
+            {QStringLiteral("timedOut"), true},
+        };
+    }
+    return {
+        {QStringLiteral("exitCode"), proc.exitCode()},
+        {QStringLiteral("stdout"),
+         QString::fromUtf8(proc.readAllStandardOutput())},
+        {QStringLiteral("stderr"),
+         QString::fromUtf8(proc.readAllStandardError())},
+        {QStringLiteral("timedOut"), false},
+    };
+}
+
+// spec/10 receive-time twin of checkClipboardTransfer. Signature
+// ssssssb with a SINGLE mime (the compositor gates each receive()
+// individually, so there is no count/list as at set time).
+QVariantMap QdwinBinding::checkClipboardReceive(
+    const QString &sourceSilo,
+    const QString &destSilo,
+    const QString &mimeType,
+    const QString &sourceAppId,
+    const QString &destAppId,
+    const QString &sourceSandboxEngine,
+    bool identityVerified) {
+    QStringList args = {
+        QStringLiteral("--system"),
+        QStringLiteral("--no-pager"),
+        QString::fromLatin1(kBrokerDefaultBusctlTimeout),
+        QStringLiteral("call"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("/org/qdistro/AdminBroker1"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("CheckClipboardReceive"),
+        QStringLiteral("ssssssb"),
+        sourceSilo,
+        destSilo,
+        mimeType,
+        sourceAppId,
+        destAppId,
+        sourceSandboxEngine,
+        identityVerified ? QStringLiteral("true")
+                         : QStringLiteral("false"),
+    };
 
     QProcess proc;
     proc.setProgram(QStringLiteral("busctl"));
