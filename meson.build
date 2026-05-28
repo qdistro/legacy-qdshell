@@ -35,4 +35,5 @@ if node.found()
   test('tray-known-items', node, args: files('tests/test_tray_known_items.js'))
   test('notification-detail', node, args: files('tests/test_notification_detail.js'))
   test('notification-theme', node, args: files('tests/test_notification_theme.js'))
+  test('mime-associations', node, args: files('tests/test_mime_associations.js'))
 endif

@@ -1955,7 +1955,14 @@
       "category-audioPlayer-description": "Application used to play music and audio files.",
       "category-videoPlayer": "Video Player",
       "category-videoPlayer-description": "Application used to play videos and movies.",
-      "currently-using": "Currently using: {app}"
+      "currently-using": "Currently using: {app}",
+      "subtab-categories": "Categories",
+      "subtab-mime-editor": "File Types",
+      "mime-editor-description": "Set the default application for any individual file type. Changes are written to your XDG mimeapps.list.",
+      "mime-search-placeholder": "Search file types (e.g. image/png or PDF)",
+      "mime-result-count": "{count} file types",
+      "mime-no-results": "No file types match your search.",
+      "mime-no-handlers": "No installed application declares support for this type."
     },
     "power": {
       "title": "Power",
