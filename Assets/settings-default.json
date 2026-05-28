@@ -498,6 +498,30 @@
     "count": 4,
     "names": ["1", "2", "3", "4"]
   },
+  "defaultApps": {
+    "browser": "",
+    "mail": "",
+    "fileManager": "",
+    "terminal": "",
+    "textEditor": "",
+    "imageViewer": "",
+    "audioPlayer": "",
+    "videoPlayer": ""
+  },
+  "power": {
+    "powerButtonAction": "ask",
+    "sleepButtonAction": "suspend",
+    "lidCloseOnBattery": "suspend",
+    "lidCloseOnAC": "nothing",
+    "lidIgnoreExternalDisplay": true,
+    "inactivityTimeoutBattery": 15,
+    "inactivityTimeoutAC": 30,
+    "inactivityAction": "suspend",
+    "criticalBatteryLevel": 5,
+    "criticalBatteryAction": "hibernate",
+    "displayOffBattery": 5,
+    "displayOffAC": 15
+  },
   "appearance": {
     "iconTheme": "",
     "cursorTheme": "",
@@ -507,5 +531,8 @@
     "enabled": false,
     "gridSnap": false,
     "monitorWidgets": []
+  },
+  "session": {
+    "showSystemAutostart": true
   }
 }

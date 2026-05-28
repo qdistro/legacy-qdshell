@@ -720,6 +720,18 @@ Singleton {
       property list<string> names: ["1", "2", "3", "4"]
     }
 
+    // default applications
+    property JsonObject defaultApps: JsonObject {
+      property string browser: ""
+      property string mail: ""
+      property string fileManager: ""
+      property string terminal: ""
+      property string textEditor: ""
+      property string imageViewer: ""
+      property string audioPlayer: ""
+      property string videoPlayer: ""
+    }
+
     // appearance
     property JsonObject appearance: JsonObject {
       property string iconTheme: ""
@@ -733,6 +745,11 @@ Singleton {
       property bool gridSnap: false
       property list<var> monitorWidgets: []
       // Format: [{ "name": "DP-1", "widgets": [...] }, { "name": "HDMI-1", "widgets": [...] }]
+    }
+
+    // session / autostart
+    property JsonObject session: JsonObject {
+      property bool showSystemAutostart: true
     }
   }
 

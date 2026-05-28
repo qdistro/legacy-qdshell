@@ -8,9 +8,11 @@ import qs.Modules.Panels.Settings.Tabs
 // qdshell: About tab stripped (Noctalia phone-home/supporters/version)
 import qs.Modules.Panels.Settings.Tabs.Appearance
 import qs.Modules.Panels.Settings.Tabs.Audio
+import qs.Modules.Panels.Settings.Tabs.Autostart
 import qs.Modules.Panels.Settings.Tabs.Bar
 import qs.Modules.Panels.Settings.Tabs.ColorScheme
 import qs.Modules.Panels.Settings.Tabs.Connections
+import qs.Modules.Panels.Settings.Tabs.DefaultApps
 import qs.Modules.Panels.Settings.Tabs.ControlCenter
 import qs.Modules.Panels.Settings.Tabs.Display
 import qs.Modules.Panels.Settings.Tabs.Dock
@@ -20,6 +22,7 @@ import qs.Modules.Panels.Settings.Tabs.LockScreen
 import qs.Modules.Panels.Settings.Tabs.Notifications
 import qs.Modules.Panels.Settings.Tabs.Osd
 import qs.Modules.Panels.Settings.Tabs.Plugins
+import qs.Modules.Panels.Settings.Tabs.Power
 import qs.Modules.Panels.Settings.Tabs.Region
 import qs.Modules.Panels.Settings.Tabs.SessionMenu
 import qs.Modules.Panels.Settings.Tabs.SystemMonitor
@@ -486,8 +489,20 @@ Item {
     PluginsTab {}
   }
   Component {
+    id: powerTab
+    PowerTab {}
+  }
+  Component {
     id: desktopWidgetsTab
     DesktopWidgetsTab {}
+  }
+  Component {
+    id: defaultAppsTab
+    DefaultAppsTab {}
+  }
+  Component {
+    id: autostartTab
+    AutostartTab {}
   }
 
   function updateTabsModel() {
@@ -553,6 +568,12 @@ Item {
             "source": launcherTab
           },
           {
+            "id": SettingsPanel.Tab.DefaultApps,
+            "label": "panels.default-apps.title",
+            "icon": "apps",
+            "source": defaultAppsTab
+          },
+          {
             "id": SettingsPanel.Tab.Notifications,
             "label": "common.notifications",
             "icon": "settings-notifications",
@@ -577,6 +598,12 @@ Item {
             "source": sessionMenuTab
           },
           {
+            "id": SettingsPanel.Tab.Autostart,
+            "label": "panels.autostart.title",
+            "icon": "player-play",
+            "source": autostartTab
+          },
+          {
             "id": SettingsPanel.Tab.Audio,
             "label": "panels.audio.title",
             "icon": "settings-audio",
@@ -587,6 +614,12 @@ Item {
             "label": "panels.display.title",
             "icon": "settings-display",
             "source": displayTab
+          },
+          {
+            "id": SettingsPanel.Tab.Power,
+            "label": "panels.power.title",
+            "icon": "bolt",
+            "source": powerTab
           },
           {
             "id": SettingsPanel.Tab.Connections,
