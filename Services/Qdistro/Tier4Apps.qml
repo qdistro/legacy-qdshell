@@ -118,7 +118,15 @@ Singleton {
         return !!secctxAppId && secctxAppId.startsWith(root.tier4Prefix);
     }
 
-    function rebuild() {
+    // repaintAll: when true, re-issue setBorderColor for *every* tier-4
+    // toplevel even if its handle is already known. Used on the qdwin
+    // bind transition (Qdwin.shellBound) so pre-bind windows whose
+    // initial setBorderColor() was dropped (no binding) get repainted —
+    // the normal new-handle-only path would skip them since they are
+    // already in tier4Windows / _siloByHandle. The added-signal +
+    // wire-contract log lines stay gated on new handles, so a replay
+    // doesn't re-emit tier4WindowAdded or spam s107's grepped lines.
+    function rebuild(repaintAll) {
         const fresh = [];
         const seenHandles = new Set();
         const wm = Qdwin.windows;
@@ -153,7 +161,8 @@ Singleton {
         for (const row of fresh) {
             root.tier4Windows.append(row);
             nextSiloByHandle[row.handle] = row.silo;
-            if (!prevHandles.has(row.handle)) {
+            const isNew = !prevHandles.has(row.handle);
+            if (isNew) {
                 // Wire-contract log lines (s107 / future bats grep
                 // these). Format mirrors the tier-3 cousin so the
                 // log analyser doesn't need a tier-specific branch.
@@ -165,16 +174,21 @@ Singleton {
                     "[tier4] silo=" + row.silo
                     + " color=" + row.colour);
                 root.tier4WindowAdded(row.handle, row.silo, row.appId, row.colour);
+            }
 
-                // P05a Phase A wire: push the silo colour into the
-                // qdwin per-toplevel border state so the SSD paint
-                // helper (currently a flat default) reads the
-                // silo-coloured rgba. The Qdwin singleton's
-                // setBorderColor wrapper guards against a null binding
-                // (qdshell startup race) so missing-bind degrades to a
-                // log line rather than a TypeError; the SSD then falls
-                // back to qdwin_toplevel_border_rgba()'s `fallback`
-                // (=0 → neutral chrome) until the binding lands.
+            // P05a Phase A wire: push the silo colour into the qdwin
+            // per-toplevel border state so the SSD paint helper
+            // (currently a flat default) reads the silo-coloured rgba.
+            // The Qdwin singleton's setBorderColor wrapper guards
+            // against a null binding (qdshell startup race) so
+            // missing-bind degrades to a log line rather than a
+            // TypeError; the SSD then falls back to
+            // qdwin_toplevel_border_rgba()'s `fallback` (=0 → neutral
+            // chrome) until the binding lands. Normally fires for new
+            // handles only; on repaintAll (qdwin bind transition) it
+            // re-issues for already-known handles too, since a pre-bind
+            // window's first setBorderColor() was dropped while unbound.
+            if (isNew || repaintAll) {
                 const rgba = root._hexToRgba(row.colour);
                 if (rgba !== 0) {
                     Qdwin.setBorderColor(row.handle, rgba);
@@ -198,5 +212,11 @@ Singleton {
             else if (root._siloByHandle[handle])
                 root.rebuild();
         }
+        // qdwin_shell_v1 just bound (false→true). Any tier-4 window that
+        // appeared before the binding landed had its border paint
+        // dropped (Qdwin.setBorderColor: no binding). Replay with
+        // repaintAll so those pre-bind handles get their silo colour
+        // re-issued instead of staying neutral.
+        function onShellBound() { root.rebuild(true); }
     }
 }

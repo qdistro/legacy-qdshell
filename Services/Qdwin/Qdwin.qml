@@ -249,6 +249,15 @@ Singleton {
                 // we have a live binding. ClipboardGate.init is
                 // idempotent so re-binds after a teardown are safe.
                 ClipboardGate.init(qdwinBinding);
+                // P05a: a tier-4 toplevel that appeared *before* the
+                // binding landed had its setBorderColor() call dropped
+                // (no binding → logged + returned), so it sits with
+                // neutral chrome. Now that we are bound, notify peers so
+                // Tier4Apps can replay the per-toplevel border paint for
+                // any pre-bind windows. Fires only on the false→true
+                // transition (QdwinBinding.bound flips false→true once
+                // per bind), so no replay spam.
+                root.shellBound();
             } else if (lastError.length > 0) {
                 Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
@@ -413,6 +422,11 @@ Singleton {
     // their cold-start placeholders by instanceId match.
     signal windowSecctxResolved(int handle, string sandboxEngine,
                                 string secctxAppId, string instanceId)
+    // Fires when qdwin_shell_v1 transitions to bound (false→true). Tier
+    // chrome services (Tier4Apps) listen here to replay per-toplevel
+    // border paint for windows that appeared before the binding landed
+    // — their setBorderColor() calls were dropped while unbound.
+    signal shellBound
 
     Component.onCompleted: {
         Qt.callLater(() => {
