@@ -34,4 +34,5 @@ if node.found()
   test('shortcut-conflicts', node, args: files('tests/test_shortcut_conflicts.js'))
   test('tray-known-items', node, args: files('tests/test_tray_known_items.js'))
   test('notification-detail', node, args: files('tests/test_notification_detail.js'))
+  test('launcher-items', node, args: files('tests/test_launcher_items.js'))
 endif

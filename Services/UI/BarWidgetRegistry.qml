@@ -185,7 +185,18 @@ Singleton {
                                   },
                                   "Launcher": {
                                     "icon": "rocket",
-                                    "iconColor": "none"
+                                    "iconColor": "none",
+                                    // Custom launcher items: ordered list of
+                                    // {name, icon, command}. When non-empty the
+                                    // widget renders these as clickable buttons
+                                    // (XFCE-style launcher) instead of (or in
+                                    // addition to) the panel-toggle button.
+                                    // See Services/UI/LauncherItems.js for the
+                                    // normalize/validate/exec logic.
+                                    "items": [],
+                                    // When true, also show the panel-toggle
+                                    // launcher button alongside custom items.
+                                    "showLauncherButton": true
                                   },
                                   "MediaMini": {
                                     "hideMode": "hidden",
