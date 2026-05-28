@@ -15,6 +15,7 @@
 #include "qdwin-shell-v1-client-protocol.h"
 
 #include <QDebug>
+#include <QMetaType>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
@@ -36,9 +37,58 @@ namespace {
 //   22 — toplevel_peer_identity (Option-B identity sidecar, see
 //        todo/decisions/secctx-identity-contract.md)
 constexpr uint32_t kBindVersion = 23;
+constexpr int kBrokerStartTimeoutMs = 250;
+constexpr int kBrokerGateTimeoutMs = 2000;
+constexpr int kBrokerDefaultTimeoutMs = 200;
+constexpr auto kBrokerGateBusctlTimeout = "--timeout=2s";
+constexpr auto kBrokerDefaultBusctlTimeout = "--timeout=200ms";
 
 inline QString qstr(const char *s) {
     return s ? QString::fromUtf8(s) : QString();
+}
+
+void appendVariantDict(QStringList &args, const QVariantMap &details) {
+    args.append(QString::number(details.size()));
+    for (auto it = details.cbegin(); it != details.cend(); ++it) {
+        args.append(it.key());
+        const QVariant value = it.value();
+        const int typeId = value.metaType().id();
+        if (it.key() == QStringLiteral("origin_uid")) {
+            args.append(QStringLiteral("u"));
+            args.append(QString::number(value.toUInt()));
+            continue;
+        }
+        switch (typeId) {
+        case QMetaType::Bool:
+            args.append(QStringLiteral("b"));
+            args.append(value.toBool() ? QStringLiteral("true")
+                                       : QStringLiteral("false"));
+            break;
+        case QMetaType::Int:
+        case QMetaType::LongLong:
+            args.append(QStringLiteral("x"));
+            args.append(QString::number(value.toLongLong()));
+            break;
+        case QMetaType::UInt:
+        case QMetaType::ULongLong:
+            args.append(QStringLiteral("t"));
+            args.append(QString::number(value.toULongLong()));
+            break;
+        case QMetaType::Double:
+            if (value.toDouble() >= 0) {
+                args.append(QStringLiteral("t"));
+                args.append(QString::number(static_cast<qulonglong>(value.toDouble())));
+            } else {
+                args.append(QStringLiteral("x"));
+                args.append(QString::number(static_cast<qlonglong>(value.toDouble())));
+            }
+            break;
+        default:
+            args.append(QStringLiteral("s"));
+            args.append(value.toString());
+            break;
+        }
+    }
 }
 }
 
@@ -101,8 +151,12 @@ struct QdwinBindingDispatch {
     static void idle_lock_hint(void *d, qdwin_shell_v1 *, uint32_t reason) {
         emit static_cast<QdwinBinding *>(d)->idleLockHint(reason);
     }
-    static void nested_proxy_pending(void *, qdwin_shell_v1 *,
-                                     uint32_t, const char *, uint32_t) {}
+    static void nested_proxy_pending(void *d, qdwin_shell_v1 *,
+                                     uint32_t handle, const char *app_id,
+                                     uint32_t origin_uid) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->nestedProxyPending(handle, qstr(app_id), origin_uid);
+    }
     static void nested_proxy_pixel_source(void *d, qdwin_shell_v1 *,
                                           uint32_t handle,
                                           const char *pw_node,
@@ -137,8 +191,14 @@ struct QdwinBindingDispatch {
                                            qstr(src_app_id),
                                            qstr(src_instance_id));
     }
-    static void activation_pending(void *, qdwin_shell_v1 *,
-                                   uint32_t, uint32_t, uint32_t, const char *) {}
+    static void activation_pending(void *d, qdwin_shell_v1 *,
+                                   uint32_t handle, uint32_t source_handle,
+                                   uint32_t target_handle,
+                                   const char *source_app_id) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->activationPending(handle, source_handle, target_handle,
+                                  qstr(source_app_id));
+    }
     // wp_security_context_v1 tag — load-bearing for both the cold-
     // start placeholder resolution (claude/tier2-podman) and spec/10's
     // handle→silo map for the clipboard gate.
@@ -447,6 +507,177 @@ void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
     if (display_) wl_display_flush(display_);
 }
 
+void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
+                                       const QString &reason) {
+    if (!shell_) return;
+    QByteArray reasonUtf8 = reason.toUtf8();
+    qdwin_shell_v1_nested_proxy_decision(shell_, handle, decision,
+                                         reasonUtf8.constData());
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::activationDecision(quint32 handle, quint32 decision,
+                                      const QString &reason) {
+    if (!shell_) return;
+    QByteArray reasonUtf8 = reason.toUtf8();
+    qdwin_shell_v1_activation_decision(shell_, handle, decision,
+                                       reasonUtf8.constData());
+    if (display_) wl_display_flush(display_);
+}
+
+QVariantMap QdwinBinding::checkPermission(const QString &action,
+                                          const QVariantMap &details) {
+    QStringList args = {
+        QStringLiteral("--system"),
+        QStringLiteral("--no-pager"),
+        QString::fromLatin1(kBrokerGateBusctlTimeout),
+        QStringLiteral("call"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("/org/qdistro/AdminBroker1"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("CheckPermission"),
+        QStringLiteral("sa{sv}"),
+        action,
+    };
+    appendVariantDict(args, details);
+
+    QProcess proc;
+    proc.setProgram(QStringLiteral("busctl"));
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(kBrokerStartTimeoutMs)) {
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"), QString()},
+            {QStringLiteral("stderr"), proc.errorString()},
+            {QStringLiteral("timedOut"), false},
+        };
+    }
+    if (!proc.waitForFinished(kBrokerGateTimeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(50);
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"),
+             QString::fromUtf8(proc.readAllStandardOutput())},
+            {QStringLiteral("stderr"), QStringLiteral("timeout")},
+            {QStringLiteral("timedOut"), true},
+        };
+    }
+    return {
+        {QStringLiteral("exitCode"), proc.exitCode()},
+        {QStringLiteral("stdout"),
+         QString::fromUtf8(proc.readAllStandardOutput())},
+        {QStringLiteral("stderr"),
+         QString::fromUtf8(proc.readAllStandardError())},
+        {QStringLiteral("timedOut"), false},
+    };
+}
+
+bool QdwinBinding::verifyClientIdentity(
+    quint32 pid,
+    quint64 starttime,
+    quint32 uid,
+    const QString &exe,
+    const QString &selinuxLabel,
+    const QString &sandboxEngine,
+    const QString &appId,
+    const QString &instanceId) {
+    QStringList args = {
+        QStringLiteral("--system"),
+        QStringLiteral("--no-pager"),
+        QString::fromLatin1(kBrokerGateBusctlTimeout),
+        QStringLiteral("call"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("/org/qdistro/AdminBroker1"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("VerifyClientIdentity"),
+        QStringLiteral("utusssss"),
+        QString::number(pid),
+        QString::number(starttime),
+        QString::number(uid),
+        exe,
+        selinuxLabel,
+        sandboxEngine,
+        appId,
+        instanceId,
+    };
+
+    QProcess proc;
+    proc.setProgram(QStringLiteral("busctl"));
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(kBrokerStartTimeoutMs))
+        return false;
+    if (!proc.waitForFinished(kBrokerGateTimeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(50);
+        return false;
+    }
+    if (proc.exitCode() != 0)
+        return false;
+    const QString out = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+    return out == QStringLiteral("b true");
+}
+
+QVariantMap QdwinBinding::checkHandoffActivation(
+    const QString &sourceSilo,
+    const QString &destSilo,
+    const QString &sourceAppId,
+    const QString &destAppId,
+    const QString &sourceSandboxEngine,
+    bool identityVerified) {
+    QStringList args = {
+        QStringLiteral("--system"),
+        QStringLiteral("--no-pager"),
+        QString::fromLatin1(kBrokerGateBusctlTimeout),
+        QStringLiteral("call"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("/org/qdistro/AdminBroker1"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("CheckHandoffActivation"),
+        QStringLiteral("sssssb"),
+        sourceSilo,
+        destSilo,
+        sourceAppId,
+        destAppId,
+        sourceSandboxEngine,
+        identityVerified ? QStringLiteral("true") : QStringLiteral("false"),
+    };
+
+    QProcess proc;
+    proc.setProgram(QStringLiteral("busctl"));
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(kBrokerStartTimeoutMs)) {
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"), QString()},
+            {QStringLiteral("stderr"), proc.errorString()},
+            {QStringLiteral("timedOut"), false},
+        };
+    }
+    if (!proc.waitForFinished(kBrokerGateTimeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(50);
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"),
+             QString::fromUtf8(proc.readAllStandardOutput())},
+            {QStringLiteral("stderr"), QStringLiteral("timeout")},
+            {QStringLiteral("timedOut"), true},
+        };
+    }
+    return {
+        {QStringLiteral("exitCode"), proc.exitCode()},
+        {QStringLiteral("stdout"),
+         QString::fromUtf8(proc.readAllStandardOutput())},
+        {QStringLiteral("stderr"),
+         QString::fromUtf8(proc.readAllStandardError())},
+        {QStringLiteral("timedOut"), false},
+    };
+}
+
 QVariantMap QdwinBinding::checkClipboardTransfer(
     const QString &sourceSilo,
     const QString &destSilo,
@@ -458,7 +689,7 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
-        QStringLiteral("--timeout=200ms"),
+        QString::fromLatin1(kBrokerDefaultBusctlTimeout),
         QStringLiteral("call"),
         QStringLiteral("org.qdistro.AdminBroker1"),
         QStringLiteral("/org/qdistro/AdminBroker1"),
@@ -480,7 +711,7 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     proc.setProgram(QStringLiteral("busctl"));
     proc.setArguments(args);
     proc.start();
-    if (!proc.waitForStarted(50)) {
+    if (!proc.waitForStarted(kBrokerStartTimeoutMs)) {
         return {
             {QStringLiteral("exitCode"), -1},
             {QStringLiteral("stdout"), QString()},
@@ -488,7 +719,7 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
             {QStringLiteral("timedOut"), false},
         };
     }
-    if (!proc.waitForFinished(200)) {
+    if (!proc.waitForFinished(kBrokerDefaultTimeoutMs)) {
         proc.kill();
         proc.waitForFinished(50);
         return {

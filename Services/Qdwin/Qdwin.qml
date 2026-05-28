@@ -8,6 +8,8 @@ import qs.Commons
 import qs.Services.Control
 import qs.Services.Qdshell
 import qs.Services.UI
+import "../Qdshell/BrokerGate.js" as BrokerGate
+import "../Qdshell/ClipboardSilo.js" as ClipboardSilo
 
 /// qdshell Qdwin — qdwin-only.
 ///
@@ -132,6 +134,111 @@ Singleton {
         qdwinBinding.setBorderColor(handle, rgba >>> 0);
     }
 
+    function _windowByHandle(handle) {
+        for (let i = 0; i < root.windows.count; i++) {
+            const row = root.windows.get(i);
+            if (row.handle === handle)
+                return row;
+        }
+        return null;
+    }
+
+    function _siloForWindow(row) {
+        if (!row)
+            return "unknown";
+        const secctxSilo = ClipboardSilo.fromSecctx(
+            row.sandboxEngine || "",
+            row.secctxAppId || "",
+            row.instanceId || "");
+        if (secctxSilo.length > 0)
+            return secctxSilo;
+        if (typeof row.ownerUid === "number")
+            return "uid:" + row.ownerUid;
+        return "unknown";
+    }
+
+    function _verifyWindowIdentity(row) {
+        if (!row || !qdwinBinding || qdwinBinding.verifyClientIdentity === undefined)
+            return false;
+        if (!row.peerPid || row.peerPid <= 0)
+            return false;
+        return qdwinBinding.verifyClientIdentity(
+            row.peerPid >>> 0,
+            row.peerStarttime || 0,
+            row.peerUid >>> 0,
+            row.peerExe || "",
+            row.peerSelinuxLabel || "",
+            row.sandboxEngine || "",
+            row.secctxAppId || "",
+            row.instanceId || "");
+    }
+
+    function _verifyActivationIdentity(sourceRow, targetRow, sourceSilo, targetSilo) {
+        if (sourceSilo === targetSilo && sourceSilo.indexOf("uid:") === 0
+                && sourceRow && targetRow
+                && sourceRow.ownerUid === targetRow.ownerUid)
+            return true;
+        return root._verifyWindowIdentity(sourceRow)
+            && root._verifyWindowIdentity(targetRow);
+    }
+
+    function _decideNestedProxy(handle, appId, originUid) {
+        const action = BrokerGate.nestedProxyAction(appId);
+        let decision = { verdict: "deny", reason: "broker-unavailable" };
+        if (qdwinBinding && qdwinBinding.checkPermission !== undefined) {
+            const result = qdwinBinding.checkPermission(
+                action, BrokerGate.nestedProxyDetails(appId, originUid));
+            decision = BrokerGate.parseStringVerdict(
+                result.exitCode, result.stdout || "", "broker-unavailable");
+        }
+        Logger.i("Qdwin", "NESTED_PROXY_GATE",
+                 "handle=" + handle,
+                 "app_id=" + (appId || ""),
+                 "origin_uid=" + originUid,
+                 "verdict=" + decision.verdict,
+                 "reason=" + decision.reason);
+        qdwinBinding.nestedProxyDecision(
+            handle, BrokerGate.qdwinDecision(decision.verdict),
+            decision.reason);
+    }
+
+    function _decideActivation(handle, sourceHandle, targetHandle, sourceAppId) {
+        const sourceRow = sourceHandle !== 4294967295
+            ? root._windowByHandle(sourceHandle) : null;
+        const targetRow = root._windowByHandle(targetHandle);
+        const sourceSilo = root._siloForWindow(sourceRow);
+        const targetSilo = root._siloForWindow(targetRow);
+        let decision = { verdict: "deny", reason: "unknown-identity" };
+
+        if (BrokerGate.knownSilo(sourceSilo) && BrokerGate.knownSilo(targetSilo)
+                && qdwinBinding
+                && qdwinBinding.checkHandoffActivation !== undefined) {
+            const srcApp = sourceAppId || (sourceRow ? (sourceRow.secctxAppId || sourceRow.appId || "") : "");
+            const dstApp = targetRow ? (targetRow.secctxAppId || targetRow.appId || "") : "";
+            const srcEngine = sourceRow ? (sourceRow.sandboxEngine || "") : "";
+            const identityVerified = root._verifyActivationIdentity(
+                sourceRow, targetRow, sourceSilo, targetSilo);
+            const result = qdwinBinding.checkHandoffActivation(
+                sourceSilo, targetSilo, srcApp, dstApp, srcEngine,
+                identityVerified);
+            decision = BrokerGate.parseStringVerdict(
+                result.exitCode, result.stdout || "", "broker-unavailable");
+        }
+
+        Logger.i("Qdwin", "ACTIVATION_GATE",
+                 "handle=" + handle,
+                 "src_handle=" + sourceHandle,
+                 "target_handle=" + targetHandle,
+                 "src_silo=" + sourceSilo,
+                 "dst_silo=" + targetSilo,
+                 "src_app=" + (sourceAppId || ""),
+                 "verdict=" + decision.verdict,
+                 "reason=" + decision.reason);
+        qdwinBinding.activationDecision(
+            handle, BrokerGate.qdwinDecision(decision.verdict),
+            decision.reason);
+    }
+
     QdwinBinding {
         id: qdwinBinding
 
@@ -169,6 +276,11 @@ Singleton {
                 sandboxEngine: "",
                 secctxAppId: "",
                 instanceId: "",
+                peerPid: 0,
+                peerStarttime: 0,
+                peerUid: 0,
+                peerExe: "",
+                peerSelinuxLabel: "",
             });
             root.windowListChanged();
         }
@@ -192,6 +304,24 @@ Singleton {
                     return;
                 }
             }
+        }
+        onToplevelPeerIdentity: (handle, peerPid, peerStarttime, peerUid, peerExe, peerSelinuxLabel) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "peerPid", peerPid >>> 0);
+                    root.windows.setProperty(i, "peerStarttime", peerStarttime);
+                    root.windows.setProperty(i, "peerUid", peerUid >>> 0);
+                    root.windows.setProperty(i, "peerExe", peerExe || "");
+                    root.windows.setProperty(i, "peerSelinuxLabel", peerSelinuxLabel || "");
+                    return;
+                }
+            }
+        }
+        onNestedProxyPending: (handle, appId, originUid) => {
+            root._decideNestedProxy(handle, appId, originUid);
+        }
+        onActivationPending: (handle, sourceHandle, targetHandle, sourceAppId) => {
+            root._decideActivation(handle, sourceHandle, targetHandle, sourceAppId);
         }
         onNestedProxyPixelSource: (handle, pwNode, inputSink) => {
             // qdwin is asking for a pixel-consumer process. Spawn

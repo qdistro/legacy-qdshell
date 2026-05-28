@@ -68,6 +68,28 @@ public:
     // clearSelection on a "deny". `isPrimary` mirrors the event
     // arg: 0 = clipboard, 1 = primary selection.
     Q_INVOKABLE void clearSelection(const QString &seat, quint32 isPrimary);
+    Q_INVOKABLE void nestedProxyDecision(quint32 handle, quint32 decision,
+                                         const QString &reason);
+    Q_INVOKABLE void activationDecision(quint32 handle, quint32 decision,
+                                        const QString &reason);
+    Q_INVOKABLE QVariantMap checkPermission(const QString &action,
+                                            const QVariantMap &details = QVariantMap());
+    Q_INVOKABLE bool verifyClientIdentity(
+        quint32 pid,
+        quint64 starttime,
+        quint32 uid,
+        const QString &exe,
+        const QString &selinuxLabel,
+        const QString &sandboxEngine,
+        const QString &appId,
+        const QString &instanceId);
+    Q_INVOKABLE QVariantMap checkHandoffActivation(
+        const QString &sourceSilo,
+        const QString &destSilo,
+        const QString &sourceAppId,
+        const QString &destAppId,
+        const QString &sourceSandboxEngine,
+        bool identityVerified);
     Q_INVOKABLE QVariantMap checkClipboardTransfer(
         const QString &sourceSilo,
         const QString &destSilo,
@@ -147,6 +169,13 @@ signals:
     void nestedProxyPixelSource(quint32 handle,
                                 const QString &pwNode,
                                 const QString &inputSink);
+    void nestedProxyPending(quint32 handle,
+                            const QString &appId,
+                            quint32 originUid);
+    void activationPending(quint32 handle,
+                           quint32 sourceHandle,
+                           quint32 targetHandle,
+                           const QString &sourceAppId);
 
     void launcherRequested();
     void switcherNext(int dir);
