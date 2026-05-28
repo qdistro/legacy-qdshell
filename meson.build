@@ -28,4 +28,5 @@ if node.found()
   test('pointer-parse', node, args: files('tests/test_pointer_parse.js'))
   test('keyboard-xkb', node, args: files('tests/test_keyboard_xkb.js'))
   test('taskbar-logic', node, args: files('tests/test_taskbar_logic.js'))
+  test('window-manager-policy', node, args: files('tests/test_window_manager_policy.js'))
 endif

@@ -98,7 +98,8 @@ SmartPanel {
     SystemMonitor,
     UserInterface,
     Vault,
-    Wallpaper
+    Wallpaper,
+    WindowManager
   }
 
   property int requestedTab: SettingsPanel.Tab.General

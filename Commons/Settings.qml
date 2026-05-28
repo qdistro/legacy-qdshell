@@ -837,6 +837,33 @@ Singleton {
       property int doubleClickDistance: 5        // px
       property int dragThreshold: 8              // px
     }
+
+    // window-manager policy (focus, placement, snapping, decorations,
+    // WM shortcuts). Persist-only: qdwin's qdwin_shell_v1 has no WM-policy
+    // request yet, so WindowManagerService.canApplyWmPolicy is false and the
+    // values are stored until qdwin gains support (qdwin-only — no sway/labwc).
+    property JsonObject windowManager: JsonObject {
+      // "click" (click-to-focus) | "follow-mouse" (focus-follows-mouse)
+      property string focusPolicy: "click"
+      // Delay (ms) before focus follows the pointer (focus-follows-mouse).
+      property int focusFollowsMouseDelay: 0
+      property bool raiseOnClick: true
+      property bool raiseOnHover: false
+      // "center" | "under-mouse" | "smart" | "cascade"
+      property string placement: "smart"
+      property bool snapEnabled: true
+      property int snapDistance: 16              // px
+      // "maximize" | "shade" | "minimize" | "nothing"
+      property string titlebarDoubleClick: "maximize"
+      // Free-text decoration theme name (UNTRUSTED — never shelled raw).
+      property string decorationTheme: ""
+      // WM keyboard shortcuts (free-text accelerator strings, UNTRUSTED).
+      property string shortcutClose: "Alt+F4"
+      property string shortcutToggleMaximize: "Super+Up"
+      property string shortcutToggleFullscreen: "Super+F"
+      property string shortcutTileLeft: "Super+Left"
+      property string shortcutTileRight: "Super+Right"
+    }
   }
 
   // -----------------------------------------------------
