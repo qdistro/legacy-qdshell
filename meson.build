@@ -31,4 +31,5 @@ if node.found()
   test('window-manager-policy', node, args: files('tests/test_window_manager_policy.js'))
   test('settings-tree', node, args: files('tests/test_settings_tree.js'))
   test('gtk-settings', node, args: files('tests/test_gtk_settings.js'))
+  test('shortcut-conflicts', node, args: files('tests/test_shortcut_conflicts.js'))
 endif
