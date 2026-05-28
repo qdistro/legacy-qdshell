@@ -118,7 +118,7 @@ Singleton {
 
   function _scanScript() {
     return `python3 -c '
-import os, json, configparser, glob
+import os, json, configparser
 
 def parse_desktop_file(path):
     """Parse a .desktop file and return relevant fields."""
@@ -162,29 +162,44 @@ def parse_mimeapps(path):
                 defaults[mime] = ids[0]
     return defaults
 
-# Scan desktop files
-entries = {}
-dirs = set()
-xdg_data = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
-for d in xdg_data.split(":"):
-    dirs.add(os.path.join(d.strip(), "applications"))
-dirs.add(os.path.expanduser("~/.local/share/applications"))
+# Build the ordered list of application directories following XDG precedence:
+# XDG_DATA_HOME first, then each XDG_DATA_DIRS entry in order. Earlier entries win.
+xdg_data_home = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+xdg_data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+app_dirs = [os.path.join(xdg_data_home, "applications")]
+for d in xdg_data_dirs.split(":"):
+    if d.strip():
+        app_dirs.append(os.path.join(d.strip(), "applications"))
 
-for appdir in dirs:
-    for path in glob.glob(os.path.join(appdir, "*.desktop")):
-        desktop_id = os.path.basename(path)
-        parsed = parse_desktop_file(path)
-        if parsed and parsed["name"]:
-            # Prefer the first occurrence (user local takes precedence)
-            if desktop_id not in entries:
+# Scan desktop files. The XDG desktop ID is the path relative to the
+# applications dir with directory separators replaced by "-". Walk
+# subdirectories too. Earlier app_dirs take precedence (first wins).
+entries = {}
+for appdir in app_dirs:
+    if not os.path.isdir(appdir):
+        continue
+    for dirpath, _dirnames, filenames in os.walk(appdir):
+        for fn in filenames:
+            if not fn.endswith(".desktop"):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, appdir)
+            desktop_id = rel.replace(os.sep, "-")
+            if desktop_id in entries:
+                continue  # already provided by a higher-precedence dir
+            parsed = parse_desktop_file(full)
+            if parsed and parsed["name"]:
                 entries[desktop_id] = parsed
 
-# System mimeapps.list
+# System mimeapps.list (in application dirs, XDG order). Earlier dirs win,
+# so only set a MIME key the first time it is seen.
 sys_defaults = {}
-for d in xdg_data.split(":"):
-    p = os.path.join(d.strip(), "applications", "mimeapps.list")
+for appdir in app_dirs:
+    p = os.path.join(appdir, "mimeapps.list")
     if os.path.isfile(p):
-        sys_defaults.update(parse_mimeapps(p))
+        for mime, app in parse_mimeapps(p).items():
+            if mime not in sys_defaults:
+                sys_defaults[mime] = app
 
 # User mimeapps.list
 user_path = os.path.join(
@@ -250,31 +265,33 @@ print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "us
   }
 
   // ── Build the currentDefaults map ──────────────────────────────────────
-  // currentDefaults holds the *explicit* user-level choice for each category
-  // (qdshell setting or user mimeapps.list). An empty string means "no explicit
-  // override" → the combo shows "System default" selected and the reset button
-  // is hidden. resolvedDefaults holds the system-resolved handler purely for
-  // informational display.
+  // currentDefaults holds the *explicit* user-level choice for each category.
+  // An empty string means "no explicit override" → the combo shows "System
+  // default" selected and the reset button is hidden. resolvedDefaults holds
+  // the effective handler purely for informational display.
+  //
+  // For MIME-backed categories the on-disk user mimeapps.list is the single
+  // source of truth (it is what xdg-mime writes and what other apps honor),
+  // so the qdshell setting is NOT consulted there — that avoids a stale
+  // qdshell value masking the real default after an external change or a
+  // failed xdg-mime write. The qdshell setting is only used for categories
+  // with no XDG MIME type (terminal).
   function _buildCurrentDefaults() {
     var current = {};
     var resolved = {};
     for (var ci = 0; ci < categories.length; ci++) {
       var cat = categories[ci];
 
-      // Explicit choice: qdshell settings first, then user mimeapps.list
-      var explicit = _getSettingsDefault(cat.id);
-      if (!explicit && cat.primaryMime && _userDefaults[cat.primaryMime]) {
-        explicit = _userDefaults[cat.primaryMime];
-      }
-      current[cat.id] = explicit || "";
-
-      // Resolved (effective) handler for display: explicit, else system default
-      if (explicit) {
-        resolved[cat.id] = explicit;
-      } else if (cat.primaryMime && _systemDefaults[cat.primaryMime]) {
-        resolved[cat.id] = _systemDefaults[cat.primaryMime];
+      if (cat.primaryMime) {
+        // MIME-backed: truth is the user mimeapps.list
+        var explicit = _userDefaults[cat.primaryMime] || "";
+        current[cat.id] = explicit;
+        resolved[cat.id] = explicit || (_systemDefaults[cat.primaryMime] || "");
       } else {
-        resolved[cat.id] = "";
+        // No XDG MIME (terminal): use the qdshell setting only
+        var stored = _getSettingsDefault(cat.id);
+        current[cat.id] = stored;
+        resolved[cat.id] = stored;
       }
     }
     currentDefaults = current;
