@@ -6,6 +6,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Modules.Panels.Settings.Tabs
 // qdshell: About tab stripped (Noctalia phone-home/supporters/version)
+import qs.Modules.Panels.Settings.Tabs.Accessibility
 import qs.Modules.Panels.Settings.Tabs.Appearance
 import qs.Modules.Panels.Settings.Tabs.Audio
 import qs.Modules.Panels.Settings.Tabs.Autostart
@@ -504,6 +505,10 @@ Item {
     id: autostartTab
     AutostartTab {}
   }
+  Component {
+    id: accessibilityTab
+    AccessibilityTab {}
+  }
 
   function updateTabsModel() {
     let newTabs = [
@@ -602,6 +607,12 @@ Item {
             "label": "panels.autostart.title",
             "icon": "player-play",
             "source": autostartTab
+          },
+          {
+            "id": SettingsPanel.Tab.Accessibility,
+            "label": "panels.accessibility.title",
+            "icon": "accessible",
+            "source": accessibilityTab
           },
           {
             "id": SettingsPanel.Tab.Audio,

@@ -775,6 +775,28 @@ Singleton {
     property JsonObject session: JsonObject {
       property bool showSystemAutostart: true
     }
+
+    // accessibility
+    property JsonObject accessibility: JsonObject {
+      // Find-cursor pointer highlight (implemented fully as a shell overlay)
+      property bool findCursorEnabled: true
+      property string findCursorShortcut: "Super+Ctrl+C"
+      property string findCursorRingColor: "#ff4081"
+      property int findCursorRingSize: 220
+      property int findCursorDurationMs: 700
+
+      // Keyboard accessibility (xkb accessx / AT backend — capability-gated)
+      property bool stickyKeys: false
+      property bool slowKeys: false
+      property int slowKeysDelayMs: 300
+      property bool bounceKeys: false
+      property int bounceKeysDelayMs: 300
+      property bool mouseKeys: false
+      property int mouseKeysSpeed: 30
+
+      // Assistive technology (AT-SPI) autostart — capability-gated
+      property bool assistiveTechEnabled: false
+    }
   }
 
   // -----------------------------------------------------

@@ -504,7 +504,12 @@
   },
   "workspaces": {
     "count": 4,
-    "names": ["1", "2", "3", "4"]
+    "names": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ]
   },
   "defaultApps": {
     "browser": "",
@@ -542,5 +547,20 @@
   },
   "session": {
     "showSystemAutostart": true
+  },
+  "accessibility": {
+    "findCursorEnabled": true,
+    "findCursorShortcut": "Super+Ctrl+C",
+    "findCursorRingColor": "#ff4081",
+    "findCursorRingSize": 220,
+    "findCursorDurationMs": 700,
+    "stickyKeys": false,
+    "slowKeys": false,
+    "slowKeysDelayMs": 300,
+    "bounceKeys": false,
+    "bounceKeysDelayMs": 300,
+    "mouseKeys": false,
+    "mouseKeysSpeed": 30,
+    "assistiveTechEnabled": false
   }
 }

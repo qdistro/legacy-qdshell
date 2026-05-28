@@ -66,6 +66,7 @@ Singleton {
   // Settings IPC helpers (outside IpcHandler to avoid QVariant IPC warnings)
   readonly property var _settingsTabMap: ({
                                             "about": SettingsPanel.Tab.About,
+                                            "accessibility": SettingsPanel.Tab.Accessibility,
                                             "appearance": SettingsPanel.Tab.Appearance,
                                             "audio": SettingsPanel.Tab.Audio,
                                             "bar": SettingsPanel.Tab.Bar,
@@ -740,6 +741,15 @@ Singleton {
                                 "error": "Failed to serialize state: " + error
                               }, null, 2);
       }
+    }
+  }
+
+  IpcHandler {
+    target: "findCursor"
+    // Flash the find-cursor highlight at the current pointer position.
+    // Bind a compositor shortcut to: qs ipc call findCursor show
+    function show() {
+      AccessibilityService.triggerFindCursor();
     }
   }
 
