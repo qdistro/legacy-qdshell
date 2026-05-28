@@ -22,8 +22,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QSocketNotifier>
 #include <QTimer>
+#include <QVariantMap>
 #include <cstdint>
 
 class CtrlServer;
@@ -66,6 +68,14 @@ public:
     // clearSelection on a "deny". `isPrimary` mirrors the event
     // arg: 0 = clipboard, 1 = primary selection.
     Q_INVOKABLE void clearSelection(const QString &seat, quint32 isPrimary);
+    Q_INVOKABLE QVariantMap checkClipboardTransfer(
+        const QString &sourceSilo,
+        const QString &destSilo,
+        const QStringList &mimeTypes,
+        const QString &sourceAppId,
+        const QString &destAppId,
+        const QString &sourceSandboxEngine,
+        bool identityVerified);
 
 signals:
     void boundChanged();

@@ -22,4 +22,5 @@ subdir('qml-plugin')
 node = find_program('node', required: false)
 if node.found()
   test('clipboard-silo', node, args: files('tests/test_clipboard_silo.js'))
+  test('clipboard-broker', node, args: files('tests/test_clipboard_broker.js'))
 endif

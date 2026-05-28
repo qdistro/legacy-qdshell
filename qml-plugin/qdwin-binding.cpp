@@ -15,7 +15,10 @@
 #include "qdwin-shell-v1-client-protocol.h"
 
 #include <QDebug>
+#include <QProcess>
 #include <QString>
+#include <QStringList>
+#include <QVariantMap>
 
 #include <cerrno>
 #include <cstring>
@@ -442,4 +445,66 @@ void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
     QByteArray seatUtf8 = seat.toUtf8();
     qdwin_shell_v1_clear_selection(shell_, seatUtf8.constData(), isPrimary);
     if (display_) wl_display_flush(display_);
+}
+
+QVariantMap QdwinBinding::checkClipboardTransfer(
+    const QString &sourceSilo,
+    const QString &destSilo,
+    const QStringList &mimeTypes,
+    const QString &sourceAppId,
+    const QString &destAppId,
+    const QString &sourceSandboxEngine,
+    bool identityVerified) {
+    QStringList args = {
+        QStringLiteral("--system"),
+        QStringLiteral("--no-pager"),
+        QStringLiteral("--timeout=200ms"),
+        QStringLiteral("call"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("/org/qdistro/AdminBroker1"),
+        QStringLiteral("org.qdistro.AdminBroker1"),
+        QStringLiteral("CheckClipboardTransfer"),
+        QStringLiteral("ssassssb"),
+        sourceSilo,
+        destSilo,
+        QString::number(mimeTypes.size()),
+    };
+    args.append(mimeTypes);
+    args.append(sourceAppId);
+    args.append(destAppId);
+    args.append(sourceSandboxEngine);
+    args.append(identityVerified ? QStringLiteral("true")
+                                 : QStringLiteral("false"));
+
+    QProcess proc;
+    proc.setProgram(QStringLiteral("busctl"));
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(50)) {
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"), QString()},
+            {QStringLiteral("stderr"), proc.errorString()},
+            {QStringLiteral("timedOut"), false},
+        };
+    }
+    if (!proc.waitForFinished(200)) {
+        proc.kill();
+        proc.waitForFinished(50);
+        return {
+            {QStringLiteral("exitCode"), -1},
+            {QStringLiteral("stdout"),
+             QString::fromUtf8(proc.readAllStandardOutput())},
+            {QStringLiteral("stderr"), QStringLiteral("timeout")},
+            {QStringLiteral("timedOut"), true},
+        };
+    }
+    return {
+        {QStringLiteral("exitCode"), proc.exitCode()},
+        {QStringLiteral("stdout"),
+         QString::fromUtf8(proc.readAllStandardOutput())},
+        {QStringLiteral("stderr"),
+         QString::fromUtf8(proc.readAllStandardError())},
+        {QStringLiteral("timedOut"), false},
+    };
 }

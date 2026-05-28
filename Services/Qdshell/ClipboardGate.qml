@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "ClipboardBroker.js" as ClipboardBroker
 import "ClipboardSilo.js" as ClipboardSilo
 
 // spec/10 Phase-1 — compositor-mediated clipboard gate.
@@ -16,23 +17,19 @@ import "ClipboardSilo.js" as ClipboardSilo
 //   - On `selectionSet(seat, sourceHandle, mimeTypesConcat, isPrimary)`,
 //     we look up the source silo from the map, the destination silo
 //     from the currently-focused toplevel, and decide allow/deny
-//     based on the local policy file (loaded at startup) with a
-//     same-silo short-circuit.
+//     by asking the qdistro broker's CheckClipboardTransfer method.
 //   - On deny, we call `QdwinBinding.clearSelection(seat, isPrimary)`.
 // Decision audit: every verdict emits a journal line of the form
 //   CLIPBOARD_GATE seat=<s> src_silo=<s> dst_silo=<s> mime_types=<csv>
 //                  verdict=<allow|deny> reason=<text>
 // (the qdistro VM test harness asserts on these — the line shape is
 // stable and any field re-ordering is a breaking change).
-// Policy fallback path: same `busctl call` shape as HooksGate. Phase-1
-// stays *local-policy-only* — broker round-trip is wired as a TODO
-// because the spec calls out the broker's `CheckClipboardTransfer`
-// path as Phase-2 work (admin-cache + prompt UI). The local YAML/JSON
-// file is the always-on defense.
-// TODO(track-04-phase-2): replace `_consultLocalPolicy` with a busctl
-// shell-out to `org.qdistro.AdminBroker1.CheckClipboardTransfer`,
-// mirroring HooksGate's Process+env pattern. Keep the local-policy
-// branch as the "broker absent" graceful fallback.
+// Broker failures are fail-closed: absent broker, timeout, malformed
+// reply, and unknown verdict all deny and clear. Unknown source or
+// destination identity is denied locally before broker evaluation
+// because there is no trustworthy action key for rules/cache lookup.
+// ClipboardPolicy.qml is still loaded for settings/probe compatibility
+// but is intentionally not used as a fallback for live enforcement.
 // TODO(track-04-phase-2): focus-aware-clear primitive (clipboard.md
 // §"focus-aware-clear"). On every seatFocusChanged, if the newly
 // focused toplevel's silo differs from the silo that set the active
@@ -78,7 +75,7 @@ Singleton {
         }
         root._wired = true;
         ClipboardPolicy.load();
-        Logger.i("ClipboardGate", "wired to qdwin_shell_v1; policy default=deny");
+        Logger.i("ClipboardGate", "wired to qdwin_shell_v1; broker default=deny");
     }
 
     // -- internal state -------------------------------------------------
@@ -89,6 +86,7 @@ Singleton {
     // QML ListModel doesn't support uint32 keys well.
     property var _handleToSilo: ({})
     property var _handleToAppId: ({})
+    property var _handleToSandboxEngine: ({})
 
     // Option-B identity bookkeeping (todo/decisions/secctx-identity-contract.md):
     //   _handleToIdentity[handle] = { pid, starttime, uid, exe, label,
@@ -126,6 +124,7 @@ Singleton {
     function _onToplevelRemoved(handle) {
         delete root._handleToSilo[handle];
         delete root._handleToAppId[handle];
+        delete root._handleToSandboxEngine[handle];
         delete root._handleToIdentity[handle];
     }
 
@@ -235,6 +234,7 @@ Singleton {
         if (appId && appId.length > 0) {
             root._handleToAppId[handle] = appId;
         }
+        root._handleToSandboxEngine[handle] = sandboxEngine || "";
         // Stash the secctx tuple on the identity entry so the broker
         // VerifyClientIdentity call can include "claimed" values alongside
         // the (pid, starttime, exe, label) the compositor observed.
@@ -269,6 +269,13 @@ Singleton {
             out.push(s);
         }
         return out;
+    }
+
+    function _logDecisionAndMaybeClear(entry, verdict, reason) {
+        Logger.i("ClipboardGate", "CLIPBOARD_GATE", "seat=" + (entry.seat || "default"), "src_silo=" + entry.srcSilo, "dst_silo=" + entry.dstSilo, "mime_types=" + entry.mimeCsv, "verdict=" + verdict, "reason=" + reason);
+        if (verdict === "deny" && root._binding) {
+            root._binding.clearSelection(entry.seat || "default", entry.isPrimary);
+        }
     }
 
     // -- the gate itself -------------------------------------------------
@@ -309,19 +316,19 @@ Singleton {
             }
         }
         const mimeCsv = mimeList.join(",");
-        let verdict = "deny";
-        let reason = "default-deny";
+        const decisionEntry = {
+            "seat": seat || "default",
+            "isPrimary": isPrimary,
+            "srcSilo": srcSilo,
+            "dstSilo": dstSilo,
+            "mimeCsv": mimeCsv
+        };
 
         // If after stripping there are no allowed MIMEs, deny without
         // consulting policy. The Python strip_mimes contract is "deny on
         // empty stripped list" — keep that semantics here.
         if (srcAppId.startsWith("qdistro.tier4.") && mimeList.length === 0) {
-            verdict = "deny";
-            reason = "tier4-no-allowed-mimes";
-            Logger.i("ClipboardGate", "CLIPBOARD_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "mime_types=" + mimeCsv, "verdict=" + verdict, "reason=" + reason);
-            if (root._binding) {
-                root._binding.clearSelection(seat || "default", isPrimary);
-            }
+            root._logDecisionAndMaybeClear(decisionEntry, "deny", "tier4-no-allowed-mimes");
             return;
         }
 
@@ -333,34 +340,30 @@ Singleton {
         // cross-silo policy path — which is default-deny. _ensureVerified
         // returns synchronously cached results and fires off an async
         // broker round-trip on first sight.
-        const srcVerified = root._ensureVerified(sourceHandle);
+        // If the v23 wire sidecar supplied the source silo, sourceHandle is
+        // explicitly not trusted for source identity; it can name the focused
+        // destination/admin toplevel. Fail closed unless qdwin grows a peer
+        // identity sidecar for the actual selection source.
+        const srcVerified = (pending === null) ? root._ensureVerified(sourceHandle) : false;
         const dstVerified = (focusedHandle !== 4294967295) ? root._ensureVerified(focusedHandle) : false;
         const identityVerified = srcVerified && dstVerified;
-        if (srcSilo === dstSilo && srcSilo !== "unknown" && identityVerified) {
-            verdict = "allow";
-            reason = "same-silo+verified";
-        } else if (srcSilo === "unknown" || dstSilo === "unknown") {
-            // Unknown silo on either end — fall through to policy. Default
-            // deny ensures we don't leak before security_context lands.
-            const decision = ClipboardPolicy.consult(srcSilo, dstSilo, mimeList);
-            verdict = decision.verdict;
-            reason = "policy:" + decision.reason;
-        } else {
-            const decision = ClipboardPolicy.consult(srcSilo, dstSilo, mimeList);
-            verdict = decision.verdict;
-            reason = "policy:" + decision.reason;
+        if (!ClipboardBroker.hasKnownIdentity(srcSilo, dstSilo)) {
+            root._logDecisionAndMaybeClear(decisionEntry, "deny", "unknown-identity");
+            return;
         }
 
-        // Journal line — the VM probe asserts on this exact shape.
-        Logger.i("ClipboardGate", "CLIPBOARD_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "mime_types=" + mimeCsv, "verdict=" + verdict, "reason=" + reason);
-        if (verdict === "deny" && root._binding) {
-            root._binding.clearSelection(seat || "default", isPrimary);
+        const dstAppId = (focusedHandle !== 4294967295) ? (root._handleToAppId[focusedHandle] || "") : "";
+        const sourceSandboxEngine = (pending !== null && pending.sandboxEngine) ? pending.sandboxEngine : (root._handleToSandboxEngine[sourceHandle] || "");
+        if (!root._binding || root._binding.checkClipboardTransfer === undefined) {
+            root._logDecisionAndMaybeClear(decisionEntry, "deny", "broker-unavailable");
+            return;
         }
-
-    // TODO(track-04-phase-2): on "prompt" verdict, surface the
-    // "Request transfer" affordance described in 04-compositor-
-    // clipboard.md §"Default when no cache hit". Today we collapse
-    // prompt → deny (with reason=prompt-collapsed) so the user-visible
-    // behaviour is conservative until the affordance ships.
+        const brokerResult = root._binding.checkClipboardTransfer(
+            srcSilo, dstSilo, mimeList, srcAppId, dstAppId,
+            sourceSandboxEngine, identityVerified);
+        const decision = ClipboardBroker.parseCheckClipboardTransferResult(
+            brokerResult.exitCode, brokerResult.stdout || "");
+        root._logDecisionAndMaybeClear(decisionEntry, decision.verdict,
+                                      decision.reason);
     }
 }
