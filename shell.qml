@@ -148,6 +148,7 @@ ShellRoot {
           PowerService.init();
           AccessibilityService.init();
           KeyboardInputService.init();
+          PointerInputService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);

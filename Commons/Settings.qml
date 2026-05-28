@@ -822,6 +822,21 @@ Singleton {
       // When true, qdshell does not override layout/repeat (use system config).
       property bool useSystemDefaults: true
     }
+
+    // pointer / mouse & touchpad (libinput-style pointer settings)
+    property JsonObject pointer: JsonObject {
+      property string accelProfile: "adaptive"   // "adaptive" | "flat"
+      property real pointerSpeed: 0.5             // 0.0 .. 1.0 (mapped to libinput -1..1)
+      property bool naturalScroll: false
+      property string scrollMethod: "two_finger" // "two_finger" | "edge" | "on_button_down" | "none"
+      property bool tapToClick: true
+      property bool disableWhileTyping: true
+      property bool leftHanded: false
+      property bool horizontalScroll: true
+      property int doubleClickTime: 400          // ms
+      property int doubleClickDistance: 5        // px
+      property int dragThreshold: 8              // px
+    }
   }
 
   // -----------------------------------------------------

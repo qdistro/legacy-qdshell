@@ -89,6 +89,7 @@ SmartPanel {
     Keyboard,
     Launcher,
     Location,
+    Mouse,
     Connections,
     Notifications,
     Plugins,

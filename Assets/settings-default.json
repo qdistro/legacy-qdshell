@@ -576,5 +576,18 @@
     "xkbOptions": [],
     "restoreNumLock": false,
     "useSystemDefaults": true
+  },
+  "pointer": {
+    "accelProfile": "adaptive",
+    "pointerSpeed": 0.5,
+    "naturalScroll": false,
+    "scrollMethod": "two_finger",
+    "tapToClick": true,
+    "disableWhileTyping": true,
+    "leftHanded": false,
+    "horizontalScroll": true,
+    "doubleClickTime": 400,
+    "doubleClickDistance": 5,
+    "dragThreshold": 8
   }
 }
