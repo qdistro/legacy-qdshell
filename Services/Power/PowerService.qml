@@ -41,6 +41,7 @@ Singleton {
     queryCapabilities();
     detectLid(); // triggers startLidMonitor() via onHasLidChanged when a lid is found
     detectACState();
+    startButtonMonitor();
     swayidleCheck.running = true;
     checkCriticalBattery();
   }
@@ -126,7 +127,7 @@ Singleton {
   // ─── AC state detection ──────────────────────────────────────────
   Process {
     id: acDetectProc
-    command: ["sh", "-c", "cat /sys/class/power_supply/AC*/online /sys/class/power_supply/ACAD*/online 2>/dev/null | head -1"]
+    command: ["sh", "-c", "online=; for p in /sys/class/power_supply/*; do t=$(cat \"$p/type\" 2>/dev/null); if [ \"$t\" = Mains ] || [ \"$t\" = USB ]; then v=$(cat \"$p/online\" 2>/dev/null); [ \"$v\" = 1 ] && online=1; [ -z \"$online\" ] && [ \"$v\" = 0 ] && online=0; fi; done; echo \"$online\""]
     running: false
     stdout: StdioCollector {
       onStreamFinished: {
@@ -222,6 +223,62 @@ Singleton {
   onHasLidChanged: {
     if (hasLid && !lidPollTimer.running)
       startLidMonitor();
+  }
+
+  // ─── Power / Sleep button handling ───────────────────────────────
+  // As with the lid, logind owns the physical keys by default. We take
+  // inhibitor locks on handle-power-key / handle-suspend-key so logind
+  // defers to qdshell, then watch evdev (via libinput debug-events) for
+  // KEY_POWER / KEY_SLEEP presses and apply the configured action. If
+  // libinput is unavailable or unreadable, the locks are released so
+  // logind resumes its default behaviour (never leaving the keys dead).
+  property bool _buttonMonitorActive: false
+
+  Process {
+    id: powerKeyInhibitProc
+    running: false
+    command: ["sh", "-c", "systemd-inhibit --what=handle-power-key:handle-suspend-key --who=qdshell --why='qdshell power manager button policy' --mode=block sleep infinity"]
+    stderr: StdioCollector {}
+  }
+
+  Process {
+    id: buttonMonitorProc
+    running: false
+    // libinput emits e.g. "KEY_POWER (116) pressed" lines on KEYBOARD_KEY events.
+    command: ["sh", "-c", "command -v libinput >/dev/null 2>&1 || exit 1; libinput debug-events 2>/dev/null"]
+    stdout: SplitParser {
+      onRead: data => {
+        var line = String(data || "");
+        if (line.indexOf("pressed") === -1)
+          return;
+        if (line.indexOf("KEY_POWER") !== -1) {
+          Logger.i("PowerService", "Power button pressed");
+          root.executeAction(root.powerButtonAction);
+        } else if (line.indexOf("KEY_SLEEP") !== -1 || line.indexOf("KEY_SUSPEND") !== -1) {
+          Logger.i("PowerService", "Sleep button pressed");
+          root.executeAction(root.sleepButtonAction);
+        }
+      }
+    }
+    stderr: StdioCollector {}
+    onExited: function (exitCode) {
+      // libinput missing or not permitted — release the inhibitor locks so
+      // logind keeps handling the keys with its own configuration.
+      if (root._buttonMonitorActive) {
+        Logger.w("PowerService", "Button monitor unavailable (exit", exitCode + "); releasing key inhibitors, logind will handle power/sleep keys");
+        root._buttonMonitorActive = false;
+        if (powerKeyInhibitProc.running)
+          powerKeyInhibitProc.signal(15);
+      }
+    }
+  }
+
+  function startButtonMonitor() {
+    buttonMonitorProc.running = true;
+    // Only take the inhibitor locks if the monitor actually started; if it
+    // exits immediately the onExited handler releases them.
+    powerKeyInhibitProc.running = true;
+    _buttonMonitorActive = true;
   }
 
   // ─── Actions ─────────────────────────────────────────────────────
@@ -410,25 +467,63 @@ Singleton {
     function onBatteryChargingChanged() {
       root.checkCriticalBattery();
     }
+    function onLaptopBatteriesChanged() {
+      root.checkCriticalBattery();
+    }
+  }
+
+  // Safety-net poll in case a laptop battery is not the primary device and
+  // its change signals are not observed through the aggregate properties.
+  Timer {
+    id: criticalBatteryPoll
+    interval: 60000
+    repeat: true
+    running: true
+    onTriggered: root.checkCriticalBattery()
+  }
+
+  // Resolve an effective critical-battery action, falling back when the
+  // configured one is unavailable so protection still happens.
+  function effectiveCriticalAction() {
+    var action = criticalBatteryAction;
+    if (action === "hibernate" && !canHibernate)
+      action = "suspend";
+    if (action === "suspend" && !canSuspend)
+      action = "shutdown";
+    return action;
   }
 
   function checkCriticalBattery() {
+    // Only consider the laptop/internal battery — never a Bluetooth
+    // peripheral (mouse/headset), which would otherwise suspend a desktop.
+    var batteries = BatteryService.laptopBatteries;
+    if (!batteries || batteries.length === 0) {
+      _criticalActionTaken = false;
+      return;
+    }
+    var dev = batteries[0];
+
+    var pct = BatteryService.getPercentage(dev);
+    var charging = BatteryService.isCharging(dev);
+    var plugged = BatteryService.isPluggedIn(dev);
+
     // Reset latch once charging or comfortably above the threshold.
-    if (BatteryService.batteryCharging || BatteryService.batteryPluggedIn || BatteryService.batteryPercentage > criticalBatteryLevel + 2) {
+    if (charging || plugged || pct > criticalBatteryLevel + 2) {
       _criticalActionTaken = false;
       return;
     }
 
-    if (!BatteryService.batteryPresent || !BatteryService.batteryReady)
+    if (!BatteryService.isDevicePresent(dev) || !BatteryService.isDeviceReady(dev))
       return;
 
     if (_criticalActionTaken)
       return;
 
-    if (BatteryService.batteryPercentage <= criticalBatteryLevel) {
+    if (pct <= criticalBatteryLevel) {
       _criticalActionTaken = true;
-      Logger.w("PowerService", "Critical battery level reached, executing:", criticalBatteryAction);
-      executeAction(criticalBatteryAction);
+      var action = effectiveCriticalAction();
+      Logger.w("PowerService", "Critical battery level reached, executing:", action);
+      executeAction(action);
     }
   }
 
@@ -436,6 +531,10 @@ Singleton {
   Component.onDestruction: {
     if (lidInhibitProc.running)
       lidInhibitProc.signal(15);
+    if (powerKeyInhibitProc.running)
+      powerKeyInhibitProc.signal(15);
+    if (buttonMonitorProc.running)
+      buttonMonitorProc.signal(15);
     if (idleDaemonProc.running)
       idleDaemonProc.signal(15);
   }
