@@ -1,10 +1,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import qs.Commons
 import qs.Services.Hardware
 import qs.Services.UI
 import qs.Widgets
+import "../../../../../Services/Hardware/PointerInputParse.js" as PointerInputParse
 
 ColumnLayout {
   id: root
@@ -54,6 +56,8 @@ ColumnLayout {
       return I18n.tr("panels.mouse.device-type-trackpoint");
     case "mouse":
       return I18n.tr("panels.mouse.device-type-mouse");
+    case "tablet":
+      return I18n.tr("panels.mouse.device-type-tablet");
     default:
       return I18n.tr("panels.mouse.device-type-pointer");
     }
@@ -65,9 +69,62 @@ ColumnLayout {
       return "device-laptop";
     case "trackpoint":
       return "point";
+    case "tablet":
+      return "edit";
     default:
       return "mouse";
     }
+  }
+
+  // Static models for advanced controls.
+  readonly property var clickMethodModel: [
+    {
+      "key": "button_areas",
+      "name": I18n.tr("panels.mouse.click-method-button-areas")
+    },
+    {
+      "key": "clickfinger",
+      "name": I18n.tr("panels.mouse.click-method-clickfinger")
+    }
+  ]
+
+  readonly property var tabletAspectModel: [
+    {
+      "key": "keep",
+      "name": I18n.tr("panels.mouse.tablet-aspect-keep")
+    },
+    {
+      "key": "stretch",
+      "name": I18n.tr("panels.mouse.tablet-aspect-stretch")
+    }
+  ]
+
+  // Outputs available for tablet mapping ("" = all outputs first).
+  readonly property var tabletOutputModel: {
+    var list = [
+      {
+        "key": "",
+        "name": I18n.tr("panels.mouse.tablet-output-all")
+      }
+    ];
+    var screens = Quickshell.screens || [];
+    for (var i = 0; i < screens.length; i++) {
+      list.push({
+        "key": screens[i].name,
+        "name": screens[i].name
+      });
+    }
+    return list;
+  }
+
+  // Live, normalized tablet mapping (clamped). UI reads from here.
+  readonly property var tabletMapping: PointerInputService ? PointerInputParse.normalizeTabletMapping(Settings.data.pointer.tabletMapping) : null
+
+  // Persist a single field of the tablet area, re-normalizing the whole object.
+  function updateTabletArea(field, value) {
+    var m = PointerInputParse.normalizeTabletMapping(Settings.data.pointer.tabletMapping);
+    m.area[field] = value / 100.0;
+    PointerInputService.setTabletMapping(m);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -235,6 +292,41 @@ ColumnLayout {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // Buttons & Click section (libinput click method, middle-click emulation)
+  // ═══════════════════════════════════════════════════════════════════
+  NDivider {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginM
+    Layout.bottomMargin: Style.marginM
+  }
+
+  NText {
+    text: I18n.tr("panels.mouse.section-buttons")
+    pointSize: Style.fontSizeM
+    font.weight: Style.fontWeightBold
+    color: Color.mPrimary
+  }
+
+  NComboBox {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.mouse.click-method-label")
+    description: I18n.tr("panels.mouse.click-method-description")
+    model: root.clickMethodModel
+    currentKey: Settings.data.pointer.clickMethod
+    defaultValue: Settings.getDefaultValue("pointer.clickMethod")
+    onSelected: key => Settings.data.pointer.clickMethod = key
+  }
+
+  NToggle {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.mouse.middle-click-emulation-label")
+    description: I18n.tr("panels.mouse.middle-click-emulation-description")
+    checked: Settings.data.pointer.middleClickEmulation
+    onToggled: checked => Settings.data.pointer.middleClickEmulation = checked
+    defaultValue: Settings.getDefaultValue("pointer.middleClickEmulation")
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Scrolling section
   // ═══════════════════════════════════════════════════════════════════
   NDivider {
@@ -382,6 +474,279 @@ ColumnLayout {
     value: Settings.data.pointer.dragThreshold
     onValueChanged: Settings.data.pointer.dragThreshold = value
     defaultValue: Settings.getDefaultValue("pointer.dragThreshold")
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Per-device overrides section
+  // ═══════════════════════════════════════════════════════════════════
+  NDivider {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginM
+    Layout.bottomMargin: Style.marginM
+  }
+
+  NText {
+    text: I18n.tr("panels.mouse.section-per-device")
+    pointSize: Style.fontSizeM
+    font.weight: Style.fontWeightBold
+    color: Color.mPrimary
+  }
+
+  NText {
+    Layout.fillWidth: true
+    text: I18n.tr("panels.mouse.per-device-description")
+    color: Color.mOnSurfaceVariant
+    pointSize: Style.fontSizeXS
+    wrapMode: Text.WordWrap
+  }
+
+  NLabel {
+    Layout.fillWidth: true
+    visible: PointerInputService.ready && !PointerInputService.hasDevices
+    label: I18n.tr("panels.mouse.no-devices-label")
+  }
+
+  Repeater {
+    model: PointerInputService.devices
+
+    delegate: Rectangle {
+      // Per-device override card. Touchpad/mouse controls are exposed; tablets
+      // expose only enable/disable here (their mapping lives in its own section).
+      readonly property string devId: modelData.id
+      readonly property bool isTablet: modelData.type === "tablet"
+
+      Layout.fillWidth: true
+      implicitHeight: perDeviceCol.implicitHeight + Style.marginM * 2
+      radius: Style.iRadiusS
+      color: "transparent"
+      border.color: Color.mOutline
+      border.width: Style.borderS
+
+      ColumnLayout {
+        id: perDeviceCol
+        anchors.fill: parent
+        anchors.margins: Style.marginM
+        spacing: Style.marginS
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.marginM
+
+          NIcon {
+            icon: root.deviceTypeIcon(modelData.type)
+            pointSize: Style.fontSizeXL
+            color: Color.mPrimary
+            Layout.alignment: Qt.AlignVCenter
+          }
+
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.marginXXS
+
+            NText {
+              // Untrusted device name — rendered as PlainText (NText default).
+              text: modelData.name
+              pointSize: Style.fontSizeM
+              font.weight: Style.fontWeightSemiBold
+              color: Color.mOnSurface
+              Layout.fillWidth: true
+              elide: Text.ElideRight
+              maximumLineCount: 1
+            }
+
+            NText {
+              text: root.deviceTypeLabel(modelData.type)
+              pointSize: Style.fontSizeS
+              color: Color.mOnSurfaceVariant
+              Layout.fillWidth: true
+            }
+          }
+        }
+
+        NToggle {
+          Layout.fillWidth: true
+          label: I18n.tr("panels.mouse.device-enabled-label")
+          description: I18n.tr("panels.mouse.device-enabled-description")
+          // Bind to disabledDevices so the toggle reflects external changes.
+          checked: !PointerInputParse.isDeviceDisabled(Settings.data.pointer.disabledDevices, devId)
+          onToggled: checked => PointerInputService.setDeviceEnabled(devId, checked)
+        }
+
+        NToggle {
+          Layout.fillWidth: true
+          visible: !isTablet
+          label: I18n.tr("panels.mouse.device-customize-label")
+          description: I18n.tr("panels.mouse.device-customize-description")
+          checked: PointerInputParse.hasDeviceOverride(Settings.data.pointer.perDeviceOverrides, devId)
+          onToggled: checked => {
+            if (checked) {
+              // Seed the override with the current global speed so the override
+              // map is non-empty (which is what "has override" keys on).
+              PointerInputService.setOverride(devId, "pointerSpeed", Settings.data.pointer.pointerSpeed);
+            } else {
+              PointerInputService.clearOverride(devId);
+            }
+          }
+        }
+
+        ColumnLayout {
+          Layout.fillWidth: true
+          spacing: Style.marginS
+          visible: !isTablet && PointerInputParse.hasDeviceOverride(Settings.data.pointer.perDeviceOverrides, devId)
+
+          NComboBox {
+            Layout.fillWidth: true
+            label: I18n.tr("panels.mouse.accel-profile-label")
+            model: root.accelProfileModel
+            currentKey: PointerInputService.effectiveSettings(devId).accelProfile
+            onSelected: key => PointerInputService.setOverride(devId, "accelProfile", key)
+          }
+
+          NValueSlider {
+            Layout.fillWidth: true
+            label: I18n.tr("panels.mouse.speed-label")
+            from: 0.0
+            to: 1.0
+            stepSize: 0.05
+            value: PointerInputService.effectiveSettings(devId).pointerSpeed
+            text: Math.round(PointerInputService.effectiveSettings(devId).pointerSpeed * 100) + "%"
+            onMoved: value => PointerInputService.setOverride(devId, "pointerSpeed", value)
+          }
+
+          NToggle {
+            Layout.fillWidth: true
+            label: I18n.tr("panels.mouse.natural-scroll-label")
+            checked: PointerInputService.effectiveSettings(devId).naturalScroll
+            onToggled: checked => PointerInputService.setOverride(devId, "naturalScroll", checked)
+          }
+
+          NToggle {
+            Layout.fillWidth: true
+            label: I18n.tr("panels.mouse.left-handed-label")
+            checked: PointerInputService.effectiveSettings(devId).leftHanded
+            onToggled: checked => PointerInputService.setOverride(devId, "leftHanded", checked)
+          }
+
+          NButton {
+            text: I18n.tr("panels.mouse.device-reset-override")
+            icon: "filepicker-refresh"
+            outlined: true
+            onClicked: PointerInputService.clearOverride(devId)
+          }
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Tablet mapping section (Wacom / graphics tablets; persist-only)
+  // ═══════════════════════════════════════════════════════════════════
+  NDivider {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginM
+    Layout.bottomMargin: Style.marginM
+  }
+
+  NText {
+    text: I18n.tr("panels.mouse.section-tablet")
+    pointSize: Style.fontSizeM
+    font.weight: Style.fontWeightBold
+    color: Color.mPrimary
+  }
+
+  NText {
+    Layout.fillWidth: true
+    text: I18n.tr("panels.mouse.tablet-description")
+    color: Color.mOnSurfaceVariant
+    pointSize: Style.fontSizeXS
+    wrapMode: Text.WordWrap
+  }
+
+  NLabel {
+    Layout.fillWidth: true
+    visible: PointerInputService.ready && !PointerInputService.hasTablet
+    label: I18n.tr("panels.mouse.no-tablet-label")
+    description: I18n.tr("panels.mouse.no-tablet-description")
+  }
+
+  ColumnLayout {
+    Layout.fillWidth: true
+    spacing: Style.marginM
+    visible: PointerInputService.hasTablet
+
+    NComboBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-output-label")
+      description: I18n.tr("panels.mouse.tablet-output-description")
+      model: root.tabletOutputModel
+      currentKey: root.tabletMapping ? root.tabletMapping.output : ""
+      onSelected: key => {
+        var m = PointerInputParse.normalizeTabletMapping(Settings.data.pointer.tabletMapping);
+        m.output = key;
+        PointerInputService.setTabletMapping(m);
+      }
+    }
+
+    NComboBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-aspect-label")
+      description: I18n.tr("panels.mouse.tablet-aspect-description")
+      model: root.tabletAspectModel
+      currentKey: root.tabletMapping ? root.tabletMapping.aspect : "keep"
+      onSelected: key => {
+        var m = PointerInputParse.normalizeTabletMapping(Settings.data.pointer.tabletMapping);
+        m.aspect = key;
+        PointerInputService.setTabletMapping(m);
+      }
+    }
+
+    NSpinBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-area-x-label")
+      description: I18n.tr("panels.mouse.tablet-area-x-description")
+      minimum: 0
+      maximum: 100
+      stepSize: 5
+      suffix: " %"
+      value: root.tabletMapping ? Math.round(root.tabletMapping.area.x * 100) : 0
+      onValueChanged: root.updateTabletArea("x", value)
+    }
+
+    NSpinBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-area-y-label")
+      description: I18n.tr("panels.mouse.tablet-area-y-description")
+      minimum: 0
+      maximum: 100
+      stepSize: 5
+      suffix: " %"
+      value: root.tabletMapping ? Math.round(root.tabletMapping.area.y * 100) : 0
+      onValueChanged: root.updateTabletArea("y", value)
+    }
+
+    NSpinBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-area-w-label")
+      description: I18n.tr("panels.mouse.tablet-area-w-description")
+      minimum: 1
+      maximum: 100
+      stepSize: 5
+      suffix: " %"
+      value: root.tabletMapping ? Math.round(root.tabletMapping.area.w * 100) : 100
+      onValueChanged: root.updateTabletArea("w", value)
+    }
+
+    NSpinBox {
+      Layout.fillWidth: true
+      label: I18n.tr("panels.mouse.tablet-area-h-label")
+      description: I18n.tr("panels.mouse.tablet-area-h-description")
+      minimum: 1
+      maximum: 100
+      stepSize: 5
+      suffix: " %"
+      value: root.tabletMapping ? Math.round(root.tabletMapping.area.h * 100) : 100
+      onValueChanged: root.updateTabletArea("h", value)
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════

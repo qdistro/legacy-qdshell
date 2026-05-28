@@ -855,6 +855,34 @@ Singleton {
       property int doubleClickTime: 400          // ms
       property int doubleClickDistance: 5        // px
       property int dragThreshold: 8              // px
+      // libinput click method on clickpads: "button_areas" (bottom edge split
+      // into L/M/R zones) | "clickfinger" (1/2/3 fingers = L/M/R).
+      property string clickMethod: "button_areas"
+      // Synthesize a middle click from a simultaneous left+right press.
+      property bool middleClickEmulation: false
+      // Per-device overrides: map keyed by device id (the enumerated device
+      // name; UNTRUSTED — used only as an opaque key, never shelled). Each value
+      // is a partial pointer-policy object shadowing the globals above for that
+      // device. See PointerInputParse.resolveDeviceSettings.
+      // Format: { "<device id>": { pointerSpeed: 0.9, naturalScroll: true, ... } }
+      property var perDeviceOverrides: ({})
+      // Device ids the user has disabled (excluded from input). UNTRUSTED ids,
+      // matched only by equality — never interpolated into a command.
+      property list<string> disabledDevices: []
+      // Tablet/Wacom area-to-output mapping (persist-only). Canonical shape via
+      // PointerInputParse.normalizeTabletMapping:
+      //   { output: "<connector|''>", aspect: "keep"|"stretch",
+      //     area: { x, y, w, h } }  (area fractions in 0..1)
+      property var tabletMapping: ({
+          "output": "",
+          "aspect": "keep",
+          "area": {
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1
+          }
+        })
     }
 
     // window-manager policy (focus, placement, snapping, decorations,

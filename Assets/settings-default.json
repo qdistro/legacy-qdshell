@@ -599,7 +599,21 @@
     "horizontalScroll": true,
     "doubleClickTime": 400,
     "doubleClickDistance": 5,
-    "dragThreshold": 8
+    "dragThreshold": 8,
+    "clickMethod": "button_areas",
+    "middleClickEmulation": false,
+    "perDeviceOverrides": {},
+    "disabledDevices": [],
+    "tabletMapping": {
+      "output": "",
+      "aspect": "keep",
+      "area": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
+    }
   },
   "windowManager": {
     "focusPolicy": "click",
