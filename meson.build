@@ -30,4 +30,5 @@ if node.found()
   test('taskbar-logic', node, args: files('tests/test_taskbar_logic.js'))
   test('window-manager-policy', node, args: files('tests/test_window_manager_policy.js'))
   test('settings-tree', node, args: files('tests/test_settings_tree.js'))
+  test('gtk-settings', node, args: files('tests/test_gtk_settings.js'))
 endif

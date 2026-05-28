@@ -538,7 +538,18 @@
   "appearance": {
     "iconTheme": "",
     "cursorTheme": "",
-    "cursorSize": 24
+    "cursorSize": 24,
+    "gtkTheme": "",
+    "soundTheme": "",
+    "showIconsInMenus": true,
+    "showIconsInButtons": true
+  },
+  "fontRendering": {
+    "dpi": 0,
+    "antialias": true,
+    "hinting": true,
+    "hintstyle": "slight",
+    "rgba": "rgb"
   },
   "desktopWidgets": {
     "enabled": false,
