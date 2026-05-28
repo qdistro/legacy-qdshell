@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Services.Hardware
+import qs.Services.Qdwin
 import qs.Services.UI
 
 Singleton {
@@ -15,6 +16,15 @@ Singleton {
   property bool canHibernate: false
   property bool canHybridSleep: false
   property bool canPowerOff: false
+
+  // Whether the compositor can apply idle-timeout + display DPMS policy. qdwin
+  // exposes no idle/DPMS request in qdwin_shell_v1 yet, so this is currently
+  // false and the inactivity/display-off timers are persist-only. Sourced from
+  // the unified CapabilityService — there is NO swayidle/wlopm/wlr-randr/
+  // hyprctl dispatch (qdwin is the only supported compositor). Lid and
+  // power/sleep-button handling are unaffected: those use logind + evdev, not
+  // a foreign compositor.
+  readonly property bool canApplyIdle: CapabilityService.idleDpms
 
   // Whether a lid is physically present (laptop)
   property bool hasLid: false
@@ -42,7 +52,6 @@ Singleton {
     detectLid(); // triggers startLidMonitor() via onHasLidChanged when a lid is found
     detectACState();
     startButtonMonitor();
-    swayidleCheck.running = true;
     checkCriticalBattery();
   }
 
@@ -339,120 +348,20 @@ Singleton {
     }
   }
 
-  // ─── DPMS / Display off ──────────────────────────────────────────
-  function dpmsOffCommand() {
-    return "wlopm --off '*' 2>/dev/null || wlr-randr --output '*' --off 2>/dev/null || hyprctl dispatch dpms off 2>/dev/null";
-  }
-
-  function dpmsOnCommand() {
-    return "wlopm --on '*' 2>/dev/null || wlr-randr --output '*' --on 2>/dev/null || hyprctl dispatch dpms on 2>/dev/null";
-  }
-
-  function turnOffDisplay() {
-    Logger.i("PowerService", "Turning off display via DPMS");
-    Quickshell.execDetached(["sh", "-c", dpmsOffCommand()]);
-  }
-
-  // ─── Idle timeout handling (real input idle via swayidle) ─────────
-  // QML Timers cannot observe Wayland input activity, so a naive timer would
-  // fire while the user is active. Instead we drive swayidle, which is
-  // input-aware, and rebuild its argument list whenever the policy or the
-  // AC/inhibit state changes. The idle inhibitor still gates the whole thing.
+  // ─── Idle timeout + display-off policy (persist-only on qdwin) ────
+  // Observing real Wayland input idle and driving display DPMS requires a
+  // compositor-side idle/DPMS API. qdwin's qdwin_shell_v1 does not expose one
+  // yet (CapabilityService.idleDpms === false), so the inactivity-action and
+  // display-off-timeout policy is PERSIST-ONLY: the values are stored and the
+  // Power tab surfaces a capability note, and they will be enforced once qdwin
+  // provides idle/DPMS IPC. We deliberately do NOT shell out to swayidle /
+  // wlopm / wlr-randr / hyprctl — qdwin is the only supported compositor and
+  // those tools target foreign compositors.
+  //
+  // (Critical-battery, lid and power/sleep-button actions still work: they are
+  // driven by logind capability + evdev, not by a compositor idle API.)
   readonly property int activeInactivityTimeout: onAC ? inactivityTimeoutAC : inactivityTimeoutBattery
   readonly property int activeDisplayOffTimeout: onAC ? displayOffAC : displayOffBattery
-
-  property bool swayidleAvailable: false
-
-  Process {
-    id: swayidleCheck
-    command: ["sh", "-c", "command -v swayidle >/dev/null 2>&1 && echo yes || echo no"]
-    running: false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        root.swayidleAvailable = String(text || "").trim() === "yes";
-        Logger.d("PowerService", "swayidleAvailable:", root.swayidleAvailable);
-        if (root.swayidleAvailable)
-          root.rebuildIdleDaemon();
-      }
-    }
-    stderr: StdioCollector {}
-  }
-
-  Process {
-    id: idleDaemonProc
-    running: false
-    stderr: StdioCollector {}
-  }
-
-  // Rebuild and (re)start the idle daemon whenever the effective policy changes.
-  function rebuildIdleDaemon() {
-    if (!swayidleAvailable)
-      return;
-
-    // Stop any running instance first.
-    if (idleDaemonProc.running)
-      idleDaemonProc.signal(15);
-
-    // When inhibited, leave the daemon stopped entirely.
-    if (IdleInhibitorService.isInhibited) {
-      Logger.d("PowerService", "Idle inhibited — idle daemon stopped");
-      return;
-    }
-
-    var args = ["swayidle", "-w"];
-
-    var dispOff = activeDisplayOffTimeout;
-    if (dispOff > 0) {
-      args.push("timeout");
-      args.push(String(dispOff * 60));
-      args.push(dpmsOffCommand());
-      args.push("resume");
-      args.push(dpmsOnCommand());
-    }
-
-    var inact = activeInactivityTimeout;
-    if (inact > 0 && inactivityAction !== "nothing") {
-      var cmd = "";
-      switch (inactivityAction) {
-      case "suspend":
-        cmd = "systemctl suspend || loginctl suspend";
-        break;
-      case "hibernate":
-        cmd = "systemctl hibernate || loginctl hibernate";
-        break;
-      case "hybrid-sleep":
-        cmd = "systemctl hybrid-sleep || loginctl hybrid-sleep";
-        break;
-      }
-      if (cmd !== "") {
-        args.push("timeout");
-        args.push(String(inact * 60));
-        args.push(cmd);
-      }
-    }
-
-    // Nothing to do — keep the daemon stopped.
-    if (args.length <= 2) {
-      Logger.d("PowerService", "No idle actions configured — idle daemon stopped");
-      return;
-    }
-
-    idleDaemonProc.command = args;
-    idleDaemonProc.running = true;
-    Logger.i("PowerService", "Idle daemon (re)started:", args.join(" "));
-  }
-
-  // React to policy / state changes.
-  onActiveInactivityTimeoutChanged: rebuildIdleDaemon()
-  onActiveDisplayOffTimeoutChanged: rebuildIdleDaemon()
-  onInactivityActionChanged: rebuildIdleDaemon()
-
-  Connections {
-    target: IdleInhibitorService
-    function onIsInhibitedChanged() {
-      root.rebuildIdleDaemon();
-    }
-  }
 
   // ─── Critical battery handling ───────────────────────────────────
   // Watch the primary battery and trigger the configured action once when the
@@ -535,7 +444,5 @@ Singleton {
       powerKeyInhibitProc.signal(15);
     if (buttonMonitorProc.running)
       buttonMonitorProc.signal(15);
-    if (idleDaemonProc.running)
-      idleDaemonProc.signal(15);
   }
 }

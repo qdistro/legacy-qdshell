@@ -2,19 +2,19 @@
 // PointerInputService.qml. NO Process / FileView / Settings / Quickshell
 // access: only string/array transforms. Usable from both QML
 // (import "PointerInputParse.js" as PointerInputParse) and Node
-// (require("./PointerInputParse.js")) so the parsing/command-building logic
-// can be unit-tested headless.
+// (require("./PointerInputParse.js")) so the parsing logic can be unit-tested
+// headless.
 //
-// Two responsibilities:
-//   1. Device classification — turn raw `libinput list-devices` output OR
-//      /proc/bus/input/devices text into a list of pointer devices
-//      { id, name, type, hasTap, hasNaturalScroll, hasDisableWhileTyping,
-//        hasScrollMethod } where type is one of
-//      mouse|touchpad|trackpoint|pointer. Keyboards and touchscreens are
-//      excluded.
-//   2. sway input command building — given a setting key+value, produce the
-//      exact `swaymsg input <selector> <option> <value>` argv array(s). Pure:
-//      no execution, no `sh -c`; every token is a separate array element.
+// Responsibility: device classification — turn raw `libinput list-devices`
+// output OR /proc/bus/input/devices text into a list of pointer devices
+// { id, name, type, hasTap, hasNaturalScroll, hasDisableWhileTyping,
+//   hasScrollMethod } where type is one of mouse|touchpad|trackpoint|pointer.
+// Keyboards and touchscreens are excluded.
+//
+// qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet,
+// so pointer settings are persist-only — there is no live-apply command
+// builder here (the previous sway `swaymsg input …` builder was removed when
+// the foreign-compositor dispatch was dropped).
 
 // ─── libinput list-devices parsing ──────────────────────────────────
 // Devices are separated by blank lines; each block has "Device:",
@@ -117,7 +117,8 @@ function parseProc(lines) {
                 "id": cur.name,
                 "name": cur.name,
                 "type": cur.type,
-                // Unknown via /proc — assume available; gating handled by applyBackend.
+                // Unknown via /proc — assume available; these has* flags only
+                // affect which UI controls show, never live apply (persist-only).
                 "hasTap": cur.type === "touchpad",
                 "hasNaturalScroll": true,
                 "hasDisableWhileTyping": cur.type === "touchpad",
@@ -223,92 +224,10 @@ function parseEnum(out) {
     };
 }
 
-// ─── sway input command (argv) building ─────────────────────────────
-// Pure builders that return fully-tokenised argv arrays — there is NO `sh -c`,
-// so no argument is ever shell-parsed. The selector is always a controlled
-// literal (type:pointer / type:touchpad), the option is a controlled literal,
-// and the value is computed from a typed/clamped setting. Device names from
-// enumeration are NEVER used as selectors.
-
-// Single `swaymsg input <selector> <option> <value>` invocation as argv.
-function swayInputArgv(selector, option, value) {
-    return ["swaymsg", "input", selector, option, String(value)];
-}
-
-// Map pointerSpeed (stored 0..1) onto sway's pointer_accel (-1..1), 2dp.
-// Behavior-preserving with the original inline QML, which operated directly on
-// the typed pointerSpeed (a Settings real, always finite); no extra non-finite
-// fallback is added so the output matches the source exactly.
-function pointerAccelValue(pointerSpeed) {
-    return (Math.max(0, Math.min(1, pointerSpeed)) * 2 - 1).toFixed(2);
-}
-
-// Normalise an accel profile setting to the value sway expects.
-function accelProfileValue(accelProfile) {
-    return (accelProfile === "flat") ? "flat" : "adaptive";
-}
-
-// Normalise a scroll method to a value sway accepts (defaults to two_finger).
-function scrollMethodValue(scrollMethod) {
-    var sm = scrollMethod;
-    if (sm !== "two_finger" && sm !== "edge" && sm !== "on_button_down" && sm !== "none")
-        sm = "two_finger";
-    return sm;
-}
-
-// Build the FULL ordered list of `swaymsg input ...` argv arrays for the given
-// pointer settings — the exact sequence applyAll() dispatches live. Each entry
-// is its own argv array. Settings with no sway equivalent (double-click
-// time/distance, drag threshold, horizontal-scroll toggle) are intentionally
-// omitted (persist-only) rather than emitting inert commands.
-//
-// settings: {
-//   accelProfile, pointerSpeed, naturalScroll, scrollMethod,
-//   tapToClick, disableWhileTyping, leftHanded
-// }
-function buildSwayInputCommands(settings) {
-    settings = settings || {};
-    var ptr = "type:pointer";
-    var tp = "type:touchpad";
-    var cmds = [];
-
-    // Acceleration profile + speed.
-    var profile = accelProfileValue(settings.accelProfile);
-    cmds.push(swayInputArgv(ptr, "accel_profile", profile));
-    cmds.push(swayInputArgv(tp, "accel_profile", profile));
-    var accel = pointerAccelValue(settings.pointerSpeed);
-    cmds.push(swayInputArgv(ptr, "pointer_accel", accel));
-    cmds.push(swayInputArgv(tp, "pointer_accel", accel));
-
-    // Natural scroll.
-    var nat = settings.naturalScroll ? "enabled" : "disabled";
-    cmds.push(swayInputArgv(ptr, "natural_scroll", nat));
-    cmds.push(swayInputArgv(tp, "natural_scroll", nat));
-
-    // Scroll method (touchpad only).
-    cmds.push(swayInputArgv(tp, "scroll_method", scrollMethodValue(settings.scrollMethod)));
-
-    // Tap-to-click + disable-while-typing (touchpad only).
-    cmds.push(swayInputArgv(tp, "tap", settings.tapToClick ? "enabled" : "disabled"));
-    cmds.push(swayInputArgv(tp, "dwt", settings.disableWhileTyping ? "enabled" : "disabled"));
-
-    // Left-handed mode.
-    var lh = settings.leftHanded ? "enabled" : "disabled";
-    cmds.push(swayInputArgv(ptr, "left_handed", lh));
-    cmds.push(swayInputArgv(tp, "left_handed", lh));
-
-    return cmds;
-}
-
 if (typeof module !== "undefined") {
     module.exports = {
         parseLibinput: parseLibinput,
         parseProc: parseProc,
         parseEnum: parseEnum,
-        swayInputArgv: swayInputArgv,
-        pointerAccelValue: pointerAccelValue,
-        accelProfileValue: accelProfileValue,
-        scrollMethodValue: scrollMethodValue,
-        buildSwayInputCommands: buildSwayInputCommands,
     };
 }

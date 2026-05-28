@@ -387,6 +387,9 @@
       "version-new-user": "Fresh install"
     }
   },
+  "capabilities": {
+    "persist-only-note": "This setting is saved but not yet applied by the compositor. qdwin does not expose a request for it yet, so it will take effect automatically once support is added."
+  },
   "common": {
     "actions": "Actions",
     "add": "Add",
@@ -1512,7 +1515,7 @@
       "section-touchpad": "Touchpad",
       "section-doubleclick": "Double-click & Drag",
       "doubleclick-note": "Double-click timing and drag thresholds are UI-interaction preferences applied by toolkits (GTK/Qt) rather than libinput; they are persisted and applied where the toolkit honors them.",
-      "backend-persist-only": "The active compositor (qdwin) manages libinput configuration internally and does not yet accept pointer settings from qdshell. Your choices are saved and will be applied automatically once a supporting backend is detected. Live apply is currently available under sway-compatible compositors.",
+      "backend-persist-only": "The active compositor (qdwin) manages libinput configuration internally and does not yet accept pointer settings from qdshell — its IPC has no pointer-config request yet. Your choices are saved and will be applied automatically once qdwin gains support.",
       "no-devices-label": "No pointer devices detected",
       "no-devices-description": "No mice, touchpads, or trackpoints could be enumerated. The backend may be unavailable or lack the required permissions.",
       "device-type-mouse": "Mouse",
@@ -1950,6 +1953,7 @@
       "section-buttons": "Buttons",
       "section-lid": "Lid",
       "section-inactivity": "Inactivity",
+      "idle-persist-only": "Inactivity and display-off timeouts are saved but not yet enforced. qdwin does not expose an idle/DPMS control yet, so these will take effect automatically once support is added.",
       "section-critical-battery": "Critical Battery",
       "section-display": "Display",
       "power-button-action-label": "Power button action",

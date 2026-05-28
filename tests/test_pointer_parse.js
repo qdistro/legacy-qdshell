@@ -150,73 +150,17 @@ const enumNone = P.parseEnum("@@SRC:proc\nI: Bus=0011\nN: Name=\"AT Translated S
 assert.strictEqual(enumNone.source, "none");
 assert.strictEqual(enumNone.devices.length, 0);
 
-// ─── sway input argv builder (no sh -c, every token separate) ────────
-const cmds = P.buildSwayInputCommands({
-    accelProfile: "flat",
-    pointerSpeed: 0.75,
-    naturalScroll: true,
-    scrollMethod: "edge",
-    tapToClick: true,
-    disableWhileTyping: false,
-    leftHanded: true
-});
-
-// Every command is a fully-tokenised argv starting with swaymsg input; never
-// a shell string.
-cmds.forEach(c => {
-    assert.ok(Array.isArray(c), "each command is an argv array");
-    assert.strictEqual(c[0], "swaymsg");
-    assert.strictEqual(c[1], "input");
-    assert.notStrictEqual(c[0], "sh");
-    assert.strictEqual(c.length, 5, "exactly 5 tokens: swaymsg input <sel> <opt> <val>");
-});
-
-function find(selector, option) {
-    return cmds.find(c => c[2] === selector && c[3] === option);
-}
-
-// accel profile (flat) on both pointer and touchpad.
-assert.deepStrictEqual(find("type:pointer", "accel_profile"), ["swaymsg", "input", "type:pointer", "accel_profile", "flat"]);
-assert.deepStrictEqual(find("type:touchpad", "accel_profile"), ["swaymsg", "input", "type:touchpad", "accel_profile", "flat"]);
-
-// speed: 0.75 -> 0.75*2-1 = 0.50, tokenised value (not interpolated into shell).
-assert.deepStrictEqual(find("type:pointer", "pointer_accel"), ["swaymsg", "input", "type:pointer", "pointer_accel", "0.50"]);
-assert.deepStrictEqual(find("type:touchpad", "pointer_accel"), ["swaymsg", "input", "type:touchpad", "pointer_accel", "0.50"]);
-
-// natural scroll enabled.
-assert.deepStrictEqual(find("type:pointer", "natural_scroll"), ["swaymsg", "input", "type:pointer", "natural_scroll", "enabled"]);
-
-// scroll method (touchpad only) = edge.
-assert.deepStrictEqual(find("type:touchpad", "scroll_method"), ["swaymsg", "input", "type:touchpad", "scroll_method", "edge"]);
-
-// tap enabled, dwt disabled (touchpad only).
-assert.deepStrictEqual(find("type:touchpad", "tap"), ["swaymsg", "input", "type:touchpad", "tap", "enabled"]);
-assert.deepStrictEqual(find("type:touchpad", "dwt"), ["swaymsg", "input", "type:touchpad", "dwt", "disabled"]);
-
-// left handed enabled on both.
-assert.deepStrictEqual(find("type:pointer", "left_handed"), ["swaymsg", "input", "type:pointer", "left_handed", "enabled"]);
-assert.deepStrictEqual(find("type:touchpad", "left_handed"), ["swaymsg", "input", "type:touchpad", "left_handed", "enabled"]);
-
-// scroll method falls back to two_finger for an unknown value.
-assert.strictEqual(P.scrollMethodValue("bogus"), "two_finger");
-assert.strictEqual(P.scrollMethodValue("on_button_down"), "on_button_down");
-
-// accel profile defaults to adaptive when not "flat".
-assert.strictEqual(P.accelProfileValue("adaptive"), "adaptive");
-assert.strictEqual(P.accelProfileValue(""), "adaptive");
-
-// pointer accel clamps 0..1 input.
-assert.strictEqual(P.pointerAccelValue(0), "-1.00");
-assert.strictEqual(P.pointerAccelValue(1), "1.00");
-assert.strictEqual(P.pointerAccelValue(0.5), "0.00");
-assert.strictEqual(P.pointerAccelValue(5), "1.00");   // clamped
-assert.strictEqual(P.pointerAccelValue(-5), "-1.00"); // clamped
-
-// A device name containing shell metacharacters is NEVER used as a selector
-// (selectors are controlled literals only), so it cannot reach a command line.
-cmds.forEach(c => {
-    assert.ok(c[2] === "type:pointer" || c[2] === "type:touchpad",
-        "selector is always a controlled literal");
+// ─── qdwin-only: no live-apply command builder ──────────────────────
+// qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet,
+// so pointer settings are persist-only. The previous sway `swaymsg input …`
+// command builder was removed with the foreign-compositor dispatch — assert it
+// is gone so it cannot be reintroduced. A device name reaches the module only
+// as opaque parsed data; it is never turned into a command argument.
+assert.strictEqual(typeof P.buildSwayInputCommands, "undefined", "sway command builder must be gone");
+assert.strictEqual(typeof P.swayInputArgv, "undefined", "swayInputArgv must be gone");
+const exportedFns = Object.keys(P);
+exportedFns.forEach(name => {
+    assert.ok(!/sway/i.test(name), "no exported helper references sway: " + name);
 });
 
 console.log("pointer-parse: all assertions passed");

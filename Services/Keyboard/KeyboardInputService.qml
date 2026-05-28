@@ -41,7 +41,16 @@ Singleton {
   // True once capability detection has finished its first pass.
   property bool capabilitiesReady: false
 
-  // Can we apply keyboard settings to *something* right now?
+  // Can we apply keyboard settings right now? The only implemented apply path
+  // is the X server (real X11 / XWayland: setxkbmap/xset/numlockx) — NOT a
+  // foreign Wayland compositor, so it is allowed under the qdwin-only rule.
+  //
+  // The compositor (qdwin) xkb/repeat capability is tracked centrally in
+  // CapabilityService.xkbRepeat (false until qdwin_shell_v1 gains the request).
+  // It is intentionally NOT OR-ed into canApply yet: this service has no qdwin
+  // apply path, so claiming capability before one exists would hide the
+  // persist-only state while changes silently fail to apply. When a qdwin xkb
+  // request lands, add the apply path below and gate it on that flag.
   readonly property bool canApply: hasXServer && (hasSetxkbmap || hasXset)
   // Are we limited to persisting (no live apply backend detected)?
   readonly property bool persistOnly: capabilitiesReady && !canApply

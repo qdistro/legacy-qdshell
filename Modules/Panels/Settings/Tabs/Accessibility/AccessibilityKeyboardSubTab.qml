@@ -13,7 +13,7 @@ ColumnLayout {
   // Capability gate: when no xkb accessx backend is reachable these controls
   // are still shown (persist-only) but disabled with an explanation, following
   // the PowerService capability-gating pattern.
-  readonly property bool backendOk: AccessibilityService.keyboardBackendAvailable
+  readonly property bool backendOk: AccessibilityService.canApplyKeyboard
 
   NText {
     text: I18n.tr("panels.accessibility.keyboard-section")

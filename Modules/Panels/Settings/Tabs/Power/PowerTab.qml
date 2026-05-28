@@ -152,6 +152,40 @@ ColumnLayout {
     color: Color.mPrimary
   }
 
+  // Capability note: qdwin has no idle/DPMS IPC yet, so the inactivity and
+  // display-off policy below is persist-only until the compositor supports it.
+  Rectangle {
+    Layout.fillWidth: true
+    visible: !PowerService.canApplyIdle
+    radius: Style.iRadiusS
+    color: Color.mSurfaceVariant
+    border.color: Color.mOutline
+    border.width: Style.borderS
+    implicitHeight: idleBannerRow.implicitHeight + Style.marginM * 2
+
+    RowLayout {
+      id: idleBannerRow
+      anchors.fill: parent
+      anchors.margins: Style.marginM
+      spacing: Style.marginM
+
+      NIcon {
+        icon: "info-circle"
+        pointSize: Style.fontSizeXL
+        color: Color.mTertiary
+        Layout.alignment: Qt.AlignTop
+      }
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("panels.power.idle-persist-only")
+        color: Color.mOnSurfaceVariant
+        pointSize: Style.fontSizeS
+        wrapMode: Text.WordWrap
+      }
+    }
+  }
+
   NSpinBox {
     Layout.fillWidth: true
     label: I18n.tr("panels.power.inactivity-battery-label")

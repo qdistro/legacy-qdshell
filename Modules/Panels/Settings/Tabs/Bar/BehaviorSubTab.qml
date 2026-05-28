@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Services.Qdwin
 import qs.Widgets
 
 ColumnLayout {
@@ -20,25 +19,16 @@ ColumnLayout {
     Layout.fillWidth: true
     label: I18n.tr("panels.bar.behavior-workspace-scroll-label")
     description: I18n.tr("panels.bar.behavior-workspace-scroll-description")
-    model: {
-      var items = [
-        {
-          "key": "none",
-          "name": "Nothing"
-        },
-        {
-          "key": "workspace",
-          "name": "Workspace"
-        }
-      ];
-      if (Qdwin.isNiri) {
-        items.push({
-                    "key": "content",
-                    "name": "Content"
-                  });
+    model: [
+      {
+        "key": "none",
+        "name": "Nothing"
+      },
+      {
+        "key": "workspace",
+        "name": "Workspace"
       }
-      return items;
-    }
+    ]
     currentKey: root.effectiveWheelAction
     defaultValue: Settings.getDefaultValue("bar.mouseWheelAction")
     onSelected: key => {

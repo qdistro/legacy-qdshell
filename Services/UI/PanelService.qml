@@ -21,9 +21,6 @@ Singleton {
   property bool overlayLauncherOpen: false
   property var overlayLauncherScreen: null
   property var overlayLauncherCore: null  // Reference to LauncherCore when overlay is active
-  // Brief window after panel opens where Exclusive keyboard is allowed on Hyprland
-  // This allows text inputs to receive focus, then switches to OnDemand for click-to-close
-  property bool isInitializingKeyboard: false
 
   // Global state for keybind recording components to block global shortcuts
   property bool isKeybindRecording: false
@@ -225,16 +222,6 @@ Singleton {
     return null;
   }
 
-  // Timer to switch from Exclusive to OnDemand keyboard focus on Hyprland
-  Timer {
-    id: keyboardInitTimer
-    interval: 100
-    repeat: false
-    onTriggered: {
-      root.isInitializingKeyboard = false;
-    }
-  }
-
   // Helper to keep only one panel open at any time
   function willOpenPanel(panel) {
     // Close overlay launcher if open
@@ -253,12 +240,6 @@ Singleton {
     // Assign new panel to open slot
     openedPanel = panel;
     assignToSlot(0, panel);
-
-    // Start keyboard initialization period (for Hyprland workaround)
-    if (panel && panel.exclusiveKeyboard) {
-      isInitializingKeyboard = true;
-      keyboardInitTimer.restart();
-    }
 
     // emit signal
     willOpen();
@@ -398,10 +379,6 @@ Singleton {
       closingPanel = null;
       assignToSlot(1, null);
     }
-
-    // Reset keyboard init state
-    isInitializingKeyboard = false;
-    keyboardInitTimer.stop();
 
     // emit signal
     didClose();

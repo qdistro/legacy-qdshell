@@ -145,6 +145,7 @@ ShellRoot {
           HooksService.init();
           BluetoothService.init();
           IdleInhibitorService.init();
+          CapabilityService.init();
           PowerProfileService.init();
           PowerService.init();
           AccessibilityService.init();
@@ -192,7 +193,6 @@ ShellRoot {
         delayedInitTimer.running = true;
       }
 
-      Overview {}
       Background {}
       DesktopWidgets {}
       AllScreens {}

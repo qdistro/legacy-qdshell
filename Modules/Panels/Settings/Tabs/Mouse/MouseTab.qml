@@ -12,7 +12,6 @@ ColumnLayout {
   Layout.fillWidth: true
 
   Component.onCompleted: {
-    PointerInputService.detectApplyBackend();
     PointerInputService.refresh();
   }
 
@@ -125,10 +124,7 @@ ColumnLayout {
       text: I18n.tr("common.refresh")
       icon: "filepicker-refresh"
       outlined: true
-      onClicked: {
-        PointerInputService.detectApplyBackend();
-        PointerInputService.refresh();
-      }
+      onClicked: PointerInputService.refresh()
     }
   }
 

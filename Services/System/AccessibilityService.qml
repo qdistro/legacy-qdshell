@@ -27,8 +27,18 @@ Singleton {
   // ─── Capability flags ────────────────────────────────────────────
   // Whether an AccessX backend (xkbset on an X/XWayland server) is reachable so
   // the keyboard accessibility options (sticky/slow/bounce/mouse keys) can be
-  // applied live. Persist-only when false.
+  // applied live via the X server. Persist-only when false. This is the X path
+  // only (not a foreign Wayland compositor), so it is allowed under qdwin-only.
+  //
+  // The compositor (qdwin) xkb capability is tracked centrally in
+  // CapabilityService.xkbRepeat (false until qdwin_shell_v1 gains the request).
+  // It is intentionally NOT OR-ed into the apply gate yet: this service has no
+  // qdwin apply path, so claiming capability before one exists would enable the
+  // controls while changes silently fail to apply. Wire a qdwin apply path and
+  // gate it on that flag when the request lands.
   property bool keyboardBackendAvailable: false
+  // Overall capability for the UI — currently just the X path.
+  readonly property bool canApplyKeyboard: keyboardBackendAvailable
   // Whether an AT-SPI accessibility stack appears installed so the assistive
   // technology autostart can take effect. Persist-only when false.
   property bool assistiveTechBackendAvailable: false

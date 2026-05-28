@@ -303,7 +303,7 @@ Item {
       const screenName = screen.name.toLowerCase();
       for (var i = 0; i < Qdwin.workspaces.count; i++) {
         const ws = Qdwin.workspaces.get(i);
-        // For global workspaces (e.g., LabWC), show all workspaces on all screens
+        // For global workspaces, show all workspaces on all screens
         const matchesScreen = Qdwin.globalWorkspaces || (followFocusedScreen && ws.output.toLowerCase() == focusedOutput) || (!followFocusedScreen && ws.output.toLowerCase() == screenName);
 
         if (!matchesScreen)

@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Services.Qdwin
 import qs.Widgets
 
 ColumnLayout {
@@ -179,16 +178,6 @@ ColumnLayout {
     defaultValue: Settings.getDefaultValue("bar.capsuleOpacity")
     onMoved: value => Settings.data.bar.capsuleOpacity = value
     text: Math.floor(Settings.data.bar.capsuleOpacity * 100) + "%"
-  }
-
-  NToggle {
-    Layout.fillWidth: true
-    visible: Qdwin.isNiri
-    label: I18n.tr("panels.bar.appearance-hide-on-overview-label")
-    description: I18n.tr("panels.bar.appearance-hide-on-overview-description")
-    checked: Settings.data.bar.hideOnOverview
-    defaultValue: Settings.getDefaultValue("bar.hideOnOverview")
-    onToggled: checked => Settings.data.bar.hideOnOverview = checked
   }
 
   NToggle {

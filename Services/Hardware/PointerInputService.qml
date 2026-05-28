@@ -4,28 +4,28 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Services.Qdwin
 import qs.Services.UI
 import "PointerInputParse.js" as PointerInputParse
 
 // PointerInputService — enumerates pointer input devices (mice, touchpads,
-// trackpoints) and applies libinput-style pointer settings where a backend
-// supports it.
+// trackpoints) for the Settings > Mouse tab.
 //
-// Backend model (mirrors PowerService capability-gating):
-//   * Under qdwin (our default compositor) the compositor owns libinput
-//     configuration and qdwin_shell_v1 does NOT yet expose a pointer-config
-//     request. So on qdwin we are PERSIST-ONLY: settings are stored and will
-//     apply once a supporting backend exists, but the UI shows a clear
-//     "not applied by this backend" note.
-//   * Under a sway-like compositor (`swaymsg -t get_inputs` succeeds) we apply
-//     live via `swaymsg input <identifier> <cmd>`.
-//   * Enumeration prefers `libinput list-devices` (richest, but usually needs
-//     permissions); falls back to parsing `/proc/bus/input/devices` (always
-//     readable) and classifying devices by their evdev capability bits.
+// Backend model (qdwin-only, mirrors WindowManagerService / PowerService):
+//   * qdshell runs on exactly one compositor — qdwin (via libweston). qdwin
+//     owns libinput configuration and `qdwin_shell_v1` does NOT yet expose a
+//     pointer-config request, so we are PERSIST-ONLY: settings are stored and
+//     the UI shows a capability note. They apply automatically once qdwin
+//     grows the request (CapabilityService.pointerConfig flips true).
+//   * There is NO probing for or dispatch to any non-qdwin compositor
+//     (swaymsg / hyprctl / …) — qdwin is the only supported compositor.
 //
-// All shell-outs use the `_q()` shell-safe quoting pattern; device names and
-// identifiers obtained from enumeration are treated as untrusted input and are
-// never interpolated raw into `sh -c` strings.
+// Device enumeration is the only live operation: it prefers
+// `libinput list-devices` (richest, usually needs permissions) and falls back
+// to parsing `/proc/bus/input/devices` (always readable), classifying devices
+// by their evdev capability bits. Both are read-only system queries, not
+// compositor dispatch. Device names from enumeration are treated as untrusted
+// input and are never interpolated raw into `sh -c` strings.
 Singleton {
   id: root
 
@@ -36,11 +36,10 @@ Singleton {
   //     hasScrollMethod (bool) }
   property list<var> devices: []
 
-  // Which backend can actually apply settings live.
-  //   "sway"  — swaymsg input available, settings apply live.
-  //   "none"  — no live-apply backend (e.g. qdwin); persist-only.
-  property string applyBackend: "detecting"
-  readonly property bool canApply: applyBackend === "sway"
+  // Whether the backend can apply pointer settings live. qdwin_shell_v1 has no
+  // pointer-config request yet, so this is currently false (persist-only);
+  // sourced from the unified CapabilityService, not from probing any compositor.
+  readonly property bool canApply: CapabilityService.pointerConfig
 
   // Which source enumerated the device list (for the "no devices" UI state).
   //   "libinput" | "proc" | "none"
@@ -68,34 +67,8 @@ Singleton {
 
   // ─── Init ────────────────────────────────────────────────────────
   function init() {
-    Logger.i("PointerInputService", "Service started");
-    detectApplyBackend();
+    Logger.i("PointerInputService", "Service started (qdwin: persist-only, pointer config not yet applied by compositor)");
     refresh();
-  }
-
-  // Shell-safe quoting: wrap in single quotes, escaping embedded single quotes.
-  function _q(s) {
-    return "'" + String(s).replace(/'/g, "'\\''") + "'";
-  }
-
-  // ─── Backend detection ───────────────────────────────────────────
-  Process {
-    id: backendDetectProc
-    // swaymsg fails (non-zero) when no sway-compatible socket is present.
-    command: ["sh", "-c", "command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_inputs >/dev/null 2>&1 && echo sway || echo none"]
-    running: false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        var v = String(text || "").trim();
-        root.applyBackend = (v === "sway") ? "sway" : "none";
-        Logger.i("PointerInputService", "applyBackend:", root.applyBackend);
-      }
-    }
-    stderr: StdioCollector {}
-  }
-
-  function detectApplyBackend() {
-    backendDetectProc.running = true;
   }
 
   // ─── Enumeration ─────────────────────────────────────────────────
@@ -130,67 +103,5 @@ Singleton {
     root.devices = res.devices;
     root.ready = true;
     Logger.i("PointerInputService", "enumerated", res.devices.length, "pointer device(s) via", root.enumSource || "none");
-  }
-
-  // ─── Apply ───────────────────────────────────────────────────────
-  // Translate the stored settings into `swaymsg input <selector> <option>
-  // <value>` invocations. Only runs when applyBackend === "sway".
-  //
-  // Each call is dispatched as a fully-tokenised argv via
-  // Quickshell.execDetached — there is no `sh -c` and therefore no shell
-  // parsing of any argument. `selector` is always a controlled literal
-  // (type:pointer / type:touchpad); `option` is a controlled literal; `value`
-  // is a value we computed from a typed/clamped setting. Device names from
-  // enumeration are NEVER used as selectors here, so untrusted strings never
-  // reach a command line.
-  function _swayInput(argv) {
-    Quickshell.execDetached(argv);
-  }
-
-  // sway input options that XFCE's mouse dialog maps onto. Settings that have
-  // no sway equivalent (double-click time/distance, drag threshold,
-  // horizontal-scroll toggle) are intentionally NOT emitted here — they are
-  // persist-only and surfaced as such in the UI rather than firing inert
-  // commands that silently do nothing.
-  function applyAll() {
-    if (!canApply) {
-      Logger.d("PointerInputService", "applyAll skipped — backend cannot apply");
-      return;
-    }
-
-    // Build the exact ordered argv list in the pure module (no shell, every
-    // token separate) and dispatch each as a fully-tokenised argv.
-    var cmds = PointerInputParse.buildSwayInputCommands({
-      "accelProfile": accelProfile,
-      "pointerSpeed": pointerSpeed,
-      "naturalScroll": naturalScroll,
-      "scrollMethod": scrollMethod,
-      "tapToClick": tapToClick,
-      "disableWhileTyping": disableWhileTyping,
-      "leftHanded": leftHanded
-    });
-    for (var i = 0; i < cmds.length; i++)
-      _swayInput(cmds[i]);
-
-    Logger.i("PointerInputService", "applied pointer settings via swaymsg");
-  }
-
-  // Re-apply whenever a relevant setting changes (live backends only).
-  // horizontalScroll is omitted: sway/libinput has no on/off toggle for it
-  // (horizontal scrolling is implicit on two-finger touchpads), so we persist
-  // it for future backends rather than emit an inert command.
-  onAccelProfileChanged: applyAll()
-  onPointerSpeedChanged: applyAll()
-  onNaturalScrollChanged: applyAll()
-  onScrollMethodChanged: applyAll()
-  onTapToClickChanged: applyAll()
-  onDisableWhileTypingChanged: applyAll()
-  onLeftHandedChanged: applyAll()
-
-  // Re-apply once the backend is confirmed (covers settings loaded before
-  // detection finished).
-  onApplyBackendChanged: {
-    if (canApply)
-    applyAll();
   }
 }

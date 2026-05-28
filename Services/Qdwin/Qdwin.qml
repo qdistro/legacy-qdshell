@@ -17,11 +17,12 @@ import "../Qdshell/ClipboardSilo.js" as ClipboardSilo
 /// (Hyprland / Niri / Sway / Mango / Labwc) at startup and loads a
 /// matching backend adapter to provide workspace + window data via
 /// per-compositor IPC. qdshell drops the adapters because we run on
-/// exactly one compositor (qdwin via libweston).
+/// exactly one compositor (qdwin via libweston). The foreign-compositor
+/// identity flags are gone too — `isQdwin` is the only backend identity.
 ///
-/// The QML interface (workspaces ListModel, isHyprland flag, focus
-/// helpers, session controls, spawn) is preserved so the ~50 consumer
-/// .qml files compile unchanged. As of 2026-05-14 the `windows`
+/// The QML interface (workspaces ListModel, focus helpers, session
+/// controls, spawn) is preserved so the consumer .qml files compile
+/// unchanged. As of 2026-05-14 the `windows`
 /// ListModel + focus driving are populated via `Qdistro.Qdwin`
 /// (libqdistro-qdwin.so QML plugin) which binds qdwin_shell_v1 at v14
 /// and exposes toplevel events + imperative requests to QML. Workspace
@@ -31,14 +32,8 @@ import "../Qdshell/ClipboardSilo.js" as ClipboardSilo
 Singleton {
     id: root
 
-    // Compositor detection — we are always qdwin, so all flags false.
-    // (Kept readonly to make accidental writes fail loudly.)
-    readonly property bool isHyprland: false
-    readonly property bool isNiri: false
-    readonly property bool isSway: false
-    readonly property bool isMango: false
-    readonly property bool isLabwc: false
-    readonly property bool isScroll: false
+    // qdwin is the only supported compositor; this is the sole backend
+    // identity flag. (Kept readonly to make accidental writes fail loudly.)
     readonly property bool isQdwin: true
 
     // Workspace state — qdwin has no workspace concept yet, so we

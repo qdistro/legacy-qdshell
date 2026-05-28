@@ -109,7 +109,7 @@ Loader {
               Item {
                 anchors.fill: parent
 
-                // Mouse area to trigger focus on cursor movement (workaround for Hyprland focus issues)
+                // Mouse area to trigger focus on cursor movement
                 MouseArea {
                   anchors.fill: parent
                   hoverEnabled: true

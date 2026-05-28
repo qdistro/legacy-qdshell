@@ -32,11 +32,11 @@ Singleton {
 
   // ─── Capability ──────────────────────────────────────────────────
   // Whether the active backend can live-apply WM policy. qdwin has no
-  // qdwin_shell_v1 WM-policy request yet, so this is currently always false
-  // (persist-only). Derived from the qdwin identity / shell binding, NOT from
+  // qdwin_shell_v1 WM-policy request yet, so this is currently false
+  // (persist-only). Sourced from the unified CapabilityService, NOT from
   // probing for any non-qdwin window manager. Flips true automatically once a
-  // qdwin_shell_v1 WM-policy request exists and is bound.
-  readonly property bool canApplyWmPolicy: false
+  // qdwin_shell_v1 WM-policy request exists and CapabilityService reports it.
+  readonly property bool canApplyWmPolicy: CapabilityService.wmPolicy
 
   // ─── Settings convenience aliases ────────────────────────────────
   readonly property string focusPolicy: Settings.data.windowManager.focusPolicy

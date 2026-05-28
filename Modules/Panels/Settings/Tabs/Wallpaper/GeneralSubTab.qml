@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Services.Qdwin
 import qs.Services.UI
 import qs.Widgets
 
@@ -173,53 +172,4 @@ ColumnLayout {
     }
   }
 
-  NDivider {
-    Layout.fillWidth: true
-    visible: Qdwin.isNiri
-  }
-
-  ColumnLayout {
-    visible: Qdwin.isNiri
-    enabled: Settings.data.wallpaper.enabled
-    spacing: Style.marginL
-    Layout.fillWidth: true
-
-    NToggle {
-      label: I18n.tr("panels.wallpaper.settings-enable-overview-label")
-      description: I18n.tr("panels.wallpaper.settings-enable-overview-description")
-      checked: Settings.data.wallpaper.enabled && Settings.data.wallpaper.overviewEnabled
-      onToggled: checked => Settings.data.wallpaper.overviewEnabled = checked
-      defaultValue: Settings.getDefaultValue("wallpaper.overviewEnabled")
-    }
-
-    NValueSlider {
-      Layout.fillWidth: true
-      enabled: Settings.data.wallpaper.overviewEnabled
-      label: I18n.tr("panels.wallpaper.settings-overview-blur-strength-label")
-      description: I18n.tr("panels.wallpaper.settings-overview-blur-strength-description")
-      visible: Qdwin.isNiri
-      from: 0.0
-      to: 1.0
-      stepSize: 0.01
-      value: Settings.data.wallpaper.overviewBlur
-      onMoved: value => Settings.data.wallpaper.overviewBlur = value
-      text: ((Settings.data.wallpaper.overviewBlur) * 100).toFixed(0) + "%"
-      defaultValue: Settings.getDefaultValue("wallpaper.overviewBlur")
-    }
-
-    NValueSlider {
-      Layout.fillWidth: true
-      enabled: Settings.data.wallpaper.overviewEnabled
-      label: I18n.tr("panels.wallpaper.settings-overview-tint-label")
-      description: I18n.tr("panels.wallpaper.settings-overview-tint-description")
-      visible: Qdwin.isNiri
-      from: 0.0
-      to: 1.0
-      stepSize: 0.01
-      value: Settings.data.wallpaper.overviewTint
-      onMoved: value => Settings.data.wallpaper.overviewTint = value
-      text: ((Settings.data.wallpaper.overviewTint) * 100).toFixed(0) + "%"
-      defaultValue: Settings.getDefaultValue("wallpaper.overviewTint")
-    }
-  }
 }

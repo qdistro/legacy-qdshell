@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
 import qs.Modules.Bar.Extras
@@ -141,25 +140,6 @@ Item {
           }
         } catch (iconError) {
           Logger.w("ActiveWindow", "Error getting icon from Qdwin:", iconError);
-        }
-      }
-
-      if (Qdwin.isHyprland) {
-        // Fallback to ToplevelManager
-        if (ToplevelManager && ToplevelManager.activeToplevel) {
-          try {
-            const activeToplevel = ToplevelManager.activeToplevel;
-            if (activeToplevel.appId) {
-              const idValue2 = activeToplevel.appId;
-              const normalizedId2 = (typeof idValue2 === 'string') ? idValue2 : String(idValue2);
-              const iconResult2 = ThemeIcons.iconForAppId(normalizedId2.toLowerCase());
-              if (iconResult2 && iconResult2 !== "") {
-                return iconResult2;
-              }
-            }
-          } catch (fallbackError) {
-            Logger.w("ActiveWindow", "Error getting icon from ToplevelManager:", fallbackError);
-          }
         }
       }
 

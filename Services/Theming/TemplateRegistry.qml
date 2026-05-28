@@ -303,54 +303,6 @@ Singleton {
       "input": "emacs.el"
     },
     {
-      "id": "niri",
-      "name": "Niri",
-      "category": "compositor",
-      "input": "niri.kdl",
-      "outputs": [
-        {
-          "path": "~/.config/niri/qdshell.kdl"
-        }
-      ],
-      "postProcess": () => `${templateApplyScript} niri`
-    },
-    {
-      "id": "sway",
-      "name": "Sway",
-      "category": "compositor",
-      "input": "sway",
-      "outputs": [
-        {
-          "path": "~/.config/sway/qdshell"
-        }
-      ],
-      "postProcess": () => `${templateApplyScript} sway`
-    },
-    {
-      "id": "scroll",
-      "name": "Scroll",
-      "category": "compositor",
-      "input": "sway",
-      "outputs": [
-        {
-          "path": "~/.config/scroll/qdshell"
-        }
-      ],
-      "postProcess": () => `${templateApplyScript} scroll`
-    },
-    {
-      "id": "hyprland",
-      "name": "Hyprland",
-      "category": "compositor",
-      "input": "hyprland.conf",
-      "outputs": [
-        {
-          "path": "~/.config/hypr/qdshell/qdshell-colors.conf"
-        }
-      ],
-      "postProcess": () => `${templateApplyScript} hyprland`
-    },
-    {
       "id": "hyprtoolkit",
       "name": "Hyprtoolkit",
       "category": "system",
@@ -360,18 +312,6 @@ Singleton {
           "path": "~/.config/hypr/hyprtoolkit.conf"
         }
       ]
-    },
-    {
-      "id": "mango",
-      "name": "Mango",
-      "category": "compositor",
-      "input": "mango.conf",
-      "outputs": [
-        {
-          "path": "~/.config/mango/qdshell.conf"
-        }
-      ],
-      "postProcess": () => `${templateApplyScript} mango`
     },
     {
       "id": "btop",
