@@ -68,6 +68,14 @@ public:
     // clearSelection on a "deny". `isPrimary` mirrors the event
     // arg: 0 = clipboard, 1 = primary selection.
     Q_INVOKABLE void clearSelection(const QString &seat, quint32 isPrimary);
+
+    // spec/10 §"receive-time gating" (v15+) — echoes the broker's
+    // allow/deny verdict back to the compositor for a pending
+    // wl_data_offer.receive. Mirrors clearSelection: must be sent
+    // exactly once per dataOfferReceivePending event, else the
+    // compositor times out (~2s) and DENIES (empty paste).
+    Q_INVOKABLE void sendDataOfferReceiveDecision(quint32 requestHandle,
+                                                  bool allow);
     Q_INVOKABLE void nestedProxyDecision(quint32 handle, quint32 decision,
                                          const QString &reason);
     Q_INVOKABLE void activationDecision(quint32 handle, quint32 decision,
@@ -98,6 +106,18 @@ public:
         const QString &destAppId,
         const QString &sourceSandboxEngine,
         bool identityVerified);
+    // spec/10 §"receive-time gating" — receive-time twin of
+    // checkClipboardTransfer. Consults the broker's
+    // CheckClipboardReceive for a SINGLE requested mime (no list/
+    // count, since the compositor gates each receive() individually).
+    Q_INVOKABLE QVariantMap checkClipboardReceive(
+        const QString &sourceSilo,
+        const QString &destSilo,
+        const QString &mimeType,
+        const QString &sourceAppId,
+        const QString &destAppId,
+        const QString &sourceSandboxEngine,
+        bool identityVerified);
 
 signals:
     void boundChanged();
@@ -121,6 +141,18 @@ signals:
     // calls broker.CheckClipboardTransfer.
     void selectionSet(const QString &seat, quint32 sourceHandle,
                       const QString &mimeTypesConcat, quint32 isPrimary);
+
+    // spec/10 §"receive-time gating" (v15+) — fires when a destination
+    // client calls wl_data_offer.receive on a gated selection. The
+    // compositor blocks the receive (~2s) awaiting the shell's
+    // sendDataOfferReceiveDecision echoing requestHandle. sourceHandle
+    // and targetHandle map to silos via the handle→silo table and may
+    // be UINT32_MAX (no toplevel maps → treated as "unknown"). Unlike
+    // set-time, the target is explicit (the receiving client), not the
+    // keyboard-focused toplevel.
+    void dataOfferReceivePending(quint32 requestHandle, const QString &seat,
+                                 quint32 sourceHandle, quint32 targetHandle,
+                                 const QString &mimeType);
 
     // v23 sidecar — fires IMMEDIATELY BEFORE the matching selectionSet
     // when the wl_client that issued set_selection carries a
