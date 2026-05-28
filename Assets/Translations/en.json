@@ -1969,7 +1969,26 @@
       "xkb-caps-none": "Disable Caps Lock",
       "xkb-terminate": "Ctrl+Alt+Backspace terminates the X server",
       "xkb-altwin-menu": "Alt+Win behaves like the Menu key",
-      "none": "None"
+      "none": "None",
+      "shortcuts-title": "Shortcuts",
+      "shortcuts-capability-note": "Global hotkeys are owned by the qdwin compositor, which does not yet expose a way to bind them. These shortcuts are saved and will take effect once qdwin supports applying them. The navigation keybinds below are handled directly by qdshell.",
+      "shortcuts-reset-all": "Reset to defaults",
+      "custom-shortcuts-title": "Custom application shortcuts",
+      "custom-shortcuts-description": "Bind a key combination to a command. Commands run directly (no shell), so characters like ; | & are passed literally and cannot chain extra commands.",
+      "custom-shortcuts-empty": "No custom shortcuts yet. Add one below.",
+      "custom-shortcuts-add": "Add custom shortcut",
+      "custom-shortcuts-edit": "Edit custom shortcut",
+      "custom-shortcuts-add-button": "Add shortcut",
+      "custom-shortcuts-name-label": "Name",
+      "custom-shortcuts-name-placeholder": "Optional label (defaults to the command)",
+      "custom-shortcuts-command-label": "Command",
+      "custom-shortcuts-command-description": "Program to launch with its arguments. Run as an argument vector, never via a shell.",
+      "custom-shortcuts-combo-label": "Key combination",
+      "custom-shortcuts-conflict": "This combination conflicts with another shortcut.",
+      "custom-shortcuts-incomplete-title": "Shortcut incomplete",
+      "custom-shortcuts-incomplete-description": "A custom shortcut needs both a key combination and a command.",
+      "custom-shortcuts-shell-title": "Shell command not allowed",
+      "custom-shortcuts-shell-description": "Custom shortcuts cannot invoke a shell with -c (e.g. sh -c ...). Enter the program and its arguments directly instead."
     }
   },
   "placeholders": {

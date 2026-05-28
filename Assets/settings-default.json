@@ -129,7 +129,8 @@
       ],
       "keyRemove": [
         "Del"
-      ]
+      ],
+      "customShortcuts": []
     },
     "reverseScroll": false,
     "smoothScrollEnabled": true

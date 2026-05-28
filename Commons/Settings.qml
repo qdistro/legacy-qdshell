@@ -304,6 +304,12 @@ Singleton {
         property list<string> keyEnter: ["Return"]
         property list<string> keyEscape: ["Esc"]
         property list<string> keyRemove: ["Del"]
+        // User-defined application-command shortcuts. Each entry is a
+        // { combo, command, name } object (combo stored in canonical form per
+        // Services/Keyboard/ShortcutConflicts.js). The command is UNTRUSTED and
+        // MUST be run via an escaped argv (never `sh -c`). qdwin does not yet
+        // bind global hotkeys, so these are persist-only (capability-gated UI).
+        property var customShortcuts: []
       }
       property bool reverseScroll: false
       property bool smoothScrollEnabled: true
