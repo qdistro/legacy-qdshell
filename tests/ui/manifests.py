@@ -28,25 +28,24 @@ class Surface:
     expectation: str           # filename under tests/ui/expectations/
 
 
-# 23 covered settings tabs — `qs ipc call settings openTab <name>`.
+# 24 covered settings tabs — `qs ipc call settings openTab <name>`.
 # Names are a subset of IPCService.qml::_settingsTabMap keys; the map also
-# contains "appearance" and "about", which we deliberately omit (see notes
-# below — "about" falls back to General, and "appearance" overlaps the
-# colorscheme/userinterface coverage).
+# contains "about", which we deliberately omit (see notes below — "about"
+# falls back to General).
 SETTINGS_TABS = [
     "general", "userinterface", "colorscheme", "wallpaper", "bar", "dock",
     "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
     "display", "location", "mouse", "keyboard", "accessibility", "osd",
     "connections", "hooks", "lockscreen", "sessionmenu", "systemmonitor",
-    "plugins",
+    "plugins", "appearance",
 ]
 # Notes on tabs we deliberately don't cover:
 #  - "about" — qdshell strips the upstream About box. The IPC map keeps the
 #    name but the underlying SettingsPanel.Tab enum has no About member, so
 #    `openTab about` falls back to General. Not testable.
-#  - "appearance" — present in _settingsTabMap but its surface overlaps the
-#    "colorscheme"/"userinterface" tabs already covered; left out to avoid a
-#    redundant near-duplicate expectation.
+#  - "appearance" — `openTab appearance` resolves to SettingsPanel.Tab.Appearance.
+#    Now covers GTK-theme/font-rendering/icon-policy/sound-theme controls that no
+#    longer overlap colorscheme/userinterface, so it has its own expectation.
 #  - "Region" tab in the audit corresponds to "location" in the IPC map.
 #  - "Vault" (from the original audit) isn't in _settingsTabMap and isn't
 #    IPC-reachable.

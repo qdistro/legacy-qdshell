@@ -761,6 +761,20 @@ Singleton {
       property string iconTheme: ""
       property string cursorTheme: ""
       property int cursorSize: 24
+      property string gtkTheme: ""
+      property string soundTheme: ""
+      // toolbar/menu icon policy (GTK)
+      property bool showIconsInMenus: true
+      property bool showIconsInButtons: true
+    }
+
+    // font rendering (GTK xft + fontconfig)
+    property JsonObject fontRendering: JsonObject {
+      property int dpi: 0 // 0 = auto / system default
+      property bool antialias: true
+      property bool hinting: true
+      property string hintstyle: "slight" // none|slight|medium|full
+      property string rgba: "rgb" // none|rgb|bgr|vrgb|vbgr
     }
 
     // desktop widgets
