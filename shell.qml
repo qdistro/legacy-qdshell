@@ -77,6 +77,38 @@ ShellRoot {
     target: Settings ? Settings : null
     function onSettingsLoaded() {
       settingsLoaded = true;
+      // Apply appearance settings (icon/cursor theme) early so newly
+      // launched apps inherit the right environment.
+      applyAppearanceSettings();
+    }
+  }
+
+  function applyAppearanceSettings() {
+    var iconTheme = Settings.data.appearance.iconTheme || "";
+    var cursorTheme = Settings.data.appearance.cursorTheme || "";
+    var cursorSize = Settings.data.appearance.cursorSize || 24;
+
+    // Validate theme names — only alphanumeric, dash, underscore, period
+    var safeRe = /^[A-Za-z0-9._-]+$/;
+    if (iconTheme.length > 0 && !safeRe.test(iconTheme)) iconTheme = "";
+    if (cursorTheme.length > 0 && !safeRe.test(cursorTheme)) cursorTheme = "";
+
+    var envLines = [];
+    if (iconTheme.length > 0) {
+      envLines.push("export QT_QPA_PLATFORMTHEME_ICON_THEME=" + iconTheme);
+    }
+    if (cursorTheme.length > 0) {
+      envLines.push("export XCURSOR_THEME=" + cursorTheme);
+    }
+    envLines.push("export XCURSOR_SIZE=" + cursorSize);
+
+    if (envLines.length > 0) {
+      // Write a session env snippet that login children source
+      Quickshell.execDetached(["sh", "-c",
+        "mkdir -p ~/.config/qdshell && printf '%s\\n' " +
+        envLines.map(function(l) { return "'" + l + "'"; }).join(" ") +
+        " > ~/.config/qdshell/appearance-env.sh"
+      ]);
     }
   }
 

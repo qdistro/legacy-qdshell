@@ -423,6 +423,9 @@
       "lowSoundFile": "",
       "excludedApps": "discord,firefox,chrome,chromium,edge"
     },
+    "suppressDuplicates": true,
+    "suppressDuplicateWindowSec": 3,
+    "appPolicy": {},
     "enableMediaToast": false,
     "enableKeyboardLayoutToast": true,
     "enableBatteryToast": true
@@ -490,6 +493,15 @@
   },
   "plugins": {
     "autoUpdate": false
+  },
+  "workspaces": {
+    "count": 4,
+    "names": ["1", "2", "3", "4"]
+  },
+  "appearance": {
+    "iconTheme": "",
+    "cursorTheme": "",
+    "cursorSize": 24
   },
   "desktopWidgets": {
     "enabled": false,

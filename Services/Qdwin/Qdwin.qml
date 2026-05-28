@@ -39,8 +39,37 @@ Singleton {
     readonly property bool isScroll: false
     readonly property bool isQdwin: true
 
-    // Workspace state stays empty — qdwin has no workspace concept yet.
+    // Workspace state — qdwin has no workspace concept yet, so we
+    // populate from the user's settings (workspaces.count / .names)
+    // to give the bar widget something to display.
     property ListModel workspaces: ListModel {}
+    property int _settingsWorkspaceCount: Settings.isLoaded ? Settings.data.workspaces.count : 4
+    property var _settingsWorkspaceNames: Settings.isLoaded ? Settings.data.workspaces.names : []
+
+    on_SettingsWorkspaceCountChanged: _rebuildSettingsWorkspaces()
+    on_SettingsWorkspaceNamesChanged: _rebuildSettingsWorkspaces()
+
+    function _rebuildSettingsWorkspaces() {
+        if (!Settings.isLoaded) return;
+        var count = Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        var names = _settingsWorkspaceNames || [];
+        workspaces.clear();
+        for (var i = 0; i < count; i++) {
+            var label = (i < names.length && names[i] !== "") ? names[i] : String(i + 1);
+            workspaces.append({
+                id: i,
+                idx: i + 1,
+                name: label,
+                output: "",
+                isFocused: i === 0,
+                isActive: i === 0,
+                isUrgent: false,
+                isOccupied: false,
+            });
+        }
+        root.workspaceChanged();
+    }
+
     // Window state is populated from qdwin_shell_v1 events via the
     // Qdistro.Qdwin plugin (see QdwinBinding below).
     //
@@ -260,7 +289,18 @@ Singleton {
             if (typeof ShellState !== 'undefined' && ShellState.isLoaded) {
                 loadDisplayScalesFromState();
             }
+            // Populate workspaces from settings on startup
+            if (Settings.isLoaded) {
+                _rebuildSettingsWorkspaces();
+            }
         });
+    }
+
+    Connections {
+        target: Settings
+        function onSettingsLoaded() {
+            root._rebuildSettingsWorkspaces();
+        }
     }
 
     Connections {
@@ -294,7 +334,7 @@ Singleton {
         const result = [];
         for (let i = 0; i < workspaces.count; i++) {
             const ws = workspaces.get(i);
-            if (ws.active) result.push(ws);
+            if (ws.isActive) result.push(ws);
         }
         return result;
     }

@@ -263,6 +263,9 @@ Item {
     function onWorkspacesChanged() {
       refreshWorkspaces();
     }
+    function onWorkspaceChanged() {
+      refreshWorkspaces();
+    }
     function onWindowListChanged() {
       if (showApplications || showLabelsOnlyWhenOccupied) {
         root.windowRevision++;

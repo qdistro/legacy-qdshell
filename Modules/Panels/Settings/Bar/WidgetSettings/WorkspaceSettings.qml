@@ -55,6 +55,32 @@ ColumnLayout {
     settingsChanged(settings);
   }
 
+  // Link to global workspace configuration
+  NSpinBox {
+    label: I18n.tr("panels.appearance.workspace-count-label")
+    description: I18n.tr("panels.appearance.workspace-count-description")
+    from: 1
+    to: 32
+    value: Settings.data.workspaces.count
+    onValueChanged: {
+      if (value !== Settings.data.workspaces.count) {
+        Settings.data.workspaces.count = value;
+        var names = (Settings.data.workspaces.names || []).slice();
+        while (names.length < value) {
+          names.push(String(names.length + 1));
+        }
+        if (names.length > value) {
+          names = names.slice(0, value);
+        }
+        Settings.data.workspaces.names = names;
+      }
+    }
+  }
+
+  NDivider {
+    Layout.fillWidth: true
+  }
+
   NComboBox {
     id: labelModeCombo
     label: I18n.tr("bar.workspace.label-mode-label")

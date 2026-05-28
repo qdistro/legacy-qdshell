@@ -66,6 +66,7 @@ Singleton {
   // Settings IPC helpers (outside IpcHandler to avoid QVariant IPC warnings)
   readonly property var _settingsTabMap: ({
                                             "about": SettingsPanel.Tab.About,
+                                            "appearance": SettingsPanel.Tab.Appearance,
                                             "audio": SettingsPanel.Tab.Audio,
                                             "bar": SettingsPanel.Tab.Bar,
                                             "colorscheme": SettingsPanel.Tab.ColorScheme,

@@ -748,6 +748,21 @@
       "update-available": "Update available",
       "view-commit": "View commit on GitHub"
     },
+    "appearance": {
+      "title": "Appearance",
+      "cursor-size-description": "Size of the mouse cursor in pixels.",
+      "cursor-size-label": "Cursor size",
+      "cursor-theme-description": "Select the mouse cursor theme. Themes are discovered from /usr/share/icons/.",
+      "cursor-theme-label": "Cursor theme",
+      "icon-theme-description": "Select the icon theme for applications. Themes are discovered from /usr/share/icons/.",
+      "icon-theme-label": "Icon theme",
+      "system-default": "System default",
+      "themes-header": "Themes",
+      "workspace-count-description": "Number of virtual workspaces available.",
+      "workspace-count-label": "Workspace count",
+      "workspace-name-label": "Workspace",
+      "workspaces-header": "Workspaces"
+    },
     "audio": {
       "devices-desc": "Configure available audio input and output devices.",
       "devices-input-device-description": "Select the desired audio input device.",

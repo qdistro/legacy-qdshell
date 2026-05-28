@@ -630,6 +630,9 @@ Singleton {
         property string lowSoundFile: ""
         property string excludedApps: "discord,firefox,chrome,chromium,edge"
       }
+      property bool suppressDuplicates: true
+      property int suppressDuplicateWindowSec: 3
+      property var appPolicy: ({})
       property bool enableMediaToast: false
       property bool enableKeyboardLayoutToast: true
       property bool enableBatteryToast: true
@@ -709,6 +712,19 @@ Singleton {
     // plugins
     property JsonObject plugins: JsonObject {
       property bool autoUpdate: false
+    }
+
+    // workspaces
+    property JsonObject workspaces: JsonObject {
+      property int count: 4
+      property list<string> names: ["1", "2", "3", "4"]
+    }
+
+    // appearance
+    property JsonObject appearance: JsonObject {
+      property string iconTheme: ""
+      property string cursorTheme: ""
+      property int cursorSize: 24
     }
 
     // desktop widgets
