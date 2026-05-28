@@ -2,20 +2,21 @@
 // WindowManagerService.qml. NO Process / Settings / Quickshell access: only
 // string/array transforms and enum normalisation. Usable from both QML
 // (import "WindowManagerPolicy.js" as WMPolicy) and Node
-// (require("./WindowManagerPolicy.js")) so the policy/command-building logic
-// can be unit-tested headless.
+// (require("./WindowManagerPolicy.js")) so the policy logic can be unit-tested
+// headless.
 //
-// Responsibilities:
+// qdshell only ever runs on qdwin, whose qdwin_shell_v1 IPC has no
+// window-manager-policy mutation request yet. So this module does NOT build any
+// compositor command (no sway/labwc/hyprctl argv) — WM policy is persist-only.
+// Its job is purely to keep persisted values sane and safe:
 //   1. Normalise/validate the window-manager policy enums (focus policy,
 //      new-window placement, titlebar double-click action) to canonical
 //      tokens, with safe fallbacks for unknown/garbage input.
 //   2. Clamp the numeric policy values (focus-follows-mouse delay, snap
 //      distance) into their valid ranges.
-//   3. Build a backend reconfigure command (labwc / sway-style) as a
-//      fully-tokenised argv array. There is NO `sh -c`; every token is a
-//      separate array element, so untrusted strings (e.g. a decoration theme
-//      name like `;rm -rf ~`) are passed as a single literal argv element and
-//      can NEVER be re-parsed by a shell.
+//   3. Validate keyboard-shortcut accelerator strings against a strict
+//      allowlist so a malicious accelerator can never be persisted as
+//      something a future backend might mis-parse as an extra command.
 
 // ─── Enum vocabularies ───────────────────────────────────────────────
 var FOCUS_POLICIES = ["click", "follow-mouse"];
@@ -74,15 +75,44 @@ function clampSnapDistance(value) {
     return _clampInt(value, SNAP_DISTANCE_MIN, SNAP_DISTANCE_MAX);
 }
 
-// Coerce an untrusted free-text value (theme name, shortcut accelerator) to a
-// string. Kept verbatim as DATA — it has no shell meaning when placed in a
-// single argv element. We NEVER concatenate it into a shell string.
+// A keyboard-shortcut accelerator is a `+`-joined list of modifier/key tokens,
+// e.g. "Super+Shift+Left". We VALIDATE it against a strict allowlist: it must
+// contain ONLY ASCII letters, digits, `+`, `_`, and `-`. Anything else
+// (whitespace, `;`, backticks, `$(...)`, etc.) makes the whole accelerator
+// invalid. This is what keeps a malicious accelerator like
+// "Alt+F4 kill; exec touch /tmp/pwned" from ever being treated as valid — it
+// is rejected here, so a future backend can never be handed a string that
+// smuggles in extra commands.
+var _ACCEL_RE = /^[A-Za-z0-9_+-]+$/;
+
+function isValidAccelerator(accel) {
+    var a = String(accel === undefined || accel === null ? "" : accel);
+    if (a.length === 0)
+        return false;
+    return _ACCEL_RE.test(a);
+}
+
+// Sanitise an accelerator for PERSISTENCE: a valid accelerator is kept; an
+// invalid one (empty, whitespace, shell/command separators, etc.) is collapsed
+// to "" so a dangerous string is never persisted as if it were a usable
+// accelerator. Used by normalizePolicy so the stored policy can only ever hold
+// safe accelerator tokens.
+function sanitizeAccelerator(accel) {
+    return isValidAccelerator(accel) ? String(accel) : "";
+}
+
+// Coerce an untrusted free-text value (the decoration theme name) to a string.
+// Kept verbatim as DATA — it is never built into a command. We strip leading /
+// trailing whitespace only; the name has no special meaning to qdshell.
 function _str(value) {
     return String(value === undefined || value === null ? "" : value);
 }
 
-// Produce a fully-normalised policy object from a raw settings-shaped object.
-// Booleans are coerced with !! so any truthy/falsy persisted value is sane.
+// Produce a fully-normalised, persist-safe policy object from a raw
+// settings-shaped object. Booleans are coerced with !! so any truthy/falsy
+// persisted value is sane. Accelerators are sanitised so only allowlisted
+// tokens survive; the decoration theme name is kept verbatim (opaque data,
+// never used to build a command).
 function normalizePolicy(raw) {
     raw = raw || {};
     return {
@@ -94,105 +124,17 @@ function normalizePolicy(raw) {
         snapEnabled: !!raw.snapEnabled,
         snapDistance: clampSnapDistance(raw.snapDistance),
         titlebarDoubleClick: normalizeTitlebarAction(raw.titlebarDoubleClick),
-        // Decoration theme name is UNTRUSTED free text — kept as-is here (no
-        // shell meaning in an argv element) but never trusted into a shell.
+        // Decoration theme name is UNTRUSTED free text — kept as-is (opaque
+        // data, never used to build a command).
         decorationTheme: _str(raw.decorationTheme),
-        // WM keyboard shortcut accelerators are likewise UNTRUSTED free text.
-        shortcutClose: _str(raw.shortcutClose),
-        shortcutToggleMaximize: _str(raw.shortcutToggleMaximize),
-        shortcutToggleFullscreen: _str(raw.shortcutToggleFullscreen),
-        shortcutTileLeft: _str(raw.shortcutTileLeft),
-        shortcutTileRight: _str(raw.shortcutTileRight)
+        // WM keyboard shortcut accelerators are UNTRUSTED free text. Only
+        // allowlisted tokens survive; anything malicious collapses to "".
+        shortcutClose: sanitizeAccelerator(raw.shortcutClose),
+        shortcutToggleMaximize: sanitizeAccelerator(raw.shortcutToggleMaximize),
+        shortcutToggleFullscreen: sanitizeAccelerator(raw.shortcutToggleFullscreen),
+        shortcutTileLeft: sanitizeAccelerator(raw.shortcutTileLeft),
+        shortcutTileRight: sanitizeAccelerator(raw.shortcutTileRight)
     };
-}
-
-// ─── Backend reconfigure command (argv) building ─────────────────────
-// Map the focus policy onto a sway-style `focus_follows_mouse` value.
-function focusFollowsMouseValue(focusPolicy) {
-    return normalizeFocusPolicy(focusPolicy) === "follow-mouse" ? "yes" : "no";
-}
-
-// Build the ordered list of backend reconfigure argv arrays for a sway-style
-// compositor. Each entry is its OWN argv array — there is NO `sh -c`, so no
-// element is shell-parsed. The decoration theme name is passed as a single
-// literal argv element (never concatenated into a string), so shell
-// metacharacters in it are inert.
-//
-// Settings with no sway equivalent are intentionally omitted (persist-only)
-// rather than emitting inert commands.
-function buildSwayReconfigureCommands(policy) {
-    var p = normalizePolicy(policy);
-    var cmds = [];
-
-    // Focus-follows-mouse on/off.
-    cmds.push(["swaymsg", "focus_follows_mouse", focusFollowsMouseValue(p.focusPolicy)]);
-
-    // Edge tiling / snapping. sway uses smart_borders + a tiling drag toggle;
-    // we map the snap toggle onto `tiling_drag` which is the closest live
-    // equivalent and accepts a literal on/off token.
-    cmds.push(["swaymsg", "tiling_drag", p.snapEnabled ? "enable" : "disable"]);
-
-    return cmds;
-}
-
-// A keybinding accelerator is a `+`-joined list of modifier/key tokens, e.g.
-// "Super+Shift+Left". We VALIDATE it against a strict allowlist before it ever
-// reaches `swaymsg bindsym`: not only must it survive argv separation (no
-// `sh -c`), it must ALSO not contain whitespace or any character sway's
-// bindsym parser would treat as a command separator — otherwise an accelerator
-// like "Alt+F4 kill; exec touch /tmp/pwned" could inject extra sway commands.
-// Allowed: ASCII letters, digits, `+`, `_`, and `-` only. Anything else makes
-// the whole accelerator invalid (rejected, never emitted).
-var _ACCEL_RE = /^[A-Za-z0-9_+-]+$/;
-
-function isValidAccelerator(accel) {
-    var a = String(accel === undefined || accel === null ? "" : accel);
-    if (a.length === 0)
-        return false;
-    return _ACCEL_RE.test(a);
-}
-
-// Build the ordered list of `swaymsg bindsym <accelerator> <action>` argv
-// arrays for the WM keyboard shortcuts. Each entry is its OWN argv array —
-// there is NO `sh -c`. The accelerator strings are UNTRUSTED user input, so in
-// addition to argv separation we REJECT any accelerator that fails
-// isValidAccelerator() (which excludes whitespace and sway command separators
-// like `;`), defending against sway-command injection — not just shell
-// injection. Invalid or empty accelerators are skipped (no bindsym emitted).
-// The action is always a controlled literal, never derived from user input.
-function buildSwayKeybindCommands(policy) {
-    var p = normalizePolicy(policy);
-    var binds = [
-        [p.shortcutClose, "kill"],
-        // sway has no single "maximize"; fullscreen is the closest live action.
-        [p.shortcutToggleMaximize, "fullscreen toggle"],
-        [p.shortcutToggleFullscreen, "fullscreen toggle global"],
-        // Tiling left/right: split then focus the appropriate sibling so the
-        // two shortcuts produce distinct behaviour.
-        [p.shortcutTileLeft, "move left"],
-        [p.shortcutTileRight, "move right"]
-    ];
-    var cmds = [];
-    for (var i = 0; i < binds.length; i++) {
-        var accel = binds[i][0];
-        if (!isValidAccelerator(accel))
-            continue;
-        // accel is a validated single token; action is a controlled literal.
-        cmds.push(["swaymsg", "bindsym", accel, binds[i][1]]);
-    }
-    return cmds;
-}
-
-// Build a labwc theme-apply argv. labwc reads its theme name from a config
-// file rather than a live IPC, so the "apply" we can do safely is to ask labwc
-// to reconfigure after the config has been written. The theme name itself is
-// NEVER interpolated into a command — it is written to config by the caller
-// and only the (argument-free) reconfigure signal is dispatched here. We still
-// accept the name so callers can log it, but it is returned separately and is
-// NOT part of the argv.
-function buildLabwcReconfigureCommand() {
-    // `labwc --reconfigure` re-reads themerc/rc.xml. No untrusted data in argv.
-    return ["labwc", "--reconfigure"];
 }
 
 if (typeof module !== "undefined") {
@@ -209,11 +151,8 @@ if (typeof module !== "undefined") {
         normalizeTitlebarAction: normalizeTitlebarAction,
         clampFfmDelay: clampFfmDelay,
         clampSnapDistance: clampSnapDistance,
-        normalizePolicy: normalizePolicy,
-        focusFollowsMouseValue: focusFollowsMouseValue,
         isValidAccelerator: isValidAccelerator,
-        buildSwayReconfigureCommands: buildSwayReconfigureCommands,
-        buildSwayKeybindCommands: buildSwayKeybindCommands,
-        buildLabwcReconfigureCommand: buildLabwcReconfigureCommand,
+        sanitizeAccelerator: sanitizeAccelerator,
+        normalizePolicy: normalizePolicy,
     };
 }

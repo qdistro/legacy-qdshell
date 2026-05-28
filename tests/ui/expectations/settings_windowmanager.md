@@ -23,11 +23,13 @@ What must be visible when this tab is open:
 - The standard left-side Settings tab strip is visible.
 
 Notes:
-- When the active compositor cannot apply WM policy live (e.g. qdwin), a
-  persist-only banner (`panels.window-manager.backend-persist-only`) is shown at
-  the top of the tab. Under qdwin all of these controls are persist-only: the
-  values are saved and will be applied once a supporting backend (sway-style or
-  labwc) is detected, where WindowManagerService reconfigures via tokenised
-  argv (never a raw shell string).
+- qdshell only ever runs on qdwin, whose IPC has no window-manager-policy
+  request yet, so all of these controls are persist-only. A persist-only banner
+  (`panels.window-manager.backend-persist-only`) is shown at the top of the tab
+  (visible whenever `WindowManagerService.canApplyWmPolicy` is false, which is
+  always under qdwin today). The values are saved now and will be applied
+  automatically once qdwin gains a window-manager-policy request — there is no
+  probing for or dispatch to sway / labwc / any other compositor.
 - The decoration-theme name and shortcut strings are treated as untrusted free
-  text and are never interpolated into a shell command.
+  text. Shortcut accelerators are validated against a strict allowlist, so a
+  malicious accelerator can never be persisted as a usable shortcut.
