@@ -1,0 +1,371 @@
+pragma Singleton
+
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Commons
+
+// Service to manage default application / MIME type associations.
+// Reads from ~/.config/mimeapps.list and /usr/share/applications/mimeapps.list,
+// discovers installed .desktop files, and writes user preferences back to
+// ~/.config/mimeapps.list [Default Applications].
+Singleton {
+  id: root
+
+  // ── Category definitions ──────────────────────────────────────────────
+  // Each category maps to the MIME types / desktop-file fields used for
+  // discovery and the representative MIME type written to mimeapps.list.
+
+  readonly property var categories: [
+    {
+      "id": "browser",
+      "mimeTypes": ["text/html", "x-scheme-handler/http", "x-scheme-handler/https"],
+      "primaryMime": "x-scheme-handler/http",
+      "allMimes": ["text/html", "x-scheme-handler/http", "x-scheme-handler/https"]
+    },
+    {
+      "id": "mail",
+      "mimeTypes": ["x-scheme-handler/mailto"],
+      "primaryMime": "x-scheme-handler/mailto",
+      "allMimes": ["x-scheme-handler/mailto"]
+    },
+    {
+      "id": "fileManager",
+      "mimeTypes": ["inode/directory"],
+      "primaryMime": "inode/directory",
+      "allMimes": ["inode/directory"]
+    },
+    {
+      "id": "terminal",
+      "mimeTypes": [],
+      "categoryField": "TerminalEmulator",
+      "primaryMime": "",
+      "allMimes": []
+    },
+    {
+      "id": "textEditor",
+      "mimeTypes": ["text/plain"],
+      "primaryMime": "text/plain",
+      "allMimes": ["text/plain"]
+    },
+    {
+      "id": "imageViewer",
+      "mimeTypes": ["image/png", "image/jpeg", "image/gif", "image/bmp", "image/svg+xml", "image/webp"],
+      "primaryMime": "image/png",
+      "allMimes": ["image/png", "image/jpeg", "image/gif", "image/bmp", "image/svg+xml", "image/webp"]
+    },
+    {
+      "id": "audioPlayer",
+      "mimeTypes": ["audio/mpeg", "audio/ogg", "audio/flac", "audio/x-wav", "audio/mp4", "audio/aac"],
+      "primaryMime": "audio/mpeg",
+      "allMimes": ["audio/mpeg", "audio/ogg", "audio/flac", "audio/x-wav", "audio/mp4", "audio/aac"]
+    },
+    {
+      "id": "videoPlayer",
+      "mimeTypes": ["video/mp4", "video/x-matroska", "video/webm", "video/ogg", "video/x-msvideo", "video/mpeg"],
+      "primaryMime": "video/mp4",
+      "allMimes": ["video/mp4", "video/x-matroska", "video/webm", "video/ogg", "video/x-msvideo", "video/mpeg"]
+    }
+  ]
+
+  // ── Public state ──────────────────────────────────────────────────────
+  // Map from category id -> list of { desktopId, name, icon, exec }
+  property var availableApps: ({})
+  // Map from category id -> currently selected desktop-file id (or "" for system default)
+  property var currentDefaults: ({})
+
+  // Whether the initial scan is finished
+  property bool ready: false
+
+  signal defaultsChanged
+
+  // ── Internal ──────────────────────────────────────────────────────────
+  property var _desktopEntries: ({})  // desktopId -> { name, icon, exec, mimeTypes, categories }
+  property var _systemDefaults: ({})  // mime -> desktopId from system mimeapps.list
+  property var _userDefaults: ({})    // mime -> desktopId from user mimeapps.list
+
+  readonly property string _userMimeappsPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/mimeapps.list"
+
+  Component.onCompleted: {
+    _scanProcess.running = true;
+  }
+
+  // ── Single scan script ────────────────────────────────────────────────
+  // Outputs JSON with { desktopEntries, systemDefaults, userDefaults }
+  Process {
+    id: _scanProcess
+    command: ["sh", "-c", _scanScript()]
+    stdout: SplitParser {
+      onRead: data => {
+        try {
+          const parsed = JSON.parse(data);
+          root._desktopEntries = parsed.desktopEntries || {};
+          root._systemDefaults = parsed.systemDefaults || {};
+          root._userDefaults = parsed.userDefaults || {};
+          root._buildAvailableApps();
+          root._buildCurrentDefaults();
+          root.ready = true;
+        } catch (e) {
+          Logger.e("DefaultAppsService", "Failed to parse scan output: " + e);
+        }
+      }
+    }
+  }
+
+  function _scanScript() {
+    return `python3 -c '
+import os, json, configparser, glob
+
+def parse_desktop_file(path):
+    """Parse a .desktop file and return relevant fields."""
+    cp = configparser.RawConfigParser()
+    cp.optionxform = str  # preserve case
+    try:
+        cp.read(path, encoding="utf-8")
+    except Exception:
+        return None
+    if not cp.has_section("Desktop Entry"):
+        return None
+    entry = dict(cp.items("Desktop Entry"))
+    if entry.get("Type", "") != "Application":
+        return None
+    if entry.get("NoDisplay", "").lower() == "true":
+        # Allow NoDisplay apps that are still useful as default handlers
+        pass
+    name = entry.get("Name", "")
+    icon = entry.get("Icon", "")
+    exe = entry.get("Exec", "")
+    mime_str = entry.get("MimeType", "")
+    cat_str = entry.get("Categories", "")
+    mimes = [m.strip() for m in mime_str.strip().rstrip(";").split(";") if m.strip()]
+    cats = [c.strip() for c in cat_str.strip().rstrip(";").split(";") if c.strip()]
+    return {"name": name, "icon": icon, "exec": exe, "mimeTypes": mimes, "categories": cats}
+
+def parse_mimeapps(path):
+    """Parse [Default Applications] from a mimeapps.list file."""
+    defaults = {}
+    cp = configparser.RawConfigParser()
+    cp.optionxform = str
+    try:
+        cp.read(path, encoding="utf-8")
+    except Exception:
+        return defaults
+    if cp.has_section("Default Applications"):
+        for mime, val in cp.items("Default Applications"):
+            # Value may be semicolon-separated; take the first
+            ids = [v.strip() for v in val.strip().rstrip(";").split(";") if v.strip()]
+            if ids:
+                defaults[mime] = ids[0]
+    return defaults
+
+# Scan desktop files
+entries = {}
+dirs = set()
+xdg_data = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+for d in xdg_data.split(":"):
+    dirs.add(os.path.join(d.strip(), "applications"))
+dirs.add(os.path.expanduser("~/.local/share/applications"))
+
+for appdir in dirs:
+    for path in glob.glob(os.path.join(appdir, "*.desktop")):
+        desktop_id = os.path.basename(path)
+        parsed = parse_desktop_file(path)
+        if parsed and parsed["name"]:
+            # Prefer the first occurrence (user local takes precedence)
+            if desktop_id not in entries:
+                entries[desktop_id] = parsed
+
+# System mimeapps.list
+sys_defaults = {}
+for d in xdg_data.split(":"):
+    p = os.path.join(d.strip(), "applications", "mimeapps.list")
+    if os.path.isfile(p):
+        sys_defaults.update(parse_mimeapps(p))
+
+# User mimeapps.list
+user_path = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+    "mimeapps.list"
+)
+user_defaults = parse_mimeapps(user_path) if os.path.isfile(user_path) else {}
+
+print(json.dumps({"desktopEntries": entries, "systemDefaults": sys_defaults, "userDefaults": user_defaults}))
+'`;
+  }
+
+  // ── Build the availableApps map ────────────────────────────────────────
+  function _buildAvailableApps() {
+    var result = {};
+    for (var ci = 0; ci < categories.length; ci++) {
+      var cat = categories[ci];
+      var apps = [];
+      var seen = {};
+
+      var ids = Object.keys(_desktopEntries);
+      for (var di = 0; di < ids.length; di++) {
+        var desktopId = ids[di];
+        var entry = _desktopEntries[desktopId];
+        var matched = false;
+
+        // Match by MIME types
+        if (cat.mimeTypes.length > 0) {
+          for (var mi = 0; mi < cat.mimeTypes.length; mi++) {
+            if (entry.mimeTypes.indexOf(cat.mimeTypes[mi]) >= 0) {
+              matched = true;
+              break;
+            }
+          }
+        }
+
+        // Match by Categories field (for terminal)
+        if (!matched && cat.categoryField) {
+          if (entry.categories.indexOf(cat.categoryField) >= 0) {
+            matched = true;
+          }
+        }
+
+        if (matched && !seen[desktopId]) {
+          seen[desktopId] = true;
+          apps.push({
+            "desktopId": desktopId,
+            "name": entry.name,
+            "icon": entry.icon,
+            "exec": entry.exec
+          });
+        }
+      }
+
+      // Sort alphabetically by name
+      apps.sort(function (a, b) {
+        return a.name.localeCompare(b.name);
+      });
+
+      result[cat.id] = apps;
+    }
+    availableApps = result;
+  }
+
+  // ── Build the currentDefaults map ──────────────────────────────────────
+  function _buildCurrentDefaults() {
+    var result = {};
+    for (var ci = 0; ci < categories.length; ci++) {
+      var cat = categories[ci];
+
+      // Check qdshell settings first
+      var settingsVal = _getSettingsDefault(cat.id);
+      if (settingsVal) {
+        result[cat.id] = settingsVal;
+        continue;
+      }
+
+      // Then check user mimeapps.list
+      if (cat.primaryMime && _userDefaults[cat.primaryMime]) {
+        result[cat.id] = _userDefaults[cat.primaryMime];
+        continue;
+      }
+
+      // Then system mimeapps.list
+      if (cat.primaryMime && _systemDefaults[cat.primaryMime]) {
+        result[cat.id] = _systemDefaults[cat.primaryMime];
+        continue;
+      }
+
+      result[cat.id] = "";
+    }
+    currentDefaults = result;
+  }
+
+  function _getSettingsDefault(categoryId) {
+    var da = Settings.data.defaultApps;
+    if (!da) return "";
+    switch (categoryId) {
+      case "browser": return da.browser || "";
+      case "mail": return da.mail || "";
+      case "fileManager": return da.fileManager || "";
+      case "terminal": return da.terminal || "";
+      case "textEditor": return da.textEditor || "";
+      case "imageViewer": return da.imageViewer || "";
+      case "audioPlayer": return da.audioPlayer || "";
+      case "videoPlayer": return da.videoPlayer || "";
+    }
+    return "";
+  }
+
+  // ── Public: set default for a category ─────────────────────────────────
+  function setDefault(categoryId, desktopId) {
+    // Update qdshell settings
+    _setSettingsDefault(categoryId, desktopId);
+
+    // Write to mimeapps.list
+    _writeMimeappsList(categoryId, desktopId);
+
+    // Rebuild current defaults
+    _buildCurrentDefaults();
+    defaultsChanged();
+  }
+
+  function _setSettingsDefault(categoryId, desktopId) {
+    switch (categoryId) {
+      case "browser": Settings.data.defaultApps.browser = desktopId; break;
+      case "mail": Settings.data.defaultApps.mail = desktopId; break;
+      case "fileManager": Settings.data.defaultApps.fileManager = desktopId; break;
+      case "terminal": Settings.data.defaultApps.terminal = desktopId; break;
+      case "textEditor": Settings.data.defaultApps.textEditor = desktopId; break;
+      case "imageViewer": Settings.data.defaultApps.imageViewer = desktopId; break;
+      case "audioPlayer": Settings.data.defaultApps.audioPlayer = desktopId; break;
+      case "videoPlayer": Settings.data.defaultApps.videoPlayer = desktopId; break;
+    }
+  }
+
+  // ── Public: reset a category to system default ─────────────────────────
+  function resetDefault(categoryId) {
+    setDefault(categoryId, "");
+  }
+
+  // ── Write user mimeapps.list ──────────────────────────────────────────
+  function _writeMimeappsList(categoryId, desktopId) {
+    // Find the category definition
+    var cat = null;
+    for (var i = 0; i < categories.length; i++) {
+      if (categories[i].id === categoryId) {
+        cat = categories[i];
+        break;
+      }
+    }
+    if (!cat || cat.allMimes.length === 0) return;
+
+    if (desktopId) {
+      // Use xdg-mime to set the default for each MIME type
+      for (var mi = 0; mi < cat.allMimes.length; mi++) {
+        Quickshell.execDetached(["xdg-mime", "default", desktopId, cat.allMimes[mi]]);
+      }
+    } else {
+      // Remove entries from user mimeapps.list using sed
+      for (var mi = 0; mi < cat.allMimes.length; mi++) {
+        // Escape dots and slashes for sed
+        var escaped = cat.allMimes[mi].replace(/\./g, "\\.").replace(/\//g, "\\/");
+        Quickshell.execDetached(["sed", "-i", "/" + escaped + "=/d", _userMimeappsPath]);
+      }
+    }
+  }
+
+  // ── Public: re-scan from disk ──────────────────────────────────────────
+  function rescan() {
+    ready = false;
+    _scanProcess.running = true;
+  }
+
+  // ── Public: get display name for a desktop ID ──────────────────────────
+  function getAppName(desktopId) {
+    if (!desktopId) return "";
+    var entry = _desktopEntries[desktopId];
+    return entry ? entry.name : desktopId;
+  }
+
+  // ── Public: get icon for a desktop ID ──────────────────────────────────
+  function getAppIcon(desktopId) {
+    if (!desktopId) return "";
+    var entry = _desktopEntries[desktopId];
+    return entry ? entry.icon : "";
+  }
+}
