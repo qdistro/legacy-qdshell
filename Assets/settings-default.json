@@ -436,7 +436,8 @@
     "enableKeyboardLayoutToast": true,
     "enableBatteryToast": true,
     "minWidth": 440,
-    "detailMode": "normal"
+    "detailMode": "normal",
+    "notificationTheme": "default"
   },
   "osd": {
     "enabled": true,
