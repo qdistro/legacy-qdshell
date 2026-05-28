@@ -310,15 +310,28 @@ Singleton {
     }
   }
 
+  // Triggers a lock via qdlocker's ctrl socket
+  // ($XDG_RUNTIME_DIR/qdlocker.sock), the same mechanism as
+  // Modules/Bar/Widgets/LockButton.qml — NOT the deprecated
+  // PanelService.lockScreen / WlSessionLock path which qdwin doesn't
+  // implement.
+  Process {
+    id: lockProc
+    command: ["sh", "-c",
+              "printf 'lock\\n' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/qdlocker.sock"]
+    stdout: StdioCollector {}
+    stderr: StdioCollector {}
+  }
+
   IpcHandler {
     target: "lockScreen"
 
     // New preferred method - lock the screen
     function lock() {
-      // Only lock if not already locked (prevents the red screen issue)
-      if (!PanelService.lockScreen.active) {
-        PanelService.lockScreen.active = true;
-      }
+      // Fire lock_requested over the qdlocker ctrl socket. qdlocker
+      // itself de-dupes if a lock surface is already up, so no need to
+      // pre-check an "active" flag here.
+      lockProc.running = true;
     }
   }
 

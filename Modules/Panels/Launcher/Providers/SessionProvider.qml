@@ -1,11 +1,24 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Services.Qdwin
 import qs.Services.UI
 
 Item {
   id: root
+
+  // Lock is triggered via qdlocker's ctrl socket
+  // ($XDG_RUNTIME_DIR/qdlocker.sock), NOT the deprecated
+  // PanelService.lockScreen / WlSessionLock path which qdwin doesn't
+  // implement. This mirrors Modules/Bar/Widgets/LockButton.qml.
+  Process {
+    id: lockProc
+    command: ["sh", "-c",
+              "printf 'lock\\n' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/qdlocker.sock"]
+    stdout: StdioCollector {}
+    stderr: StdioCollector {}
+  }
 
   // Provider metadata
   property string name: I18n.tr("tooltips.session-menu")
@@ -151,9 +164,9 @@ Item {
     // Default behavior or custom command handled by Qdwin
     switch (action) {
     case "lock":
-      if (PanelService.lockScreen && !PanelService.lockScreen.active) {
-        PanelService.lockScreen.active = true;
-      }
+      // Fire lock_requested(reason=3=manual) over the qdlocker ctrl
+      // socket (same path as the bar's LockButton).
+      lockProc.running = true;
       break;
     case "suspend":
       if (Settings.data.general.lockOnSuspend) {
