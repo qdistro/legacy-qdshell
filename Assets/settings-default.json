@@ -557,7 +557,10 @@
     "monitorWidgets": []
   },
   "session": {
-    "showSystemAutostart": true
+    "showSystemAutostart": true,
+    "saveOnLogout": false,
+    "restoreOnLogin": false,
+    "savedSessions": []
   },
   "accessibility": {
     "findCursorEnabled": true,

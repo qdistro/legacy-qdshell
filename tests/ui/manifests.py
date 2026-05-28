@@ -36,7 +36,7 @@ SETTINGS_TABS = [
     "general", "userinterface", "colorscheme", "wallpaper", "bar", "dock",
     "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
     "display", "location", "mouse", "keyboard", "accessibility", "osd",
-    "connections", "hooks", "lockscreen", "sessionmenu", "systemmonitor",
+    "connections", "hooks", "lockscreen", "session", "sessionmenu", "systemmonitor",
     "plugins", "windowmanager", "advanced", "appearance",
 ]
 # Notes on tabs we deliberately don't cover:

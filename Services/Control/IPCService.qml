@@ -87,6 +87,7 @@ Singleton {
                                             "connections": SettingsPanel.Tab.Connections,
                                             "notifications": SettingsPanel.Tab.Notifications,
                                             "plugins": SettingsPanel.Tab.Plugins,
+                                            "session": SettingsPanel.Tab.Session,
                                             "sessionmenu": SettingsPanel.Tab.SessionMenu,
                                             "systemmonitor": SettingsPanel.Tab.SystemMonitor,
                                             "userinterface": SettingsPanel.Tab.UserInterface,

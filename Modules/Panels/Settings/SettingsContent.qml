@@ -28,6 +28,7 @@ import qs.Modules.Panels.Settings.Tabs.Osd
 import qs.Modules.Panels.Settings.Tabs.Plugins
 import qs.Modules.Panels.Settings.Tabs.Power
 import qs.Modules.Panels.Settings.Tabs.Region
+import qs.Modules.Panels.Settings.Tabs.Session
 import qs.Modules.Panels.Settings.Tabs.SessionMenu
 import qs.Modules.Panels.Settings.Tabs.SystemMonitor
 import qs.Modules.Panels.Settings.Tabs.UserInterface
@@ -482,6 +483,10 @@ Item {
     LockScreenTab {}
   }
   Component {
+    id: sessionTab
+    SessionTab {}
+  }
+  Component {
     id: sessionMenuTab
     SessionMenuTab {}
   }
@@ -633,6 +638,12 @@ Item {
             "label": "panels.autostart.title",
             "icon": "player-play",
             "source": autostartTab
+          },
+          {
+            "id": SettingsPanel.Tab.Session,
+            "label": "panels.session.title",
+            "icon": "settings-session",
+            "source": sessionTab
           },
           {
             "id": SettingsPanel.Tab.Accessibility,
