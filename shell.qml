@@ -143,6 +143,7 @@ ShellRoot {
           BluetoothService.init();
           IdleInhibitorService.init();
           PowerProfileService.init();
+          PowerService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
