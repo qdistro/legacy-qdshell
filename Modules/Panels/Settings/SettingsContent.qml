@@ -18,6 +18,7 @@ import qs.Modules.Panels.Settings.Tabs.ControlCenter
 import qs.Modules.Panels.Settings.Tabs.Display
 import qs.Modules.Panels.Settings.Tabs.Dock
 import qs.Modules.Panels.Settings.Tabs.Hooks
+import qs.Modules.Panels.Settings.Tabs.Keyboard
 import qs.Modules.Panels.Settings.Tabs.Launcher
 import qs.Modules.Panels.Settings.Tabs.LockScreen
 import qs.Modules.Panels.Settings.Tabs.Notifications
@@ -509,6 +510,10 @@ Item {
     id: accessibilityTab
     AccessibilityTab {}
   }
+  Component {
+    id: keyboardTab
+    KeyboardTab {}
+  }
 
   function updateTabsModel() {
     let newTabs = [
@@ -517,6 +522,12 @@ Item {
             "label": "common.general",
             "icon": "settings-general",
             "source": generalTab
+          },
+          {
+            "id": SettingsPanel.Tab.Keyboard,
+            "label": "panels.keyboard.title",
+            "icon": "keyboard",
+            "source": keyboardTab
           },
           {
             "id": SettingsPanel.Tab.UserInterface,

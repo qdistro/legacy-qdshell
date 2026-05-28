@@ -86,6 +86,7 @@ SmartPanel {
     Dock,
     General,
     Hooks,
+    Keyboard,
     Launcher,
     Location,
     Connections,

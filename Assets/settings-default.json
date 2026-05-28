@@ -562,5 +562,19 @@
     "mouseKeys": false,
     "mouseKeysSpeed": 30,
     "assistiveTechEnabled": false
+  },
+  "keyboard": {
+    "repeatDelay": 500,
+    "repeatRate": 25,
+    "cursorBlink": true,
+    "cursorBlinkRate": 1200,
+    "model": "pc105",
+    "layouts": ["us"],
+    "variants": {},
+    "switchShortcut": "",
+    "composeKey": "",
+    "xkbOptions": [],
+    "restoreNumLock": false,
+    "useSystemDefaults": true
   }
 }

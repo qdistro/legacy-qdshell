@@ -31,6 +31,7 @@ import qs.Modules.Panels.Settings
 import qs.Modules.Toast
 import qs.Services.Control
 import qs.Services.Hardware
+import qs.Services.Keyboard
 import qs.Services.Location
 import qs.Services.Networking
 import qs.Services.Qdistro
@@ -146,6 +147,7 @@ ShellRoot {
           PowerProfileService.init();
           PowerService.init();
           AccessibilityService.init();
+          KeyboardInputService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
