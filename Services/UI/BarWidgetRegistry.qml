@@ -254,7 +254,9 @@ Singleton {
                                     "showPinnedApps": true,
                                     "smartWidth": true,
                                     "maxTaskbarWidth": 40,
-                                    "iconScale": 0.8
+                                    "iconScale": 0.8,
+                                    "groupingMode": "never",
+                                    "sortMode": "none"
                                   },
                                   "Tray": {
                                     "blacklist": [],

@@ -79,22 +79,87 @@ Item {
     return calculatedWidth;
   }
   readonly property bool showPinnedApps: (widgetSettings.showPinnedApps !== undefined) ? widgetSettings.showPinnedApps : widgetMetadata.showPinnedApps
+  // Window grouping: "never" | "always" | "limited" (group only when the
+  // taskbar would otherwise exceed its max width). Mirrors XFCE's window
+  // buttons "grouping" behavior.
+  readonly property string groupingMode: (widgetSettings.groupingMode !== undefined) ? widgetSettings.groupingMode : widgetMetadata.groupingMode
+  // Sort order: "none" (launch/stable order, drag-and-drop allowed) |
+  // "title" (by window/app title) | "group" (by application id).
+  readonly property string sortMode: (widgetSettings.sortMode !== undefined) ? widgetSettings.sortMode : widgetMetadata.sortMode
 
   // Context menu state - store ID instead of object reference to avoid stale references
   property string selectedWindowId: ""
   property string selectedAppId: ""
 
-  // Helper to get the current window object from ID
-  function getSelectedWindow() {
+  // Helper to get the current model entry from the selected ID. Returns
+  // the full entry (which may be a group) or null.
+  function getSelectedEntry() {
     if (!selectedWindowId)
       return null;
     for (var i = 0; i < combinedModel.length; i++) {
       // Using loose equality on purpose (==)
-      if (combinedModel[i].id == selectedWindowId && combinedModel[i].window) {
-        return combinedModel[i].window;
+      if (combinedModel[i].id == selectedWindowId) {
+        return combinedModel[i];
       }
     }
     return null;
+  }
+
+  // Helper to get the current window object from ID
+  function getSelectedWindow() {
+    const entry = getSelectedEntry();
+    return (entry && entry.window) ? entry.window : null;
+  }
+
+  // The list of window objects backing the selected entry. For a plain
+  // running entry that is [window]; for a group it is every window in the
+  // group; for pinned-not-running / placeholder it is [].
+  function getSelectedWindowList() {
+    const entry = getSelectedEntry();
+    if (!entry)
+      return [];
+    if (entry.isGroup && entry.windows)
+      return entry.windows.slice();
+    if (entry.window)
+      return [entry.window];
+    return [];
+  }
+
+  // -- bulk window actions (XFCE "minimize/maximize/close [all]") --
+  // Each guards against a missing Qdwin capability by no-op'ing when the
+  // action function is absent; the menu also capability-gates entries.
+  function minimizeWindows(wins) {
+    if (!wins || typeof Qdwin.requestMinimize !== "function")
+      return;
+    wins.forEach(function (w) {
+      try {
+        Qdwin.requestMinimize(w);
+      } catch (e) {
+        Logger.e("Taskbar", "minimize failed: " + e);
+      }
+    });
+  }
+  function maximizeWindows(wins, maximized) {
+    if (!wins || typeof Qdwin.requestMaximize !== "function")
+      return;
+    wins.forEach(function (w) {
+      try {
+        Qdwin.requestMaximize(w, maximized);
+      } catch (e) {
+        Logger.e("Taskbar", "maximize failed: " + e);
+      }
+    });
+  }
+  function closeWindows(wins) {
+    if (!wins || typeof Qdwin.closeWindow !== "function")
+      return;
+    wins.forEach(function (w) {
+      try {
+        Qdwin.closeWindow(w);
+      } catch (e) {
+        Logger.e("Taskbar", "close failed: " + e);
+      }
+    });
   }
   property int modelUpdateTrigger: 0  // Dummy property to force model re-evaluation
 
@@ -146,6 +211,124 @@ Item {
     remaining.forEach(app => sorted.push(app));
 
     return sorted;
+  }
+
+  // Decide whether grouping should be active right now. "never" -> off,
+  // "always" -> on, "limited" -> on only when the ungrouped taskbar would
+  // overflow maxTaskbarWidth (i.e. there are more entries than fit).
+  function shouldGroup(entryCount) {
+    if (groupingMode === "always")
+      return true;
+    if (groupingMode === "limited") {
+      // Only meaningful on horizontal bars with a width cap. Group once the
+      // running-window count would exceed what fits in maxTaskbarWidth.
+      if (isVerticalBar || maxTaskbarWidth <= 0)
+        return false;
+      // Estimate per-button width using the same formula as the delegate's
+      // Layout.preferredWidth so the "fits" count matches the real layout.
+      // With titles shown a button is itemSize + spacing + titleWidth + margins.
+      var perEntry = showTitle ? (itemSize + Style.marginS + titleWidth + Style.marginXL) : (itemSize + Style.marginXL);
+      var fits = Math.max(1, Math.floor(maxTaskbarWidth / perEntry));
+      return entryCount > fits;
+    }
+    return false;
+  }
+
+  // Collapse entries that share a normalized appId into a single group
+  // entry. Pinned-not-running and placeholder entries are never grouped
+  // (each stays its own button). Group entries carry a `windows` array of
+  // the underlying window objects; `window` points at the focused (or
+  // first) window so the icon/title/focus-indicator still render.
+  function groupApps(entries) {
+    const groups = {};
+    // First pass: accumulate window members per app key. Windows whose
+    // appId is empty/missing are NOT grouped (an empty key would lump all
+    // such unrelated windows together) — they fall through as individual
+    // buttons in the second pass.
+    entries.forEach(function (e) {
+      const isRunningWin = e.window && (e.type === "running" || e.type === "pinned-running");
+      if (!isRunningWin)
+        return;
+      const key = normalizeAppId(e.appId);
+      if (key === "")
+        return;
+      if (!groups[key]) {
+        groups[key] = {
+          "id": "group:" + key,
+          "type": e.type,
+          "window": e.window,
+          "appId": e.appId,
+          "title": e.title,
+          "isGroup": true,
+          "windows": [e.window],
+          "windowEntries": [e]
+        };
+      } else {
+        const g = groups[key];
+        g.windows.push(e.window);
+        g.windowEntries.push(e);
+        // Prefer the focused window for the representative title/icon.
+        if (e.window.isFocused) {
+          g.window = e.window;
+          g.title = e.title;
+        }
+        if (e.type === "pinned-running")
+          g.type = "pinned-running";
+      }
+    });
+
+    // Second pass: emit entries in their ORIGINAL order. Pass-through
+    // (pinned-only / placeholder) entries keep their slot; each running
+    // group is emitted once, at the position of its first window. A
+    // single-window "group" collapses back to the plain entry so it keeps
+    // the normal single-window code paths (drag, focus indicator).
+    const result = [];
+    const emittedGroups = new Set();
+    entries.forEach(function (e) {
+      const isRunningWin = e.window && (e.type === "running" || e.type === "pinned-running");
+      if (!isRunningWin) {
+        result.push(e);
+        return;
+      }
+      const key = normalizeAppId(e.appId);
+      const g = (key !== "") ? groups[key] : null;
+      if (!g) {
+        // Empty/missing appId — never grouped, emit as an individual button.
+        result.push(e);
+        return;
+      }
+      if (emittedGroups.has(key))
+        return;
+      emittedGroups.add(key);
+      if (g.windows.length === 1) {
+        result.push(g.windowEntries[0]);
+      } else {
+        result.push(g);
+      }
+    });
+    return result;
+  }
+
+  // Apply the configured sort order to the model. "none" keeps the
+  // launch/session order (drag-and-drop friendly); "title" sorts by
+  // visible title; "group" sorts by appId then title.
+  function applySortMode(entries) {
+    if (sortMode === "title") {
+      return entries.slice().sort(function (a, b) {
+        return (a.title || "").toLowerCase().localeCompare((b.title || "").toLowerCase());
+      });
+    }
+    if (sortMode === "group") {
+      return entries.slice().sort(function (a, b) {
+        const ka = normalizeAppId(a.appId);
+        const kb = normalizeAppId(b.appId);
+        if (ka !== kb)
+          return ka.localeCompare(kb);
+        return (a.title || "").toLowerCase().localeCompare((b.title || "").toLowerCase());
+      });
+    }
+    // "none" — preserve session/launch order.
+    return entries;
   }
 
   function reorderApps(fromIndex, toIndex) {
@@ -391,7 +574,20 @@ Item {
       }
     } catch (e) {}
 
-    combinedModel = sortApps(runningWindows);
+    // Apply window grouping before ordering so the session/title/group
+    // sort operates on the final button set.
+    var entries = runningWindows;
+    if (shouldGroup(runningWindows.length)) {
+      entries = groupApps(runningWindows);
+    }
+
+    // Ordering. "none" preserves the user's drag/session order; the other
+    // modes sort deterministically and disable session reordering.
+    if (sortMode === "none") {
+      combinedModel = sortApps(entries);
+    } else {
+      combinedModel = applySortMode(entries);
+    }
 
     // Sync session order if needed (e.g. first run or new apps added)
     if (!sessionAppOrder || sessionAppOrder.length === 0 || sessionAppOrder.length !== combinedModel.length) {
@@ -446,71 +642,118 @@ Item {
     }
   }
 
+  // Build the right-click context menu model for the currently selected
+  // entry. Shared by the reactive `contextMenu.model` binding and the
+  // imperative openTaskbarContextMenu() path so both stay in sync.
+  function buildContextMenuModel() {
+    var items = [];
+    if (root.selectedWindowId) {
+      const entry = root.getSelectedEntry();
+      const wins = root.getSelectedWindowList();
+      const isGroup = entry && entry.isGroup === true;
+      // Capability flags — gate actions Qdwin can't perform yet.
+      const canMinimize = typeof Qdwin.requestMinimize === "function";
+      const canMaximize = typeof Qdwin.requestMaximize === "function";
+      const canClose = typeof Qdwin.closeWindow === "function";
+
+      // Focus item (for running apps)
+      items.push({
+                   "label": I18n.tr("common.focus"),
+                   "action": "focus",
+                   "icon": "eye"
+                 });
+
+      // Pin/Unpin item (always available when right-clicking an app)
+      const isPinned = root.isAppPinned(root.selectedAppId);
+      items.push({
+                   "label": !isPinned ? I18n.tr("common.pin") : I18n.tr("common.unpin"),
+                   "action": "pin",
+                   "icon": !isPinned ? "pin" : "unpin"
+                 });
+
+      // Bulk window actions (XFCE: minimize / maximize / close). For a
+      // group these act on every window in the group, so the labels switch
+      // to the "all windows" wording. The actions all operate on
+      // getSelectedWindowList(), which already returns every group window.
+      if (wins.length > 0) {
+        items.push({
+                     "label": isGroup ? I18n.tr("bar.taskbar.minimize-all-in-group") : I18n.tr("common.minimize"),
+                     "action": "minimize",
+                     "icon": "chevron-down",
+                     "enabled": canMinimize
+                   });
+        items.push({
+                     "label": I18n.tr("common.maximize"),
+                     "action": "maximize",
+                     "icon": "chevron-up",
+                     "enabled": canMaximize
+                   });
+        items.push({
+                     "label": I18n.tr("common.unmaximize"),
+                     "action": "unmaximize",
+                     "icon": "chevron-down",
+                     "enabled": canMaximize
+                   });
+      }
+
+      // Close item (single window or group "close all").
+      items.push({
+                   "label": isGroup ? I18n.tr("bar.taskbar.close-all-in-group") : I18n.tr("common.close"),
+                   "action": "close",
+                   "icon": "x",
+                   "enabled": canClose
+                 });
+
+      // Add desktop entry actions (like "New Window", "Private Window", etc.)
+      if (typeof DesktopEntries !== 'undefined' && DesktopEntries.byId && root.selectedAppId) {
+        const dentry = (DesktopEntries.heuristicLookup) ? DesktopEntries.heuristicLookup(root.selectedAppId) : DesktopEntries.byId(root.selectedAppId);
+        if (dentry != null && dentry.actions) {
+          dentry.actions.forEach(function (action) {
+            items.push({
+                         "label": action.name,
+                         "action": "desktop-action-" + action.name,
+                         "icon": "chevron-right",
+                         "desktopAction": action
+                       });
+          });
+        }
+      }
+    }
+    items.push({
+                 "label": I18n.tr("actions.widget-settings"),
+                 "action": "widget-settings",
+                 "icon": "settings"
+               });
+    return items;
+  }
+
   NPopupContextMenu {
     id: contextMenu
     model: {
       // Reference modelUpdateTrigger to make binding reactive
       const _ = root.modelUpdateTrigger;
-
-      var items = [];
-      if (root.selectedWindowId) {
-        // Focus item (for running apps)
-        items.push({
-                     "label": I18n.tr("common.focus"),
-                     "action": "focus",
-                     "icon": "eye"
-                   });
-
-        // Pin/Unpin item (always available when right-clicking an app)
-        const isPinned = root.isAppPinned(root.selectedAppId);
-        items.push({
-                     "label": !isPinned ? I18n.tr("common.pin") : I18n.tr("common.unpin"),
-                     "action": "pin",
-                     "icon": !isPinned ? "pin" : "unpin"
-                   });
-
-        // Close item (for running apps)
-        items.push({
-                     "label": I18n.tr("common.close"),
-                     "action": "close",
-                     "icon": "x"
-                   });
-
-        // Add desktop entry actions (like "New Window", "Private Window", etc.)
-        if (typeof DesktopEntries !== 'undefined' && DesktopEntries.byId && root.selectedAppId) {
-          const entry = (DesktopEntries.heuristicLookup) ? DesktopEntries.heuristicLookup(root.selectedAppId) : DesktopEntries.byId(root.selectedAppId);
-          if (entry != null && entry.actions) {
-            entry.actions.forEach(function (action) {
-              items.push({
-                           "label": action.name,
-                           "action": "desktop-action-" + action.name,
-                           "icon": "chevron-right",
-                           "desktopAction": action
-                         });
-            });
-          }
-        }
-      }
-      items.push({
-                   "label": I18n.tr("actions.widget-settings"),
-                   "action": "widget-settings",
-                   "icon": "settings"
-                 });
-      return items;
+      return root.buildContextMenuModel();
     }
     onTriggered: (action, item) => {
                    contextMenu.close();
                    PanelService.closeContextMenu(root.screen);
 
-                   // Look up the window fresh each time to avoid stale references
+                   // Look up the window(s) fresh each time to avoid stale references
                    const selectedWindow = root.getSelectedWindow();
+                   const selectedWindows = root.getSelectedWindowList();
 
                    if (action === "focus" && selectedWindow) {
                      Qdwin.focusWindow(selectedWindow);
                    } else if (action === "pin" && root.selectedAppId) {
                      root.toggleAppPin(root.selectedAppId);
-                   } else if (action === "close" && selectedWindow) {
-                     Qdwin.closeWindow(selectedWindow);
+                   } else if (action === "minimize") {
+                     root.minimizeWindows(selectedWindows);
+                   } else if (action === "maximize") {
+                     root.maximizeWindows(selectedWindows, true);
+                   } else if (action === "unmaximize") {
+                     root.maximizeWindows(selectedWindows, false);
+                   } else if (action === "close") {
+                     root.closeWindows(selectedWindows);
                    } else if (action === "widget-settings") {
                      BarService.openWidgetSettings(root.screen, root.section, root.sectionWidgetIndex, root.widgetId, root.widgetSettings);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
@@ -562,6 +805,10 @@ Item {
     updateCombinedModel();
   }
   onScreenChanged: updateCombinedModel()
+  // Rebuild immediately when grouping/sort policy changes in settings so
+  // the visible taskbar reflows without waiting for a window event.
+  onGroupingModeChanged: updateCombinedModel()
+  onSortModeChanged: updateCombinedModel()
 
   // Debounce timer for wheel interactions
   Timer {
@@ -693,6 +940,14 @@ Item {
           readonly property bool isRunning: modelData.window !== null
           readonly property bool isPinned: modelData.type === "pinned" || modelData.type === "pinned-running"
           readonly property bool isPlaceholder: modelData.type === "placeholder"
+          // Grouped button representing multiple windows of one application.
+          readonly property bool isGroup: modelData.isGroup === true
+          readonly property int groupCount: (modelData.windows !== undefined && modelData.windows !== null) ? modelData.windows.length : 0
+          // Drag-to-reorder only makes sense in the launch-order ("none")
+          // sort mode; the other modes re-sort on every rebuild so a manual
+          // reorder would be discarded. Grouped buttons are also not
+          // reorderable (their position is derived from member windows).
+          readonly property bool reorderable: root.sortMode === "none" && !isGroup
           readonly property bool isFocused: isRunning && modelData.window && modelData.window.isFocused
           readonly property bool isPinnedRunning: isPinned && isRunning && !isFocused
           readonly property bool isHovered: root.hoveredWindowId === modelData.id
@@ -717,6 +972,7 @@ Item {
 
           DropArea {
             anchors.fill: parent
+            enabled: taskbarItem.reorderable
             keys: ["taskbar-app"]
             onEntered: function (drag) {
               if (drag.source && drag.source.objectName === "taskbarAppItem") {
@@ -911,6 +1167,28 @@ Item {
                       }
                     }
                   }
+
+                  // Window-count badge for grouped buttons (XFCE shows the
+                  // number of windows collapsed into a single button).
+                  Rectangle {
+                    visible: taskbarItem.isGroup && taskbarItem.groupCount > 1
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    width: Math.max(badgeText.implicitWidth + Style.marginXXS * 2, height)
+                    height: Math.round(root.itemSize * 0.42)
+                    radius: height / 2
+                    color: Color.mPrimary
+
+                    NText {
+                      id: badgeText
+                      anchors.centerIn: parent
+                      text: taskbarItem.groupCount > 99 ? "99+" : String(taskbarItem.groupCount)
+                      pointSize: Style.fontSizeXS
+                      color: Color.mOnPrimary
+                      verticalAlignment: Text.AlignVCenter
+                      horizontalAlignment: Text.AlignHCenter
+                    }
+                  }
                 }
 
                 NText {
@@ -942,7 +1220,7 @@ Item {
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
 
-            drag.target: draggableContent
+            drag.target: taskbarItem.reorderable ? draggableContent : null
             drag.axis: root.isVerticalBar ? Drag.YAxis : Drag.XAxis
             preventStealing: true
 
@@ -961,7 +1239,14 @@ Item {
                          if (!modelData)
                          return;
                          if (mouse.button === Qt.LeftButton) {
-                           if (isRunning && modelData.window) {
+                           if (isGroup && groupCount > 1) {
+                             // Grouped button with multiple windows - reveal
+                             // the per-app window list to pick which to focus.
+                             TooltipService.hide();
+                             root.selectedWindowId = modelData.id;
+                             root.selectedAppId = modelData.appId;
+                             root.openGroupWindowList(modelData, taskbarItem);
+                           } else if (isRunning && modelData.window) {
                              // Running app - focus it
                              try {
                                Qdwin.focusWindow(modelData.window);
@@ -997,56 +1282,47 @@ Item {
   }
 
   function openTaskbarContextMenu(item) {
-    // Build menu model directly
-    var items = [];
-    if (root.selectedWindowId) {
-      // Focus item (for running apps)
-      items.push({
-                   "label": I18n.tr("common.focus"),
-                   "action": "focus",
-                   "icon": "eye"
-                 });
-
-      // Pin/Unpin item
-      const isPinned = root.isAppPinned(root.selectedAppId);
-      items.push({
-                   "label": !isPinned ? I18n.tr("common.pin") : I18n.tr("common.unpin"),
-                   "action": "pin",
-                   "icon": !isPinned ? "pin" : "unpin"
-                 });
-
-      // Close item
-      items.push({
-                   "label": I18n.tr("common.close"),
-                   "action": "close",
-                   "icon": "x"
-                 });
-
-      // Add desktop entry actions (like "New Window", "Private Window", etc.)
-      if (typeof DesktopEntries !== 'undefined' && DesktopEntries.byId && root.selectedAppId) {
-        const entry = (DesktopEntries.heuristicLookup) ? DesktopEntries.heuristicLookup(root.selectedAppId) : DesktopEntries.byId(root.selectedAppId);
-        if (entry != null && entry.actions) {
-          entry.actions.forEach(function (action) {
-            items.push({
-                         "label": action.name,
-                         "action": "desktop-action-" + action.name,
-                         "icon": "chevron-right",
-                         "desktopAction": action
-                       });
-          });
-        }
-      }
-    }
-    items.push({
-                 "label": I18n.tr("actions.widget-settings"),
-                 "action": "widget-settings",
-                 "icon": "settings"
-               });
-
-    // Set the model directly
-    contextMenu.model = items;
+    // Set the model directly (shared builder keeps it in sync with the
+    // reactive contextMenu.model binding).
+    contextMenu.model = root.buildContextMenuModel();
 
     // Anchor to root (stable) but center horizontally on the clicked item
     PanelService.showContextMenu(contextMenu, root, screen, item);
+  }
+
+  // Popup listing the individual windows of a grouped button. Activating
+  // an entry focuses that window. Built from the selected group entry's
+  // window list (each item's "action" is the window handle as a string).
+  NPopupContextMenu {
+    id: groupMenu
+    onTriggered: (action, item) => {
+                   groupMenu.close();
+                   PanelService.closeContextMenu(root.screen);
+                   if (item && item.window) {
+                     try {
+                       Qdwin.focusWindow(item.window);
+                     } catch (e) {
+                       Logger.e("Taskbar", "group focus failed: " + e);
+                     }
+                   }
+                 }
+  }
+
+  // Open the per-group window list for the given group entry, anchored to
+  // the clicked taskbar item.
+  function openGroupWindowList(entry, item) {
+    if (!entry || !entry.windowEntries)
+      return;
+    var items = [];
+    entry.windowEntries.forEach(function (we) {
+      items.push({
+                   "label": we.title || we.appId || I18n.tr("common.unknown"),
+                   "action": "window:" + we.id,
+                   "icon": we.window && we.window.isFocused ? "eye" : "chevron-right",
+                   "window": we.window
+                 });
+    });
+    groupMenu.model = items;
+    PanelService.showContextMenu(groupMenu, root, screen, item);
   }
 }
