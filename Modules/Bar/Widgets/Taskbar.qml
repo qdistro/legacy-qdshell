@@ -10,6 +10,7 @@ import qs.Services.Qdwin
 import qs.Services.System
 import qs.Services.UI
 import qs.Widgets
+import "TaskbarLogic.js" as TaskbarLogic
 
 Item {
   id: root
@@ -217,21 +218,18 @@ Item {
   // "always" -> on, "limited" -> on only when the ungrouped taskbar would
   // overflow maxTaskbarWidth (i.e. there are more entries than fit).
   function shouldGroup(entryCount) {
-    if (groupingMode === "always")
-      return true;
-    if (groupingMode === "limited") {
-      // Only meaningful on horizontal bars with a width cap. Group once the
-      // running-window count would exceed what fits in maxTaskbarWidth.
-      if (isVerticalBar || maxTaskbarWidth <= 0)
-        return false;
-      // Estimate per-button width using the same formula as the delegate's
-      // Layout.preferredWidth so the "fits" count matches the real layout.
-      // With titles shown a button is itemSize + spacing + titleWidth + margins.
-      var perEntry = showTitle ? (itemSize + Style.marginS + titleWidth + Style.marginXL) : (itemSize + Style.marginXL);
-      var fits = Math.max(1, Math.floor(maxTaskbarWidth / perEntry));
-      return entryCount > fits;
-    }
-    return false;
+    // Pure decision lives in TaskbarLogic.js; pass the singleton-derived
+    // values it needs (Style margins, layout metrics) as plain numbers.
+    return TaskbarLogic.shouldGroup(entryCount, {
+                                      "groupingMode": groupingMode,
+                                      "isVerticalBar": isVerticalBar,
+                                      "maxTaskbarWidth": maxTaskbarWidth,
+                                      "showTitle": showTitle,
+                                      "itemSize": itemSize,
+                                      "titleWidth": titleWidth,
+                                      "marginS": Style.marginS,
+                                      "marginXL": Style.marginXL
+                                    });
   }
 
   // Collapse entries that share a normalized appId into a single group
@@ -240,95 +238,14 @@ Item {
   // the underlying window objects; `window` points at the focused (or
   // first) window so the icon/title/focus-indicator still render.
   function groupApps(entries) {
-    const groups = {};
-    // First pass: accumulate window members per app key. Windows whose
-    // appId is empty/missing are NOT grouped (an empty key would lump all
-    // such unrelated windows together) — they fall through as individual
-    // buttons in the second pass.
-    entries.forEach(function (e) {
-      const isRunningWin = e.window && (e.type === "running" || e.type === "pinned-running");
-      if (!isRunningWin)
-        return;
-      const key = normalizeAppId(e.appId);
-      if (key === "")
-        return;
-      if (!groups[key]) {
-        groups[key] = {
-          "id": "group:" + key,
-          "type": e.type,
-          "window": e.window,
-          "appId": e.appId,
-          "title": e.title,
-          "isGroup": true,
-          "windows": [e.window],
-          "windowEntries": [e]
-        };
-      } else {
-        const g = groups[key];
-        g.windows.push(e.window);
-        g.windowEntries.push(e);
-        // Prefer the focused window for the representative title/icon.
-        if (e.window.isFocused) {
-          g.window = e.window;
-          g.title = e.title;
-        }
-        if (e.type === "pinned-running")
-          g.type = "pinned-running";
-      }
-    });
-
-    // Second pass: emit entries in their ORIGINAL order. Pass-through
-    // (pinned-only / placeholder) entries keep their slot; each running
-    // group is emitted once, at the position of its first window. A
-    // single-window "group" collapses back to the plain entry so it keeps
-    // the normal single-window code paths (drag, focus indicator).
-    const result = [];
-    const emittedGroups = new Set();
-    entries.forEach(function (e) {
-      const isRunningWin = e.window && (e.type === "running" || e.type === "pinned-running");
-      if (!isRunningWin) {
-        result.push(e);
-        return;
-      }
-      const key = normalizeAppId(e.appId);
-      const g = (key !== "") ? groups[key] : null;
-      if (!g) {
-        // Empty/missing appId — never grouped, emit as an individual button.
-        result.push(e);
-        return;
-      }
-      if (emittedGroups.has(key))
-        return;
-      emittedGroups.add(key);
-      if (g.windows.length === 1) {
-        result.push(g.windowEntries[0]);
-      } else {
-        result.push(g);
-      }
-    });
-    return result;
+    return TaskbarLogic.groupApps(entries);
   }
 
   // Apply the configured sort order to the model. "none" keeps the
   // launch/session order (drag-and-drop friendly); "title" sorts by
   // visible title; "group" sorts by appId then title.
   function applySortMode(entries) {
-    if (sortMode === "title") {
-      return entries.slice().sort(function (a, b) {
-        return (a.title || "").toLowerCase().localeCompare((b.title || "").toLowerCase());
-      });
-    }
-    if (sortMode === "group") {
-      return entries.slice().sort(function (a, b) {
-        const ka = normalizeAppId(a.appId);
-        const kb = normalizeAppId(b.appId);
-        if (ka !== kb)
-          return ka.localeCompare(kb);
-        return (a.title || "").toLowerCase().localeCompare((b.title || "").toLowerCase());
-      });
-    }
-    // "none" — preserve session/launch order.
-    return entries;
+    return TaskbarLogic.applySortMode(entries, sortMode);
   }
 
   function reorderApps(fromIndex, toIndex) {
@@ -377,9 +294,7 @@ Item {
 
   // Helper function to normalize app IDs for case-insensitive matching
   function normalizeAppId(appId) {
-    if (!appId || typeof appId !== 'string')
-      return "";
-    return appId.toLowerCase().trim();
+    return TaskbarLogic.normalizeAppId(appId);
   }
 
   // Helper function to check if an app ID matches a pinned app (case-insensitive)

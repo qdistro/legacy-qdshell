@@ -5,7 +5,7 @@ close_cmd are lists passed to `qs ipc call`. expectation_file is the path
 (relative to tests/ui/expectations/) of the human-authored golden description.
 
 Coverage status:
-  - Settings tabs: all 22, via `settings openTab <name>` IPC.
+  - Settings tabs: all 23, via `settings openTab <name>` IPC.
   - Panels: 9 of 13 have first-class IPC toggle hooks. Audio, Brightness, Tray,
     Plugins lack panel-open IPC in current qdshell — listed with NO_IPC for now
     so the manifest stays complete; the harness skips them with a clear message.
@@ -28,18 +28,25 @@ class Surface:
     expectation: str           # filename under tests/ui/expectations/
 
 
-# 22 settings tabs — `qs ipc call settings openTab <name>`
-# Names match IPCService.qml::_settingsTabMap keys.
+# 23 covered settings tabs — `qs ipc call settings openTab <name>`.
+# Names are a subset of IPCService.qml::_settingsTabMap keys; the map also
+# contains "appearance" and "about", which we deliberately omit (see notes
+# below — "about" falls back to General, and "appearance" overlaps the
+# colorscheme/userinterface coverage).
 SETTINGS_TABS = [
     "general", "userinterface", "colorscheme", "wallpaper", "bar", "dock",
     "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
-    "display", "location", "mouse", "osd", "connections", "hooks", "lockscreen",
-    "sessionmenu", "systemmonitor", "plugins",
+    "display", "location", "mouse", "keyboard", "accessibility", "osd",
+    "connections", "hooks", "lockscreen", "sessionmenu", "systemmonitor",
+    "plugins",
 ]
 # Notes on tabs we deliberately don't cover:
 #  - "about" — qdshell strips the upstream About box. The IPC map keeps the
 #    name but the underlying SettingsPanel.Tab enum has no About member, so
 #    `openTab about` falls back to General. Not testable.
+#  - "appearance" — present in _settingsTabMap but its surface overlaps the
+#    "colorscheme"/"userinterface" tabs already covered; left out to avoid a
+#    redundant near-duplicate expectation.
 #  - "Region" tab in the audit corresponds to "location" in the IPC map.
 #  - "Vault" (from the original audit) isn't in _settingsTabMap and isn't
 #    IPC-reachable.

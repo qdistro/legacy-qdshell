@@ -78,7 +78,7 @@ PNG of `settings_audio` ends up at `artifacts/settings_audio.png`.
 
 ## Coverage
 
-* **22 settings tabs** — all reachable via `settings openTab <name>`.
+* **23 settings tabs** — all reachable via `settings openTab <name>`.
 * **13 slide-out panels** — 11 have first-class IPC; 3 (Audio,
   Brightness, Tray) don't expose a `togglePanel` handler in current
   qdshell.  They appear in the manifest with `NO_IPC` and the test
