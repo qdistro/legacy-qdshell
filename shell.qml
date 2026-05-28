@@ -16,6 +16,7 @@ import Quickshell
 import qs.Commons
 
 // Modules
+import qs.Modules.Accessibility
 import qs.Modules.Background
 import qs.Modules.Bar
 import qs.Modules.DesktopWidgets
@@ -144,6 +145,7 @@ ShellRoot {
           IdleInhibitorService.init();
           PowerProfileService.init();
           PowerService.init();
+          AccessibilityService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
@@ -193,6 +195,7 @@ ShellRoot {
       Notification {}
       ToastOverlay {}
       OSD {}
+      FindCursorOverlay {}
 
       // Launcher overlay window (for overlay layer mode)
       Loader {
