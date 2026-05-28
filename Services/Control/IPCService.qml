@@ -89,7 +89,8 @@ Singleton {
                                             "sessionmenu": SettingsPanel.Tab.SessionMenu,
                                             "systemmonitor": SettingsPanel.Tab.SystemMonitor,
                                             "userinterface": SettingsPanel.Tab.UserInterface,
-                                            "wallpaper": SettingsPanel.Tab.Wallpaper
+                                            "wallpaper": SettingsPanel.Tab.Wallpaper,
+                                            "windowmanager": SettingsPanel.Tab.WindowManager
                                           })
 
   function _parseSettingsTabArg(tabArg) {

@@ -589,5 +589,21 @@
     "doubleClickTime": 400,
     "doubleClickDistance": 5,
     "dragThreshold": 8
+  },
+  "windowManager": {
+    "focusPolicy": "click",
+    "focusFollowsMouseDelay": 0,
+    "raiseOnClick": true,
+    "raiseOnHover": false,
+    "placement": "smart",
+    "snapEnabled": true,
+    "snapDistance": 16,
+    "titlebarDoubleClick": "maximize",
+    "decorationTheme": "",
+    "shortcutClose": "Alt+F4",
+    "shortcutToggleMaximize": "Super+Up",
+    "shortcutToggleFullscreen": "Super+F",
+    "shortcutTileLeft": "Super+Left",
+    "shortcutTileRight": "Super+Right"
   }
 }

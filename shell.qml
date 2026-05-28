@@ -36,6 +36,7 @@ import qs.Services.Location
 import qs.Services.Networking
 import qs.Services.Qdistro
 import qs.Services.Qdshell
+import qs.Services.Qdwin
 import qs.Services.Power
 import qs.Services.System
 import qs.Services.Theming
@@ -149,6 +150,7 @@ ShellRoot {
           AccessibilityService.init();
           KeyboardInputService.init();
           PointerInputService.init();
+          WindowManagerService.init();
           HostService.init();
           CustomButtonIPCService.init();
           IPCService.init(screenDetector);
