@@ -45,4 +45,5 @@ if node.found()
   test('desktop-icons', node, args: files('tests/test_desktop_icons.js'))
   test('removable-media', node, args: files('tests/test_removable_media.js'))
   test('output-layout', node, args: files('tests/test_output_layout.js'))
+  test('qdwin-only-guard', node, args: files('tests/test_qdwin_only_guard.js'))
 endif
