@@ -1,13 +1,48 @@
 # qdshell agent-assisted UI tests
 
-A regression harness that boots qdshell inside a **headless** nested
-weston compositor, drives each panel / settings tab via `qs ipc`,
+A regression harness that drives each panel / settings tab via `qs ipc`,
 screenshots the result, and uses a vision LLM to verify the captured
 image still matches a developer-authored description.
 
 The goal is to catch *behaviour regressions* during refactors (e.g.
 when extracting a `PanelShell` base or collapsing settings tabs)
 without requiring pixel-perfect goldens.
+
+## Two transports
+
+The harness supports two ways to reach a running qdshell:
+
+* **VM transport (preferred — the `qci gui` gate path).** When
+  `QDSHELL_UI_VM=<libvirt-domain>` is set, the harness drives the LIVE
+  qdshell session already running inside a qdwin VM: IPC over wayland-1
+  via `scripts/vm/vm-exec` (run as `admin`, targeting the deployed
+  `qs -p /usr/share/quickshell/qdshell`), and screenshots the VM
+  framebuffer from the host with `virsh screenshot`. codex describe/judge
+  still run on the host against the pulled-back PNGs. This is the
+  validated path: qdshell renders fine in a real qdwin session.
+
+* **Host transport (legacy fallback).** When `QDSHELL_UI_VM` is unset, the
+  harness boots a nested headless compositor + qdshell on the host. This
+  path is known to SIGSEGV quickshell during early FileView settings load
+  under headless Wayland on the current host
+  (see `todo/qdwin-vm/agent-ui-harness-headless-quickshell-crash.md`); it
+  is kept only for hosts with a working nested compositor and fails
+  loudly rather than passing on a blank framebuffer.
+
+The `qci gui` gate sets the VM env vars automatically
+(`QDSHELL_UI_VM`, `QDSHELL_UI_VM_EXEC`, `QDSHELL_UI_VIRSH`) after it
+acquires the GUI VM, and only runs the vision harness when a live
+qdshell/noctalia session is detected on wayland-1.
+
+### Security
+
+Every IPC argument that reaches the VM's `/bin/sh -c` (via
+qemu-guest-agent) is a developer-authored constant from `manifests.py`,
+re-validated against a strict token allowlist (`runner._IPC_TOKEN_RE`)
+before being shipped, and the guest command body is base64-wrapped (the
+`scripts/vm/vm-script` idiom) so nothing dynamic is interpolated into the
+guest shell string. The libvirt domain name from `QDSHELL_UI_VM` is also
+allowlist-validated.
 
 ## How "what an agent would see" works
 
@@ -78,14 +113,11 @@ PNG of `settings_audio` ends up at `artifacts/settings_audio.png`.
 
 ## Coverage
 
-* **23 settings tabs** — all reachable via `settings openTab <name>`.
-* **13 slide-out panels** — 11 have first-class IPC; 3 (Audio,
-  Brightness, Tray) don't expose a `togglePanel` handler in current
-  qdshell.  They appear in the manifest with `NO_IPC` and the test
-  uses `pytest.xfail` to flag them rather than silently skip.  To
-  enable them, add `togglePanel()` IPC handlers in
-  `Services/Control/IPCService.qml` (`target: "audio"`, `"brightness"`,
-  `"tray"`).
+* **30 settings tabs** — all reachable via `settings openTab <name>`.
+* **14 slide-out panels** — those with first-class IPC are driven; any
+  that don't expose a toggle handler in current qdshell appear in the
+  manifest with `NO_IPC` and the test uses `pytest.xfail` to flag them
+  rather than silently skip.
 * **Bar** — one idle screenshot is captured to baseline overall
   bar/dock/widget layout.
 
@@ -112,10 +144,12 @@ regressions (a section heading disappeared, a slider lost its label).
 
 ## Files
 
-* `runner.py` — primitives: Weston/Qdshell lifecycle, IPC, screenshot,
+* `runner.py` — primitives: VM-session transport (IPC + virsh-screenshot)
+  and the legacy host Weston/Qdshell lifecycle, plus IPC, screenshot,
   describe, judge.
 * `manifests.py` — the canonical surface list.
-* `conftest.py` — pytest fixtures (`weston`, `qdshell` session-scoped).
+* `conftest.py` — pytest fixtures: a unified `capture` fixture that routes
+  to the VM transport when `QDSHELL_UI_VM` is set, else the host transport.
 * `test_settings_tabs.py`, `test_panels.py`, `test_bar.py` — actual
   test cases.
 * `expectations/` — one `.md` per surface.
