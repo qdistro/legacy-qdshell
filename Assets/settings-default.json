@@ -564,6 +564,15 @@
     "gridSnap": false,
     "monitorWidgets": []
   },
+  "desktopIcons": {
+    "enabled": false,
+    "singleClick": false,
+    "showHidden": false,
+    "iconSize": 48,
+    "labelSize": 11,
+    "sortMode": "name",
+    "arrangeFoldersFirst": true
+  },
   "session": {
     "showSystemAutostart": true,
     "saveOnLogout": false,

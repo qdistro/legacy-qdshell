@@ -797,6 +797,22 @@ Singleton {
       // Format: [{ "name": "DP-1", "widgets": [...] }, { "name": "HDMI-1", "widgets": [...] }]
     }
 
+    // desktop file icons (xfdesktop parity) — opt-in, DISABLED BY DEFAULT.
+    // A self-contained layer that renders icons for the user's Desktop dir.
+    // When `enabled` is false this module renders nothing and the desktop
+    // behaves exactly as before (no regression to DesktopWidgets/Background).
+    property JsonObject desktopIcons: JsonObject {
+      property bool enabled: false
+      // false = double-click to activate (default), true = single-click.
+      property bool singleClick: false
+      property bool showHidden: false
+      property int iconSize: 48
+      property int labelSize: 11
+      // "name" | "type"
+      property string sortMode: "name"
+      property bool arrangeFoldersFirst: true
+    }
+
     // session / autostart + save/restore (xfce4-session parity)
     property JsonObject session: JsonObject {
       property bool showSystemAutostart: true

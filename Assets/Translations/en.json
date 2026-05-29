@@ -378,6 +378,9 @@
       "signal-text-very-poor": "Signal: Very poor"
     }
   },
+  "capabilities": {
+    "persist-only-note": "This setting is saved but not yet applied by the compositor. qdwin does not expose a request for it yet, so it will take effect automatically once support is added."
+  },
   "changelog": {
     "error": {
       "fetch-failed": "Unable to load changelog data. Please try again later.",
@@ -396,9 +399,6 @@
       "version": "Version {version}",
       "version-new-user": "Fresh install"
     }
-  },
-  "capabilities": {
-    "persist-only-note": "This setting is saved but not yet applied by the compositor. qdwin does not expose a request for it yet, so it will take effect automatically once support is added."
   },
   "common": {
     "actions": "Actions",
@@ -590,6 +590,28 @@
       "label-disconnected": "Wi-Fi disconnected",
       "label-ethernet": "Ethernet"
     }
+  },
+  "desktop-icons": {
+    "title": "Desktop Icons",
+    "enabled-label": "Enable desktop icons",
+    "enabled-description": "Show file and launcher icons for your Desktop folder on the desktop background. Disabled by default.",
+    "single-click-label": "Activate on single click",
+    "single-click-description": "Open items with a single click instead of a double click.",
+    "show-hidden-label": "Show hidden files",
+    "show-hidden-description": "Include dotfiles (names starting with a period) on the desktop.",
+    "sort-label": "Sort by",
+    "sort-description": "Choose how desktop icons are ordered.",
+    "sort-name": "Name",
+    "sort-type": "Type",
+    "folders-first-label": "Arrange folders first",
+    "folders-first-description": "Always place folders before files when sorting.",
+    "icon-size-label": "Icon size",
+    "icon-size-description": "Size of the file icons in pixels.",
+    "label-size-label": "Label text size",
+    "label-size-description": "Font size of the icon labels.",
+    "menu-open-applications": "Open Applications",
+    "menu-change-wallpaper": "Change Wallpaper",
+    "menu-desktop-settings": "Desktop Settings"
   },
   "display-modes": {
     "always-hide": "Always hide",

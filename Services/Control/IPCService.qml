@@ -75,6 +75,7 @@ Singleton {
                                             "lockscreen": SettingsPanel.Tab.LockScreen,
                                             "controlcenter": SettingsPanel.Tab.ControlCenter,
                                             "desktopwidgets": SettingsPanel.Tab.DesktopWidgets,
+                                            "desktopicons": SettingsPanel.Tab.DesktopIcons,
                                             "osd": SettingsPanel.Tab.OSD,
                                             "display": SettingsPanel.Tab.Display,
                                             "dock": SettingsPanel.Tab.Dock,
