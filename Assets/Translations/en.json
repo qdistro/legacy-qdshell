@@ -716,6 +716,15 @@
     }
   },
   "options": {
+    "removable-media-mount": {
+      "manual": "Manual (never auto-mount)",
+      "prompt": "Prompt (ask before mounting)"
+    },
+    "removable-media-autorun": {
+      "ignore": "Ignore (notify only)",
+      "prompt": "Prompt (ask what to do)",
+      "open": "Open file manager"
+    },
     "bar": {
       "density-comfortable": "Comfortable",
       "density-compact": "Compact",
@@ -1871,6 +1880,20 @@
       "update-version": "v{current} → v{new}",
       "updating": "Updating..."
     },
+    "removable-media": {
+      "title": "Removable Media",
+      "enabled-label": "Removable media handling",
+      "enabled-description": "Detect USB sticks, SD cards and external disks; show notifications and offer to mount them.",
+      "notify-insert-label": "Notify when a device is inserted",
+      "notify-insert-description": "Show a notification when removable media is connected.",
+      "notify-remove-label": "Notify when a device is removed",
+      "notify-remove-description": "Show a notification when removable media is disconnected.",
+      "mount-policy-label": "Mount policy",
+      "mount-policy-description": "How to handle mounting. Mounting is always brokered through the qdistro permission model; qdshell never mounts directly.",
+      "autorun-policy-label": "On insert",
+      "autorun-policy-description": "What to do after a device is inserted. Opening the file manager opens the device folder only — qdshell never runs programs or .desktop files from removable media.",
+      "security-note": "Mount and unmount go through the qdistro broker, which prompts for approval. Nothing is ever auto-executed from removable media."
+    },
     "region": {
       "title": "Region"
     },
@@ -2270,6 +2293,17 @@
     "search-launcher": "Search entries... or use > for commands",
     "search-wallhaven": "Search Wallhaven...",
     "search-wallpapers": "Type to filter wallpapers..."
+  },
+  "removable-media": {
+    "inserted-title": "Removable media inserted",
+    "removed-title": "Removable media removed",
+    "insert-prompt-title": "Mount removable media?",
+    "action-mount": "Mount",
+    "mounted-title": "Media mounted",
+    "unmounted-title": "Media unmounted",
+    "mount-failed-title": "Mount failed",
+    "unmount-failed-title": "Unmount failed",
+    "broker-denied": "The request was denied."
   },
   "positions": {
     "bottom": "Bottom",

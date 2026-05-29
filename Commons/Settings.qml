@@ -703,6 +703,26 @@ Singleton {
       property int batteryBrightnessLevel: 40
     }
 
+    // removable media (USB sticks / SD cards / external disks). All
+    // mount/unmount actions are brokered through the qdistro broker via
+    // qdistro-media-exec — qdshell never mounts directly. Autorun NEVER
+    // executes anything off the device; the strongest auto-action is
+    // opening a file manager at the mountpoint, and defaults are
+    // prompt/ignore. See qdistro/doc/removable-media-design.md.
+    property JsonObject removableMedia: JsonObject {
+      property bool enabled: true
+      // notify on insert/remove
+      property bool notifyOnInsert: true
+      property bool notifyOnRemove: true
+      // mountPolicy: "manual" (never auto-mount) | "prompt" (default —
+      // ask via the broker, which itself prompts the admin)
+      property string mountPolicy: "prompt"
+      // autorunPolicy: "ignore" (notify only) | "prompt" (default — show
+      // the insertion prompt) | "open" (open file manager at mountpoint,
+      // NO execution). There is intentionally no "run" option anywhere.
+      property string autorunPolicy: "prompt"
+    }
+
     property JsonObject colorSchemes: JsonObject {
       property bool useWallpaperColors: false
       property string predefinedScheme: "Qdshell (default)"

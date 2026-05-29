@@ -96,6 +96,7 @@ SmartPanel {
     Notifications,
     Plugins,
     Power,
+    RemovableMedia,
     Session,
     SessionMenu,
     SystemMonitor,
