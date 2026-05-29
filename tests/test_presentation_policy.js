@@ -78,4 +78,98 @@ Object.keys(P).forEach(function (name) {
 // non-array tolerated
 assert.deepStrictEqual(P.inhibitorRows(null), []);
 
+// ════════════════════════════════════════════════════════════════════
+// EXPANDED COVERAGE
+// ════════════════════════════════════════════════════════════════════
+
+// ─── exported well-known id constants are fixed, never user-derived ──
+assert.strictEqual(P.PRESENTATION_INHIBITOR_ID, "presentation-mode");
+assert.strictEqual(P.FULLSCREEN_INHIBITOR_ID, "fullscreen");
+
+// ─── add/remove edge cases + non-mutation + round-trip ──────────────
+// add does NOT mutate its input array (returns a fresh copy).
+const baseList = ["a"];
+const added = P.addInhibitor(baseList, "b");
+assert.deepStrictEqual(baseList, ["a"], "addInhibitor must not mutate input");
+assert.deepStrictEqual(added, ["a", "b"]);
+// remove does NOT mutate its input array.
+const remBase = ["a", "b"];
+const removed = P.removeInhibitor(remBase, "a");
+assert.deepStrictEqual(remBase, ["a", "b"], "removeInhibitor must not mutate input");
+assert.deepStrictEqual(removed, ["b"]);
+// remove returns a NEW array even when the id is absent (QML reassign safety).
+assert.notStrictEqual(P.removeInhibitor(remBase, "absent"), remBase);
+// add->remove round-trip returns to the original contents (order preserved).
+let rt = ["manual", "fullscreen"];
+rt = P.addInhibitor(rt, "presentation-mode");
+rt = P.removeInhibitor(rt, "presentation-mode");
+assert.deepStrictEqual(rt, ["manual", "fullscreen"], "add then remove restores list");
+// hasInhibitor on non-array / absent id.
+assert.strictEqual(P.hasInhibitor(null, "x"), false);
+assert.strictEqual(P.hasInhibitor(undefined, "x"), false);
+assert.strictEqual(P.hasInhibitor(["a"], "z"), false);
+
+// ─── applyPresentationMode non-array + position of appended id ──────
+assert.deepStrictEqual(P.applyPresentationMode(null, true), ["presentation-mode"]);
+assert.deepStrictEqual(P.applyPresentationMode(undefined, false), []);
+// Appends at the END, preserving existing order.
+assert.deepStrictEqual(P.applyPresentationMode(["x", "y"], true), ["x", "y", "presentation-mode"]);
+
+// ─── clampAutoDisableMinutes boundaries ─────────────────────────────
+assert.strictEqual(P.clampAutoDisableMinutes(1440), 1440, "exactly 24h is kept");
+assert.strictEqual(P.clampAutoDisableMinutes(1441), 1440, "just over 24h capped");
+assert.strictEqual(P.clampAutoDisableMinutes(Infinity), 0, "Infinity -> 0 (not finite)");
+assert.strictEqual(P.clampAutoDisableMinutes(-Infinity), 0);
+assert.strictEqual(P.clampAutoDisableMinutes("not a number"), 0, "non-numeric string -> 0");
+assert.strictEqual(P.clampAutoDisableMinutes(""), 0, "empty string Number('') is 0");
+assert.strictEqual(P.clampAutoDisableMinutes(null), 0, "null Number(null) is 0");
+assert.strictEqual(P.clampAutoDisableMinutes(undefined), 0, "undefined -> 0");
+assert.strictEqual(P.clampAutoDisableMinutes(0.4), 0, "rounds down");
+assert.strictEqual(P.clampAutoDisableMinutes(0.5), 1, "rounds up at .5");
+
+// ─── shouldRestorePresentationMode strict-bool only ─────────────────
+assert.strictEqual(P.shouldRestorePresentationMode(1), false, "1 is not strict true");
+assert.strictEqual(P.shouldRestorePresentationMode(null), false);
+assert.strictEqual(P.shouldRestorePresentationMode(0), false);
+
+// ─── shouldSuppressNotifications strict-bool only (no truthy slip) ───
+assert.strictEqual(P.shouldSuppressNotifications(1, 1), false, "truthy non-bool does not suppress");
+assert.strictEqual(P.shouldSuppressNotifications("true", "true"), false);
+assert.strictEqual(P.shouldSuppressNotifications(undefined, undefined), false);
+
+// ─── inhibitorRows: verbatim non-string ids + duplicates ────────────
+// Numeric / object ids are stringified for the id field but NEVER given a
+// "known" label (they are not one of the well-known constants).
+const mixedRows = P.inhibitorRows(["presentation-mode", 42, "manual", "manual"]);
+assert.strictEqual(mixedRows.length, 4, "duplicates are NOT collapsed in the viewer");
+assert.strictEqual(mixedRows[1].id, "42", "numeric id stringified for display");
+assert.strictEqual(mixedRows[1].known, null);
+assert.strictEqual(mixedRows[2].known, "manual");
+assert.strictEqual(mixedRows[3].known, "manual", "second duplicate still labelled");
+
+// ─── INJECTION SAFETY: reason-like + metachar ids preserved verbatim ─
+// Several distinct untrusted ids (some shaped like "app:NAME — REASON")
+// must each survive completely unmodified, char-for-char.
+const untrusted = [
+  "app:firefox — Playing video; rm -rf ~",
+  "`reboot`",
+  "$(touch /tmp/pwn)",
+  "x|y&z>out <in",
+  "id with spaces and 'quotes' and \"dquotes\""
+];
+const utRows = P.inhibitorRows(untrusted);
+assert.strictEqual(utRows.length, untrusted.length);
+utRows.forEach(function (row, i) {
+  assert.strictEqual(row.id, untrusted[i],
+    "untrusted id #" + i + " preserved byte-for-byte (no escaping/transform)");
+  assert.strictEqual(row.known, null, "untrusted id is never mistaken for a well-known id");
+});
+// Defence-in-depth: the module exposes ZERO command/argv builders, so no
+// untrusted id can ever be folded into a shell command anywhere.
+const exportNames = Object.keys(P);
+exportNames.forEach(function (name) {
+  assert.ok(!/cmd|command|argv|shell|exec|spawn|sh\b/i.test(name),
+    "no command-builder export present: " + name);
+});
+
 console.log("presentation-policy: all assertions passed");

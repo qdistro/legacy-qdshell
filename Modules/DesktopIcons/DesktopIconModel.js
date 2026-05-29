@@ -159,7 +159,9 @@ function buildLaunchArgv(entry) {
 // Returns true iff the given argv is shell-safe: a non-empty array whose
 // every element is a plain string. (No shell is interpreting an argv array.)
 function isSafeArgv(argv) {
-    if (!argv || typeof argv.length !== "number" || argv.length === 0)
+    // Must be a real array — a bare string also has a numeric .length and
+    // string-indexed chars, so guard with Array.isArray to avoid blessing it.
+    if (!Array.isArray(argv) || argv.length === 0)
         return false;
     for (var i = 0; i < argv.length; i++) {
         if (typeof argv[i] !== "string")

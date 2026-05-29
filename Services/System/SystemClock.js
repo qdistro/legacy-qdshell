@@ -81,9 +81,13 @@ function parseTimezones(text) {
 }
 
 // A syntactically well-formed IANA timezone name: one or more "/"-separated
-// components, each made of [A-Za-z0-9._+-], and the whole thing not absolute
-// and containing no "..". This is a *shape* check only; membership in the
-// enumerated list is the real gate (see normalizeTimezone).
+// components, each STARTING with an alphanumeric and otherwise made of
+// [A-Za-z0-9._+-], and the whole thing not absolute and containing no "..".
+// Requiring a leading alphanumeric on every component blocks option-shaped
+// names like "-foo" (which timedatectl could mis-parse as a flag) — real IANA
+// zone components always begin with a letter or digit, never a dash/dot/plus.
+// This is a *shape* check only; membership in the enumerated list is the real
+// gate (see normalizeTimezone).
 function isWellFormedTimezone(z) {
     if (typeof z !== "string" || z === "")
         return false;
@@ -91,7 +95,7 @@ function isWellFormedTimezone(z) {
         return false;
     if (z.indexOf("..") !== -1)
         return false;
-    return /^[A-Za-z0-9._+-]+(\/[A-Za-z0-9._+-]+)*$/.test(z);
+    return /^[A-Za-z0-9][A-Za-z0-9._+-]*(\/[A-Za-z0-9][A-Za-z0-9._+-]*)*$/.test(z);
 }
 
 // ─── timezone validation / normalization ────────────────────────────
