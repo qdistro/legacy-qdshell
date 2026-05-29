@@ -36,6 +36,18 @@ Singleton {
     // identity flag. (Kept readonly to make accidental writes fail loudly.)
     readonly property bool isQdwin: true
 
+    // Output (display) management. qdwin implements wlr-output-management-v1;
+    // the binding enumerates heads/modes (outputs) and applies an atomic
+    // layout (applyOutputLayout). These proxy the live binding so the Display
+    // layout tab (and CapabilityService.outputManagement) can consume them
+    // without reaching into the internal qdwinBinding id. outputManagement-
+    // Available gates the capability on the manager actually being advertised.
+    readonly property bool outputManagementAvailable:
+        qdwinBinding ? qdwinBinding.outputManagementAvailable : false
+    readonly property var outputs: qdwinBinding ? qdwinBinding.outputs : []
+    readonly property int outputSerial:
+        qdwinBinding ? qdwinBinding.outputSerial : 0
+
     // Workspace state. As of v24 qdwin has real workspaces, exposed via
     // the standard ext-workspace-v1 protocol and surfaced by the
     // QdwinBinding plugin (workspaceCount / activeWorkspace). The count is
@@ -151,6 +163,26 @@ Singleton {
             return;
         }
         qdwinBinding.setBorderColor(handle, rgba >>> 0);
+    }
+
+    // Output (display) management wrappers. `layout` is the QVariantList the
+    // OutputLayout.toApplyList() helper builds; `serial` must be the current
+    // root.outputSerial (a stale serial is rejected by the compositor as
+    // `cancelled`). apply is ATOMIC + reversible: on failure/cancel the
+    // compositor reverts, and the Display tab re-applies the saved baseline.
+    // The async verdict arrives via root.outputLayoutResult.
+    signal outputLayoutResult(bool applied, bool ok, bool cancelled)
+    function applyOutputLayout(layout, serial) {
+        if (!qdwinBinding || !qdwinBinding.outputManagementAvailable) {
+            Logger.w("Qdwin", "applyOutputLayout — no output manager");
+            return false;
+        }
+        return qdwinBinding.applyLayout(layout, serial >>> 0);
+    }
+    function testOutputLayout(layout, serial) {
+        if (!qdwinBinding || !qdwinBinding.outputManagementAvailable)
+            return false;
+        return qdwinBinding.testLayout(layout, serial >>> 0);
     }
 
     function _windowByHandle(handle) {
@@ -321,6 +353,18 @@ Singleton {
         onLastErrorChanged: {
             if (lastError.length > 0)
                 Logger.w("Qdwin", "binding error: " + lastError);
+        }
+        // Output (display) management: relay the compositor's apply/test
+        // verdict up to the Display layout tab's confirm-or-revert path.
+        onLayoutResult: (applied, ok, cancelled) => {
+            root.outputLayoutResult(applied, ok, cancelled);
+        }
+        // Gate CapabilityService.outputManagement on the manager actually
+        // being advertised. Fires on bind (manager appears), hotplug, and
+        // disconnect (manager gone → false).
+        onOutputsChanged: {
+            CapabilityService.setOutputManagement(
+                qdwinBinding.outputManagementAvailable);
         }
         onLauncherRequested: {
             const screen = PanelService.findScreenForPanels();

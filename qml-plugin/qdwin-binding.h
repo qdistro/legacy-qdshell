@@ -26,7 +26,9 @@
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QVariantMap>
+#include <QVariantList>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 class CtrlServer;
@@ -37,6 +39,10 @@ struct qdwin_shell_v1;
 struct ext_workspace_manager_v1;
 struct ext_workspace_group_handle_v1;
 struct ext_workspace_handle_v1;
+struct zwlr_output_manager_v1;
+struct zwlr_output_head_v1;
+struct zwlr_output_mode_v1;
+struct zwlr_output_configuration_v1;
 
 class QdwinBinding : public QObject {
     Q_OBJECT
@@ -52,6 +58,17 @@ class QdwinBinding : public QObject {
     // workspace ids (toplevelWorkspace sidecar).
     Q_PROPERTY(quint32 workspaceCount READ workspaceCount NOTIFY workspacesChanged)
     Q_PROPERTY(quint32 activeWorkspace READ activeWorkspace NOTIFY workspacesChanged)
+
+    // Output (display) management (wlr-output-management-unstable-v1).
+    // outputManagementAvailable flips true once qdwin advertises the
+    // zwlr_output_manager_v1 global (CapabilityService.outputManagement
+    // gates on it). `outputs` is the enumerated head/mode set the Display
+    // layout tab renders; outputSerial is the current configuration serial
+    // a layout must be applied against (a stale serial is rejected).
+    Q_PROPERTY(bool outputManagementAvailable READ outputManagementAvailable
+               NOTIFY outputsChanged)
+    Q_PROPERTY(QVariantList outputs READ outputs NOTIFY outputsChanged)
+    Q_PROPERTY(quint32 outputSerial READ outputSerial NOTIFY outputsChanged)
 
 public:
     explicit QdwinBinding(QObject *parent = nullptr);
@@ -69,6 +86,10 @@ public:
     quint32 workspaceCount() const { return workspaceCount_; }
     quint32 activeWorkspace() const { return activeWorkspace_; }
 
+    bool outputManagementAvailable() const { return omManager_ != nullptr; }
+    QVariantList outputs() const { return outputs_; }
+    quint32 outputSerial() const { return outputSerial_; }
+
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
     Q_INVOKABLE void closeWindow(quint32 handle);
     Q_INVOKABLE void requestMaximize(quint32 handle, bool maximized);
@@ -85,6 +106,26 @@ public:
     Q_INVOKABLE void removeWorkspace(quint32 index);
     Q_INVOKABLE void setWorkspaceCount(quint32 count);
     Q_INVOKABLE void moveToplevelToWorkspace(quint32 handle, quint32 index);
+
+    // Output (display) management. applyLayout builds a configuration
+    // against `serial` (pass outputSerial), enabling/disabling + configuring
+    // each head per the supplied list, then `apply`s it ATOMICALLY. testLayout
+    // validates without applying. The compositor's reply (succeeded/failed/
+    // cancelled) arrives asynchronously via layoutResult(); on a failed/
+    // cancelled apply the compositor has reverted to the prior layout, so the
+    // shell's confirm-or-revert can re-apply the saved layout via a second
+    // applyLayout. Each layout entry is a QVariantMap:
+    //   name (string, required — matches outputs[].name)
+    //   enabled (bool)
+    //   x, y (int)         — position in global compositor space
+    //   width, height (int), refresh (int mHz)  — mode (custom/exact match)
+    //   scale (real)       — integer scale (fractional rounded by compositor)
+    //   transform (int)    — wl_output.transform enum (0..7)
+    // All numeric fields optional; an omitted field keeps the head's current
+    // value. `name` is the only required key. Returns false synchronously if
+    // the binding has no live manager (no apply attempted).
+    Q_INVOKABLE bool applyLayout(const QVariantList &layout, quint32 serial);
+    Q_INVOKABLE bool testLayout(const QVariantList &layout, quint32 serial);
 
     // spec/10 §"compositor-mediated gating" — once the shell has a
     // broker verdict on the most recent selection_set, it calls
@@ -177,6 +218,17 @@ signals:
     // Fires after every ext-workspace done that changes the workspace
     // count or active index. Drives Qdwin.qml's workspace ListModel.
     void workspacesChanged();
+
+    // Fires whenever the enumerated output set or the current configuration
+    // serial changes (manager bind, output hotplug/resize, or an applied
+    // layout). Drives the Display layout tab's model + re-arms the
+    // confirm-or-revert baseline. Also drives outputManagementAvailable.
+    void outputsChanged();
+    // Async result of an applyLayout/testLayout. `applied` distinguishes an
+    // apply (true) from a test (false). `ok` is the compositor's verdict:
+    // true = succeeded, false = failed or cancelled. On a failed/cancelled
+    // apply the compositor reverted; the shell may re-apply the saved layout.
+    void layoutResult(bool applied, bool ok, bool cancelled);
 
     // spec/10 §"selection-set event" — fires whenever a client sets
     // the seat selection. Carries the source toplevel handle, the
@@ -323,6 +375,50 @@ private:
     WsEntry *wsEntryFor(ext_workspace_handle_v1 *h);
     void wsTeardownState();        // disconnect path: drop state, proxies dead
     void wsFinished();             // manager.finished: release live proxies
+
+    // ---- output (display) management client state ----
+    // One manager. Heads + their modes accumulate as the head/mode events
+    // arrive; omRebuild() (on the manager `done`) collapses them into the
+    // QVariantList `outputs_` the Display tab renders and stashes the
+    // proxies in omHeadProxies_ / omModeProxies_ for building configurations.
+    struct OmModeInfo {
+        zwlr_output_mode_v1 *proxy = nullptr;
+        int width = 0, height = 0, refresh = 0;
+        bool preferred = false;
+    };
+    struct OmHeadInfo {
+        zwlr_output_head_v1 *proxy = nullptr;
+        QString name, description, make, model, serial;
+        bool finished = false;    // compositor sent head.finished → inert
+        bool enabled = false;
+        int x = 0, y = 0;
+        int scale = 1;            // integer scale (wl_fixed → int)
+        int transform = 0;
+        zwlr_output_mode_v1 *currentMode = nullptr;
+        std::vector<OmModeInfo> modes;
+    };
+    zwlr_output_manager_v1 *omManager_ = nullptr;
+    std::vector<OmHeadInfo> omHeads_;     // accumulator since last done
+    QVariantList outputs_;                // collapsed, QML-facing
+    quint32 outputSerial_ = 0;
+    // Configuration objects in flight (apply/test issued, awaiting reply).
+    // We track whether each was an apply so layoutResult can report it.
+    struct OmConfig {
+        zwlr_output_configuration_v1 *proxy = nullptr;
+        bool applied = false;
+    };
+    std::vector<OmConfig> omConfigs_;
+    void omBindManager(zwlr_output_manager_v1 *mgr);
+    void omBindHead(zwlr_output_head_v1 *head);
+    OmHeadInfo *omHeadFor(zwlr_output_head_v1 *h);
+    OmModeInfo *omModeFor(zwlr_output_mode_v1 *m);
+    void omRebuild();                     // collapse omHeads_ → outputs_
+    void omTeardownState();
+    bool omSubmitLayout(const QVariantList &layout, quint32 serial,
+                        bool apply);
+    void omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
+                        bool cancelled);
+    friend struct QdwinOmDispatch;
 
     CtrlServer *ctrlServer_ = nullptr;
 

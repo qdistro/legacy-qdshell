@@ -620,6 +620,33 @@
     "arrange-hint-label": "Manual arrangement",
     "arrange-hint-description": "Drag icons to rearrange them; positions are saved. Right-click an icon to Open, Copy path, or Move to Trash."
   },
+  "display": {
+    "layout": {
+      "tab": "Layout",
+      "title": "Display layout",
+      "arrangement": "Monitor arrangement",
+      "arrangement-desc": "Drag a monitor to reposition it. Positions snap together when you apply.",
+      "enabled": "Enabled",
+      "resolution": "Resolution",
+      "scale": "Scale",
+      "rotation": "Rotation",
+      "rotate-0": "No rotation",
+      "rotate-90": "90 degrees",
+      "rotate-180": "180 degrees",
+      "rotate-270": "270 degrees",
+      "primary": "Primary",
+      "apply": "Apply",
+      "reset": "Reset",
+      "revert": "Revert",
+      "keep": "Keep changes",
+      "invalid": "This arrangement is not valid (overlapping or disabled outputs). Adjust and try again.",
+      "apply-failed": "The compositor could not apply this layout; the previous layout was kept.",
+      "cancelled": "The display configuration changed while applying; please try again.",
+      "confirm-title": "Keep these display settings?",
+      "confirm-body": "Your displays were reconfigured. Keep these settings? They will revert automatically if not confirmed.",
+      "persist-only": "Display layout management is unavailable: the compositor is not advertising the output manager."
+    }
+  },
   "display-modes": {
     "always-hide": "Always hide",
     "always-show": "Always show",

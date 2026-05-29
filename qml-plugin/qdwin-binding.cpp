@@ -14,6 +14,7 @@
 #include <wayland-client.h>
 #include "qdwin-shell-v1-client-protocol.h"
 #include "ext-workspace-v1-client-protocol.h"
+#include "wlr-output-management-unstable-v1-client-protocol.h"
 
 #include <algorithm>
 
@@ -408,6 +409,165 @@ static const ext_workspace_manager_v1_listener kWsManagerListener = {
     .finished        = QdwinWsDispatch::m_finished,
 };
 
+// ---- wlr-output-management-v1 client dispatch ----
+// Mirror of QdwinWsDispatch: trampolines from the C listener structs into
+// QdwinBinding member functions (QdwinOmDispatch is a friend).
+struct QdwinOmDispatch {
+    // ---- zwlr_output_mode_v1 ----
+    static void md_size(void *d, zwlr_output_mode_v1 *m, int32_t w, int32_t h) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omModeFor(m)) { e->width = w; e->height = h; }
+    }
+    static void md_refresh(void *d, zwlr_output_mode_v1 *m, int32_t r) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omModeFor(m)) e->refresh = r;
+    }
+    static void md_preferred(void *d, zwlr_output_mode_v1 *m) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omModeFor(m)) e->preferred = true;
+    }
+    static void md_finished(void *d, zwlr_output_mode_v1 *m) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omModeFor(m)) {
+            if (e->proxy) {
+                zwlr_output_mode_v1_release(e->proxy);
+                e->proxy = nullptr;
+            }
+        }
+    }
+    // ---- zwlr_output_head_v1 ----
+    static void hd_name(void *d, zwlr_output_head_v1 *h, const char *n) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->name = qstr(n);
+    }
+    static void hd_description(void *d, zwlr_output_head_v1 *h, const char *s) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->description = qstr(s);
+    }
+    static void hd_physical_size(void *, zwlr_output_head_v1 *, int32_t, int32_t) {}
+    static void hd_mode(void *d, zwlr_output_head_v1 *h, zwlr_output_mode_v1 *m) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) {
+            QdwinBinding::OmModeInfo mi;
+            mi.proxy = m;
+            e->modes.push_back(mi);
+            zwlr_output_mode_v1_add_listener(m, &kOmModeListener, b);
+        }
+    }
+    static void hd_enabled(void *d, zwlr_output_head_v1 *h, int32_t en) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->enabled = (en != 0);
+    }
+    static void hd_current_mode(void *d, zwlr_output_head_v1 *h,
+                                zwlr_output_mode_v1 *m) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->currentMode = m;
+    }
+    static void hd_position(void *d, zwlr_output_head_v1 *h, int32_t x, int32_t y) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) { e->x = x; e->y = y; }
+    }
+    static void hd_transform(void *d, zwlr_output_head_v1 *h, int32_t t) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->transform = t;
+    }
+    static void hd_scale(void *d, zwlr_output_head_v1 *h, wl_fixed_t s) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) {
+            int sc = wl_fixed_to_int(s);
+            e->scale = sc < 1 ? 1 : sc;
+        }
+    }
+    static void hd_finished(void *d, zwlr_output_head_v1 *h) {
+        // The head is now inert (the compositor destroyed it as part of a
+        // resync or a hotplug-remove). Mark it so omRebuild() reaps it and
+        // omSubmitLayout() never references the dead proxy. Per spec we send
+        // a destroy request and release it.
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) {
+            e->finished = true;
+            if (e->proxy) {
+                zwlr_output_head_v1_release(e->proxy);
+                e->proxy = nullptr;
+            }
+        }
+    }
+    static void hd_make(void *d, zwlr_output_head_v1 *h, const char *s) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->make = qstr(s);
+    }
+    static void hd_model(void *d, zwlr_output_head_v1 *h, const char *s) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->model = qstr(s);
+    }
+    static void hd_serial(void *d, zwlr_output_head_v1 *h, const char *s) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        if (auto *e = b->omHeadFor(h)) e->serial = qstr(s);
+    }
+    static void hd_adaptive_sync(void *, zwlr_output_head_v1 *, uint32_t) {}
+    // ---- zwlr_output_manager_v1 ----
+    static void mgr_head(void *d, zwlr_output_manager_v1 *,
+                         zwlr_output_head_v1 *h) {
+        static_cast<QdwinBinding *>(d)->omBindHead(h);
+    }
+    static void mgr_done(void *d, zwlr_output_manager_v1 *, uint32_t serial) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        b->outputSerial_ = serial;
+        b->omRebuild();
+    }
+    static void mgr_finished(void *d, zwlr_output_manager_v1 *) {
+        static_cast<QdwinBinding *>(d)->omTeardownState();
+    }
+    // ---- zwlr_output_configuration_v1 ----
+    static void cfg_succeeded(void *d, zwlr_output_configuration_v1 *c) {
+        static_cast<QdwinBinding *>(d)->omConfigResult(c, true, false);
+    }
+    static void cfg_failed(void *d, zwlr_output_configuration_v1 *c) {
+        static_cast<QdwinBinding *>(d)->omConfigResult(c, false, false);
+    }
+    static void cfg_cancelled(void *d, zwlr_output_configuration_v1 *c) {
+        static_cast<QdwinBinding *>(d)->omConfigResult(c, false, true);
+    }
+
+    static const zwlr_output_mode_v1_listener kOmModeListener;
+};
+
+const zwlr_output_mode_v1_listener QdwinOmDispatch::kOmModeListener = {
+    .size      = QdwinOmDispatch::md_size,
+    .refresh   = QdwinOmDispatch::md_refresh,
+    .preferred = QdwinOmDispatch::md_preferred,
+    .finished  = QdwinOmDispatch::md_finished,
+};
+
+static const zwlr_output_head_v1_listener kOmHeadListener = {
+    .name          = QdwinOmDispatch::hd_name,
+    .description    = QdwinOmDispatch::hd_description,
+    .physical_size  = QdwinOmDispatch::hd_physical_size,
+    .mode           = QdwinOmDispatch::hd_mode,
+    .enabled        = QdwinOmDispatch::hd_enabled,
+    .current_mode   = QdwinOmDispatch::hd_current_mode,
+    .position       = QdwinOmDispatch::hd_position,
+    .transform      = QdwinOmDispatch::hd_transform,
+    .scale          = QdwinOmDispatch::hd_scale,
+    .finished       = QdwinOmDispatch::hd_finished,
+    .make           = QdwinOmDispatch::hd_make,
+    .model          = QdwinOmDispatch::hd_model,
+    .serial_number  = QdwinOmDispatch::hd_serial,
+    .adaptive_sync  = QdwinOmDispatch::hd_adaptive_sync,
+};
+
+static const zwlr_output_manager_v1_listener kOmManagerListener = {
+    .head     = QdwinOmDispatch::mgr_head,
+    .done     = QdwinOmDispatch::mgr_done,
+    .finished = QdwinOmDispatch::mgr_finished,
+};
+
+static const zwlr_output_configuration_v1_listener kOmConfigListener = {
+    .succeeded = QdwinOmDispatch::cfg_succeeded,
+    .failed    = QdwinOmDispatch::cfg_failed,
+    .cancelled = QdwinOmDispatch::cfg_cancelled,
+};
+
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.
 // QdwinBindingDispatch is already a friend of QdwinBinding so it can
 // write shell_ / shellVersion_ directly. We piggyback the registry
@@ -431,6 +591,15 @@ struct QdwinRegistry {
                                  &ext_workspace_manager_v1_interface, 1));
             b->wsManager_ = mgr;
             ext_workspace_manager_v1_add_listener(mgr, &kWsManagerListener, b);
+            return;
+        }
+        // Output (display) management (advertised to all clients).
+        if (std::strcmp(interface, zwlr_output_manager_v1_interface.name) == 0) {
+            uint32_t v = version < 4 ? version : 4;
+            auto *mgr = static_cast<zwlr_output_manager_v1 *>(
+                wl_registry_bind(reg, name,
+                                 &zwlr_output_manager_v1_interface, v));
+            b->omBindManager(mgr);
             return;
         }
     }
@@ -538,6 +707,7 @@ void QdwinBinding::teardown(const QString &reason) {
     registry_ = nullptr;
     shell_ = nullptr;
     wsTeardownState();
+    omTeardownState();
     if (bound_) setBound(false);
     if (!reason.isEmpty() && lastError_.isEmpty())
         setLastError(reason);
@@ -777,6 +947,207 @@ void QdwinBinding::moveToplevelToWorkspace(quint32 handle, quint32 index) {
         return;
     qdwin_shell_v1_move_toplevel_to_workspace(shell_, handle, index);
     if (display_) wl_display_flush(display_);
+}
+
+// ==================== output (display) management ====================
+
+void QdwinBinding::omBindManager(zwlr_output_manager_v1 *mgr) {
+    omManager_ = mgr;
+    zwlr_output_manager_v1_add_listener(mgr, &kOmManagerListener, this);
+}
+
+void QdwinBinding::omBindHead(zwlr_output_head_v1 *head) {
+    OmHeadInfo h;
+    h.proxy = head;
+    omHeads_.push_back(std::move(h));
+    zwlr_output_head_v1_add_listener(head, &kOmHeadListener, this);
+}
+
+QdwinBinding::OmHeadInfo *QdwinBinding::omHeadFor(zwlr_output_head_v1 *h) {
+    for (auto &e : omHeads_)
+        if (e.proxy == h)
+            return &e;
+    return nullptr;
+}
+
+QdwinBinding::OmModeInfo *QdwinBinding::omModeFor(zwlr_output_mode_v1 *m) {
+    for (auto &h : omHeads_)
+        for (auto &md : h.modes)
+            if (md.proxy == m)
+                return &md;
+    return nullptr;
+}
+
+// Collapse the accumulated head/mode events into the QVariantList the
+// Display layout tab renders. The protocol re-sends the whole head set on
+// every `done` (after destroying the old heads with `finished`), so we
+// rebuild from scratch each time and forget the stale proxies — they are
+// inert. Each output map carries name/description/make/model/serial (all
+// PlainText on the QML side — never shell-interpolated), enabled, x/y,
+// scale, transform, the mode list, and the current mode index.
+void QdwinBinding::omRebuild() {
+    // Reap heads the compositor has finished (it destroys + recreates the
+    // whole head set on every resync). Their proxies were already released in
+    // hd_finished; drop the entries so outputs_ and omSubmitLayout only ever
+    // see live heads.
+    omHeads_.erase(std::remove_if(omHeads_.begin(), omHeads_.end(),
+                   [](const OmHeadInfo &h) { return h.finished; }),
+                   omHeads_.end());
+    QVariantList out;
+    for (const auto &h : omHeads_) {
+        QVariantMap m;
+        m["name"] = h.name;
+        m["description"] = h.description;
+        m["make"] = h.make;
+        m["model"] = h.model;
+        m["serial"] = h.serial;
+        m["enabled"] = h.enabled;
+        m["x"] = h.x;
+        m["y"] = h.y;
+        m["scale"] = h.scale;
+        m["transform"] = h.transform;
+        QVariantList modes;
+        int currentIdx = -1;
+        for (int i = 0; i < static_cast<int>(h.modes.size()); ++i) {
+            const auto &md = h.modes[i];
+            QVariantMap mm;
+            mm["width"] = md.width;
+            mm["height"] = md.height;
+            mm["refresh"] = md.refresh;
+            mm["preferred"] = md.preferred;
+            modes.append(mm);
+            if (md.proxy == h.currentMode)
+                currentIdx = i;
+        }
+        m["modes"] = modes;
+        m["currentMode"] = currentIdx;
+        out.append(m);
+    }
+    outputs_ = std::move(out);
+    emit outputsChanged();
+}
+
+void QdwinBinding::omTeardownState() {
+    // Disconnect / manager.finished path: proxies are reaped with the
+    // display (or inert after finished). Drop our view so a fresh bind
+    // starts clean.
+    omHeads_.clear();
+    omConfigs_.clear();
+    outputs_.clear();
+    omManager_ = nullptr;
+    outputSerial_ = 0;
+    emit outputsChanged();
+}
+
+void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
+                                  bool cancelled) {
+    bool applied = false;
+    for (auto it = omConfigs_.begin(); it != omConfigs_.end(); ++it) {
+        if (it->proxy == cfg) {
+            applied = it->applied;
+            omConfigs_.erase(it);
+            break;
+        }
+    }
+    // Per spec the client destroys the configuration object on any of
+    // succeeded/failed/cancelled.
+    zwlr_output_configuration_v1_destroy(cfg);
+    if (display_) wl_display_flush(display_);
+    emit layoutResult(applied, ok, cancelled);
+}
+
+// Build a configuration for `layout` against `serial` and apply or test it.
+// Returns false (no attempt) if there is no live manager. Every advertised
+// head must be configured (the protocol errors on an omitted head), so we
+// iterate the enumerated head set and either match it to a layout entry
+// (by name) or carry its current enabled state forward unchanged.
+bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
+                                  bool apply) {
+    if (!omManager_)
+        return false;
+
+    auto *cfg = zwlr_output_manager_v1_create_configuration(omManager_, serial);
+    if (!cfg)
+        return false;
+    OmConfig rec;
+    rec.proxy = cfg;
+    rec.applied = apply;
+    omConfigs_.push_back(rec);
+    zwlr_output_configuration_v1_add_listener(cfg, &kOmConfigListener, this);
+
+    for (auto &h : omHeads_) {
+        if (h.finished || !h.proxy)
+            continue;  // inert head — never reference a dead proxy
+        // Find the matching layout entry by name (PlainText match; names
+        // come from the compositor, not user input).
+        const QVariantMap *want = nullptr;
+        QVariantMap wantStore;
+        for (const QVariant &v : layout) {
+            QVariantMap e = v.toMap();
+            if (e.value("name").toString() == h.name) {
+                wantStore = e;
+                want = &wantStore;
+                break;
+            }
+        }
+        bool enable = want ? want->value("enabled", h.enabled).toBool()
+                           : h.enabled;
+        if (!enable) {
+            zwlr_output_configuration_v1_disable_head(cfg, h.proxy);
+            continue;
+        }
+        auto *ch = zwlr_output_configuration_v1_enable_head(cfg, h.proxy);
+        if (!want)
+            continue;  // enabled, untouched — keep all current properties
+        // Mode: prefer an exact width/height/refresh match against an
+        // advertised mode (set_mode); fall back to set_custom_mode so the
+        // compositor can validate against its mode_list.
+        if (want->contains("width") && want->contains("height")) {
+            int w = want->value("width").toInt();
+            int hh = want->value("height").toInt();
+            int refresh = want->value("refresh", 0).toInt();
+            zwlr_output_mode_v1 *exact = nullptr;
+            for (const auto &md : h.modes) {
+                if (md.width == w && md.height == hh &&
+                    (refresh == 0 || md.refresh == refresh)) {
+                    exact = md.proxy;
+                    break;
+                }
+            }
+            if (exact)
+                zwlr_output_configuration_head_v1_set_mode(ch, exact);
+            else
+                zwlr_output_configuration_head_v1_set_custom_mode(ch, w, hh,
+                                                                  refresh);
+        }
+        if (want->contains("x") && want->contains("y"))
+            zwlr_output_configuration_head_v1_set_position(ch,
+                want->value("x").toInt(), want->value("y").toInt());
+        if (want->contains("transform"))
+            zwlr_output_configuration_head_v1_set_transform(ch,
+                want->value("transform").toInt());
+        if (want->contains("scale")) {
+            double sc = want->value("scale").toDouble();
+            if (sc <= 0) sc = 1.0;
+            zwlr_output_configuration_head_v1_set_scale(ch,
+                wl_fixed_from_double(sc));
+        }
+    }
+
+    if (apply)
+        zwlr_output_configuration_v1_apply(cfg);
+    else
+        zwlr_output_configuration_v1_test(cfg);
+    if (display_) wl_display_flush(display_);
+    return true;
+}
+
+bool QdwinBinding::applyLayout(const QVariantList &layout, quint32 serial) {
+    return omSubmitLayout(layout, serial, true);
+}
+
+bool QdwinBinding::testLayout(const QVariantList &layout, quint32 serial) {
+    return omSubmitLayout(layout, serial, false);
 }
 
 // spec/10 §"clear_selection" — deny verdict from broker; compositor
