@@ -19,6 +19,7 @@ import qs.Commons
 import qs.Modules.Accessibility
 import qs.Modules.Background
 import qs.Modules.Bar
+import qs.Modules.DesktopIcons
 import qs.Modules.DesktopWidgets
 import qs.Modules.Dock
 import qs.Modules.LockScreen
@@ -195,6 +196,7 @@ ShellRoot {
       }
 
       Background {}
+      DesktopIcons {}
       DesktopWidgets {}
       AllScreens {}
       Dock {}

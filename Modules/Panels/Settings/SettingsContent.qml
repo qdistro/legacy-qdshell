@@ -507,6 +507,10 @@ Item {
     DesktopWidgetsTab {}
   }
   Component {
+    id: desktopIconsTab
+    DesktopIconsTab {}
+  }
+  Component {
     id: defaultAppsTab
     DefaultAppsTab {}
   }
@@ -590,6 +594,12 @@ Item {
             "label": "panels.desktop-widgets.title",
             "icon": "clock",
             "source": desktopWidgetsTab
+          },
+          {
+            "id": SettingsPanel.Tab.DesktopIcons,
+            "label": "desktop-icons.title",
+            "icon": "layout-grid",
+            "source": desktopIconsTab
           },
           {
             "id": SettingsPanel.Tab.ControlCenter,

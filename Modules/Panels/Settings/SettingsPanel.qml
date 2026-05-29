@@ -82,6 +82,7 @@ SmartPanel {
     ControlCenter,
     DefaultApps,
     DesktopWidgets,
+    DesktopIcons,
     OSD,
     Display,
     Dock,
