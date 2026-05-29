@@ -464,7 +464,10 @@
   "brightness": {
     "brightnessStep": 5,
     "enforceMinimum": true,
-    "enableDdcSupport": false
+    "enableDdcSupport": false,
+    "autoReduceOnBattery": false,
+    "acBrightnessLevel": 100,
+    "batteryBrightnessLevel": 40
   },
   "colorSchemes": {
     "useWallpaperColors": false,
@@ -534,7 +537,11 @@
     "criticalBatteryLevel": 5,
     "criticalBatteryAction": "hibernate",
     "displayOffBattery": 5,
-    "displayOffAC": 15
+    "displayOffAC": 15,
+    "presentationMode": false,
+    "presentationAutoDisableMinutes": 0,
+    "inhibitWhenFullscreen": false,
+    "disableNotificationsWhileInhibited": false
   },
   "appearance": {
     "iconTheme": "",

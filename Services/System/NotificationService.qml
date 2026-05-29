@@ -26,6 +26,16 @@ Singleton {
   // Volatile property that doesn't persist to settings (similar to qdshellPerformanceMode)
   property bool doNotDisturb: false
 
+  // Inhibition-driven suppression (xfce4-power-manager parity). When the
+  // "disable notifications while inhibited" toggle is on AND idle is currently
+  // inhibited (e.g. presentation mode), notifications are suppressed through
+  // the SAME path as manual DND — this is an additional OR'd input, mirroring
+  // how qdshellPerformanceMode already gates the suppression checks, not a
+  // parallel mechanism. The user's manual doNotDisturb flag is never clobbered.
+  readonly property bool inhibitedSuppression: Settings.data.power.disableNotificationsWhileInhibited === true && IdleInhibitorService.isInhibited
+  // Effective DND used by every suppression site (manual DND OR inhibition).
+  readonly property bool effectiveDoNotDisturb: doNotDisturb || inhibitedSuppression
+
   // Models
   property ListModel activeList: ListModel {}
   property ListModel historyList: ListModel {}
@@ -268,7 +278,7 @@ Singleton {
     // Save to history (per-app and per-urgency policy)
     saveToHistoryIfAllowed(data, notification, appName);
 
-    if (root.doNotDisturb || PowerProfileService.qdshellPerformanceMode)
+    if (root.effectiveDoNotDisturb || PowerProfileService.qdshellPerformanceMode)
       return;
 
     // Per-app mute policy: suppress visual notification for muted apps
@@ -1329,7 +1339,7 @@ Singleton {
     if (!Settings.data.notifications.enableMediaToast || !mediaToastInitialized)
       return;
 
-    if (doNotDisturb || PowerProfileService.qdshellPerformanceMode)
+    if (effectiveDoNotDisturb || PowerProfileService.qdshellPerformanceMode)
       return;
 
     // Re-evaluate player identity here to handle race conditions where
