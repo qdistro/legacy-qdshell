@@ -938,9 +938,11 @@ Singleton {
     }
 
     // window-manager policy (focus, placement, snapping, decorations,
-    // WM shortcuts). Persist-only: qdwin's qdwin_shell_v1 has no WM-policy
-    // request yet, so WindowManagerService.canApplyWmPolicy is false and the
-    // values are stored until qdwin gains support (qdwin-only — no sway/labwc).
+    // WM shortcuts). Live-applied via qdwin_shell_v1.set_wm_policy /
+    // request_tile / request_fullscreen + the v19 register_hotkey path as of
+    // qdwin v25 (WindowManagerService.canApplyWmPolicy gated on the bind
+    // version). Decoration theme + titlebar double-click remain persist-only.
+    // qdwin-only — no sway/labwc dispatch.
     property JsonObject windowManager: JsonObject {
       // "click" (click-to-focus) | "follow-mouse" (focus-follows-mouse)
       property string focusPolicy: "click"

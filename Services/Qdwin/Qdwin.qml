@@ -321,8 +321,21 @@ Singleton {
                 // would no-op). Re-arm the one-shot on every (re)bind.
                 root._wsCountPushed = false;
                 root._rebuildWorkspaces();
-            } else if (lastError.length > 0) {
-                Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
+                // v25: window-manager policy + WM-shortcut keybinds are live
+                // once the shell binds at >= v25 (set_wm_policy / the wired
+                // v19 register_hotkey). Gate the capability on the actual
+                // bind version, mirroring outputManagement — an older
+                // compositor leaves the WindowManager tab persist-only.
+                CapabilityService.setWmPolicy(shellVersion >= 25);
+                CapabilityService.setKeybindRegistration(shellVersion >= 25);
+            } else {
+                // Unbound: the compositor can no longer apply WM policy or
+                // hold our hotkeys, so drop the capability (the tab reverts
+                // to persist-only until the next bind).
+                CapabilityService.setWmPolicy(false);
+                CapabilityService.setKeybindRegistration(false);
+                if (lastError.length > 0)
+                    Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
         }
         // v24: ext-workspace state changed (active index or count). On the
@@ -350,6 +363,23 @@ Singleton {
             }
             root._rebuildWorkspaces();
         }
+        // Per-window state bitmask (QDWIN_TS_*: 1=maximized, 2=fullscreen,
+        // 4=minimized, …). Tracked so the WM toggle-maximize / toggle-
+        // fullscreen shortcuts can flip the *current* state of the focused
+        // window (request_maximize / request_fullscreen are absolute, not
+        // toggles).
+        onToplevelState: (handle, state) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "state", state >>> 0);
+                    break;
+                }
+            }
+        }
+        // v19/v25: a registered WM-shortcut hotkey fired — relay the id so
+        // WindowManagerService can map it to a window-manager action on the
+        // focused window.
+        onHotkeyPressed: (id) => root.hotkeyPressed(id)
         onLastErrorChanged: {
             if (lastError.length > 0)
                 Logger.w("Qdwin", "binding error: " + lastError);
@@ -382,6 +412,7 @@ Singleton {
                 title: title || "",
                 isXwayland: isXwayland,
                 workspaceId: 0,
+                state: 0,
                 sandboxEngine: "",
                 secctxAppId: "",
                 instanceId: "",
@@ -531,6 +562,22 @@ Singleton {
     // border paint for windows that appeared before the binding landed
     // — their setBorderColor() calls were dropped while unbound.
     signal shellBound
+    // v25: a registered WM-shortcut hotkey fired. `id` is the shell-assigned
+    // token passed to registerHotkey(); WindowManagerService maps it back to
+    // a window-manager action on the focused window. Relayed from the binding.
+    signal hotkeyPressed(int id)
+
+    // v25: compositor-focused toplevel handle (0 = none). Source of truth for
+    // the WM keyboard shortcuts, which act on whatever window currently holds
+    // keyboard focus. The binding reports UINT32_MAX (=4294967295) for "no
+    // focus" — normalise that (and any non-positive) to 0 so consumers only
+    // ever see a live handle or 0, never a sentinel passed into a v25 request.
+    readonly property int focusedHandle: {
+      if (!qdwinBinding)
+        return 0;
+      const h = qdwinBinding.focusedHandle;
+      return (h <= 0 || h === 4294967295) ? 0 : h;
+    }
 
     Component.onCompleted: {
         Qt.callLater(() => {
@@ -730,6 +777,60 @@ Singleton {
         const h = _handleOf(window);
         if (h < 0) return;
         qdwinBinding.requestMinimize(h);
+    }
+
+    // ── v25 window-manager policy + shortcut helpers ────────────────
+    // Push the live WM policy snapshot to the compositor. Called by
+    // WindowManagerService whenever the policy changes or the shell
+    // (re)binds at >= v25. focusPolicy: 0=click, 1=follow-mouse;
+    // placement: 0=center, 1=under-mouse, 2=smart, 3=cascade.
+    function applyWmPolicy(focusPolicy, ffmDelayMs, raiseOnClick, raiseOnHover,
+                           placement, snapEnabled, snapDistance) {
+        if (!qdwinBinding) return;
+        qdwinBinding.setWmPolicy(focusPolicy, ffmDelayMs, raiseOnClick,
+                                 raiseOnHover, placement, snapEnabled,
+                                 snapDistance);
+    }
+    // WM-shortcut hotkey (de)registration. id is shell-assigned; modifiers is
+    // the ctrl=1/alt=2/super=4/shift=8 bitmask; key is a linux input keycode.
+    function registerHotkey(id, modifiers, key) {
+        if (!qdwinBinding) return;
+        qdwinBinding.registerHotkey(id, modifiers, key);
+    }
+    function unregisterHotkey(id) {
+        if (!qdwinBinding) return;
+        qdwinBinding.unregisterHotkey(id);
+    }
+    // Handle-based window actions for the WM shortcuts (which act on the
+    // focusedHandle, not a window row object). `tileEdge`: 0=none, 1=left,
+    // 2=right. windowState returns the QDWIN_TS_* bitmask (0 if unknown).
+    function closeHandle(handle) {
+        if (!qdwinBinding || handle <= 0) return;
+        // Route through closeWindow(window) so a tier-4 VM window still gets
+        // the _dispatchTier4Close() domain-teardown hook (closing the
+        // wl_toplevel alone leaves the qemu domain running). Fall back to a
+        // raw close only if the handle isn't in our tracked window list.
+        const row = _windowByHandle(handle);
+        if (row)
+            closeWindow(row);
+        else
+            qdwinBinding.closeWindow(handle);
+    }
+    function requestMaximizeHandle(handle, maximized) {
+        if (!qdwinBinding || handle <= 0) return;
+        qdwinBinding.requestMaximize(handle, !!maximized);
+    }
+    function requestFullscreenHandle(handle, fullscreen) {
+        if (!qdwinBinding || handle <= 0) return;
+        qdwinBinding.requestFullscreen(handle, !!fullscreen);
+    }
+    function requestTileHandle(handle, tileEdge) {
+        if (!qdwinBinding || handle <= 0) return;
+        qdwinBinding.requestTile(handle, tileEdge);
+    }
+    function windowState(handle) {
+        const row = _windowByHandle(handle);
+        return row ? (row.state >>> 0) : 0;
     }
 
     function cycleKeyboardLayout() { /* qdwin: not in qdwin_shell_v1 */ }

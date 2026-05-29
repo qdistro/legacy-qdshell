@@ -45,7 +45,11 @@ namespace {
 // request. The workspace list/active state itself rides the standard
 // ext-workspace-v1 client below, not this private binding. See
 // todo/decisions/qdwin-workspaces-ext-protocol.md.
-constexpr uint32_t kBindVersion = 24;
+// Bump to 25 for live window-manager policy (`set_wm_policy`,
+// `request_fullscreen`, `request_tile`) — the WindowManager settings tab's
+// live-apply path — plus the previously-unwired v19 `register_hotkey` /
+// `hotkey_pressed` (WM keyboard shortcuts).
+constexpr uint32_t kBindVersion = 25;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -276,7 +280,12 @@ struct QdwinBindingDispatch {
                                         source_handle, target_handle,
                                         qstr(mime_type));
     }
-    static void hotkey_pressed(void *, qdwin_shell_v1 *, uint32_t) {}
+    // v19 hotkey — wired at v25. The shell registers WM-shortcut hotkeys
+    // via registerHotkey() with shell-assigned ids and maps the id back to
+    // a window-manager action in QML (WindowManagerService).
+    static void hotkey_pressed(void *d, qdwin_shell_v1 *, uint32_t id) {
+        emit static_cast<QdwinBinding *>(d)->hotkeyPressed(id);
+    }
     static void chrome_button(void *, qdwin_shell_v1 *,
                               uint32_t, uint32_t, wl_fixed_t, wl_fixed_t,
                               uint32_t, uint32_t) {}
@@ -946,6 +955,52 @@ void QdwinBinding::moveToplevelToWorkspace(quint32 handle, quint32 index) {
     if (!shell_ || shellVersion_ < 24)
         return;
     qdwin_shell_v1_move_toplevel_to_workspace(shell_, handle, index);
+    if (display_) wl_display_flush(display_);
+}
+
+// ==================== v25 window-manager policy ====================
+
+void QdwinBinding::setWmPolicy(quint32 focusPolicy, quint32 ffmDelayMs,
+                               bool raiseOnClick, bool raiseOnHover,
+                               quint32 placement, bool snapEnabled,
+                               quint32 snapDistance) {
+    if (!shell_ || shellVersion_ < 25)
+        return;
+    qdwin_shell_v1_set_wm_policy(shell_, focusPolicy, ffmDelayMs,
+                                 raiseOnClick ? 1u : 0u,
+                                 raiseOnHover ? 1u : 0u,
+                                 placement, snapEnabled ? 1u : 0u,
+                                 snapDistance);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::requestFullscreen(quint32 handle, bool fullscreen) {
+    if (!shell_ || shellVersion_ < 25)
+        return;
+    qdwin_shell_v1_request_fullscreen(shell_, handle, fullscreen ? 1u : 0u);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::requestTile(quint32 handle, quint32 tileEdge) {
+    if (!shell_ || shellVersion_ < 25)
+        return;
+    qdwin_shell_v1_request_tile(shell_, handle, tileEdge);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::registerHotkey(quint32 id, quint32 modifiers, quint32 key) {
+    // register_hotkey is a v19 request but was never wired; gate at our
+    // current bind version so it only fires when the compositor supports it.
+    if (!shell_ || shellVersion_ < 19)
+        return;
+    qdwin_shell_v1_register_hotkey(shell_, id, modifiers, key);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::unregisterHotkey(quint32 id) {
+    if (!shell_ || shellVersion_ < 19)
+        return;
+    qdwin_shell_v1_unregister_hotkey(shell_, id);
     if (display_) wl_display_flush(display_);
 }
 

@@ -107,6 +107,25 @@ public:
     Q_INVOKABLE void setWorkspaceCount(quint32 count);
     Q_INVOKABLE void moveToplevelToWorkspace(quint32 handle, quint32 index);
 
+    // v25 window-manager policy (qdwin_shell_v1.set_wm_policy). One
+    // idempotent snapshot of the live WM policy; no-op until the shell is
+    // bound at >= v25. focusPolicy: 0=click, 1=follow-mouse. placement:
+    // 0=center, 1=under-mouse, 2=smart, 3=cascade.
+    Q_INVOKABLE void setWmPolicy(quint32 focusPolicy, quint32 ffmDelayMs,
+                                 bool raiseOnClick, bool raiseOnHover,
+                                 quint32 placement, bool snapEnabled,
+                                 quint32 snapDistance);
+    // v25 shell-driven fullscreen + half-screen tiling (the
+    // toggle-fullscreen / tile-left / tile-right WM shortcuts). tileEdge:
+    // 0=none(restore), 1=left, 2=right.
+    Q_INVOKABLE void requestFullscreen(quint32 handle, bool fullscreen);
+    Q_INVOKABLE void requestTile(quint32 handle, quint32 tileEdge);
+    // v19 global hotkey registration (wired at v25 for WM shortcuts).
+    // modifiers is a bitmask: ctrl=1, alt=2, super=4, shift=8. key is a
+    // linux input keycode. hotkeyPressed(id) fires on each press.
+    Q_INVOKABLE void registerHotkey(quint32 id, quint32 modifiers, quint32 key);
+    Q_INVOKABLE void unregisterHotkey(quint32 id);
+
     // Output (display) management. applyLayout builds a configuration
     // against `serial` (pass outputSerial), enabling/disabling + configuring
     // each head per the supplied list, then `apply`s it ATOMICALLY. testLayout
@@ -215,6 +234,10 @@ signals:
     // toplevelAdded (and on move / bind replay) telling the shell which
     // workspace a window lives on, so the bar can compute occupancy.
     void toplevelWorkspace(quint32 handle, quint32 index);
+    // v19/v25 — a registered WM-shortcut hotkey fired. `id` is the
+    // shell-assigned token from registerHotkey(); WindowManagerService maps
+    // it back to a window-manager action on the focused window.
+    void hotkeyPressed(quint32 id);
     // Fires after every ext-workspace done that changes the workspace
     // count or active index. Drives Qdwin.qml's workspace ListModel.
     void workspacesChanged();

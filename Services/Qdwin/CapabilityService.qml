@@ -39,8 +39,19 @@ Singleton {
   readonly property bool pointerConfig: false
   // xkb layout/options/model + key-repeat delay & rate.
   readonly property bool xkbRepeat: false
-  // Window-manager policy mutation (focus, placement, snapping, decorations).
-  readonly property bool wmPolicy: false
+  // Window-manager policy mutation (focus, placement, snapping). Live as of
+  // qdwin_shell_v1 v25 (set_wm_policy). Like outputManagement this is gated on
+  // the shell actually binding at >= v25 (an older compositor leaves it false
+  // and the WindowManager tab stays persist-only). Qdwin.qml calls
+  // setWmPolicy() on bind. Writable to keep the import direction
+  // Qdwin → CapabilityService and avoid a singleton import cycle.
+  property bool wmPolicy: false
+  function setWmPolicy(available) {
+    if (wmPolicy !== available) {
+      wmPolicy = available;
+      Logger.i("CapabilityService", "wmPolicy -> " + available);
+    }
+  }
   // Output management (resolution, scale, rotation, position, enable/disable).
   // qdwin implements wlr-output-management-v1; unlike the other flags this is
   // LIVE. It is gated on the binding actually advertising the manager global
@@ -60,8 +71,17 @@ Singleton {
   readonly property bool workspaceMutation: false
   // Idle timeout + display DPMS control.
   readonly property bool idleDpms: false
-  // Global keyboard-shortcut (keybind) registration.
-  readonly property bool keybindRegistration: false
+  // Global keyboard-shortcut (keybind) registration. Live as of v25 — the
+  // qdwin_shell_v1 v19 register_hotkey path is now wired in the binding and
+  // used by WindowManagerService for the WM keyboard shortcuts. Gated on the
+  // shell binding at >= v25 (set alongside wmPolicy from Qdwin.qml on bind).
+  property bool keybindRegistration: false
+  function setKeybindRegistration(available) {
+    if (keybindRegistration !== available) {
+      keybindRegistration = available;
+      Logger.i("CapabilityService", "keybindRegistration -> " + available);
+    }
+  }
 
   // ─── Shared messaging ────────────────────────────────────────────
   // Generic note for a control whose backend cannot apply yet. Pages with a
