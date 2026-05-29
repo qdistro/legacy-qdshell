@@ -53,6 +53,26 @@ qdwin_shell_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+# v24 workspaces: ext-workspace-v1 (standard, from installed
+# wayland-protocols). qdwin implements the server; we bind it as a client
+# alongside qdwin_shell_v1. See todo/decisions/qdwin-workspaces-ext-protocol.md.
+dep_wayland_protocols = dependency('wayland-protocols', native: true)
+wayland_protocols_dir = dep_wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
+ext_workspace_xml = files(
+  wayland_protocols_dir / 'staging/ext-workspace/ext-workspace-v1.xml')
+ext_workspace_client_header = custom_target(
+  'ext-workspace-v1-client-header',
+  input: ext_workspace_xml,
+  output: 'ext-workspace-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+ext_workspace_protocol_code = custom_target(
+  'ext-workspace-v1-private-code',
+  input: ext_workspace_xml,
+  output: 'ext-workspace-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 dep_qt6_network = dependency('Qt6Network')
 
 moc_files = qt6.preprocess(
@@ -72,6 +92,8 @@ shared_library(
     moc_files,
     qdwin_shell_client_header,
     qdwin_shell_protocol_code,
+    ext_workspace_client_header,
+    ext_workspace_protocol_code,
   ],
   dependencies: [
     dep_wayland_client,

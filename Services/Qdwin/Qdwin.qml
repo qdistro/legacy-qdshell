@@ -36,20 +36,44 @@ Singleton {
     // identity flag. (Kept readonly to make accidental writes fail loudly.)
     readonly property bool isQdwin: true
 
-    // Workspace state — qdwin has no workspace concept yet, so we
-    // populate from the user's settings (workspaces.count / .names)
-    // to give the bar widget something to display.
+    // Workspace state. As of v24 qdwin has real workspaces, exposed via
+    // the standard ext-workspace-v1 protocol and surfaced by the
+    // QdwinBinding plugin (workspaceCount / activeWorkspace). The count is
+    // owned by the user (qdshell settings) and reconciled down to the
+    // compositor via setWorkspaceCount; per-workspace names stay a
+    // shell-side display overlay (ext-workspace-v1 has no rename). When
+    // the binding is not yet bound we fall back to the settings count so
+    // the bar still renders cells. Occupancy is derived from the windows
+    // model's per-window workspaceId (toplevel_workspace sidecar).
     property ListModel workspaces: ListModel {}
     property int _settingsWorkspaceCount: Settings.isLoaded ? Settings.data.workspaces.count : 4
     property var _settingsWorkspaceNames: Settings.isLoaded ? Settings.data.workspaces.names : []
+    // One-shot guard: count reconciliation runs once per bind, on the first
+    // workspacesChanged that carries a live count. Re-armed on every (re)bind.
+    property bool _wsCountPushed: false
 
-    on_SettingsWorkspaceCountChanged: _rebuildSettingsWorkspaces()
-    on_SettingsWorkspaceNamesChanged: _rebuildSettingsWorkspaces()
+    on_SettingsWorkspaceCountChanged: {
+        // Push the user's desired count down to the compositor, then
+        // rebuild (the live count refreshes again on workspacesChanged).
+        if (qdwinBinding && qdwinBinding.bound)
+            qdwinBinding.setWorkspaceCount(_settingsWorkspaceCount);
+        _rebuildWorkspaces();
+    }
+    on_SettingsWorkspaceNamesChanged: _rebuildWorkspaces()
 
-    function _rebuildSettingsWorkspaces() {
+    function _rebuildWorkspaces() {
         if (!Settings.isLoaded) return;
-        var count = Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        // Prefer the compositor's live workspace count + active index;
+        // fall back to the settings count until the binding is up.
+        var bound = qdwinBinding && qdwinBinding.bound && qdwinBinding.workspaceCount > 0;
+        var count = bound ? qdwinBinding.workspaceCount
+                          : Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        var active = bound ? qdwinBinding.activeWorkspace : 0;
         var names = _settingsWorkspaceNames || [];
+        // Occupancy: which workspaces currently hold at least one window.
+        var occupied = {};
+        for (var w = 0; w < windows.count; w++)
+            occupied[windows.get(w).workspaceId] = true;
         workspaces.clear();
         for (var i = 0; i < count; i++) {
             var label = (i < names.length && names[i] !== "") ? names[i] : String(i + 1);
@@ -58,10 +82,10 @@ Singleton {
                 idx: i + 1,
                 name: label,
                 output: "",
-                isFocused: i === 0,
-                isActive: i === 0,
+                isFocused: i === active,
+                isActive: i === active,
                 isUrgent: false,
-                isOccupied: false,
+                isOccupied: occupied[i] === true,
             });
         }
         root.workspaceChanged();
@@ -259,9 +283,40 @@ Singleton {
                 // transition (QdwinBinding.bound flips false→true once
                 // per bind), so no replay spam.
                 root.shellBound();
+                // v24: workspace-count reconciliation is deferred to the
+                // first workspacesChanged (the ext-workspace manager/handles
+                // may not have arrived yet at hello time — setWorkspaceCount
+                // would no-op). Re-arm the one-shot on every (re)bind.
+                root._wsCountPushed = false;
+                root._rebuildWorkspaces();
             } else if (lastError.length > 0) {
                 Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
+        }
+        // v24: ext-workspace state changed (active index or count). On the
+        // first event with a live count, reconcile the compositor count to
+        // the user's persisted setting exactly once (issuing all needed
+        // create/remove in one batch avoids the overshoot that re-running
+        // it on every intermediate done would cause). Then rebuild the bar.
+        onWorkspacesChanged: {
+            if (!root._wsCountPushed && Settings.isLoaded
+                    && qdwinBinding.workspaceCount > 0) {
+                root._wsCountPushed = true;
+                if (qdwinBinding.workspaceCount !== root._settingsWorkspaceCount)
+                    qdwinBinding.setWorkspaceCount(root._settingsWorkspaceCount);
+            }
+            root._rebuildWorkspaces();
+        }
+        // v24 sidecar: a window's workspace assignment. Update the row and
+        // refresh occupancy.
+        onToplevelWorkspace: (handle, index) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "workspaceId", index);
+                    break;
+                }
+            }
+            root._rebuildWorkspaces();
         }
         onLastErrorChanged: {
             if (lastError.length > 0)
@@ -361,6 +416,10 @@ Singleton {
                         root.focusedWindowIndex -= 1;
                     }
                     root.windowListChanged();
+                    // v24: a closed window may have emptied its workspace —
+                    // refresh per-workspace occupancy. (No toplevel_workspace
+                    // sidecar fires on removal, so rebuild here.)
+                    root._rebuildWorkspaces();
                     return;
                 }
             }
@@ -434,9 +493,10 @@ Singleton {
             if (typeof ShellState !== 'undefined' && ShellState.isLoaded) {
                 loadDisplayScalesFromState();
             }
-            // Populate workspaces from settings on startup
+            // Populate workspaces on startup (live compositor count if the
+            // binding is already up, else the settings fallback).
             if (Settings.isLoaded) {
-                _rebuildSettingsWorkspaces();
+                _rebuildWorkspaces();
             }
         });
     }
@@ -444,7 +504,9 @@ Singleton {
     Connections {
         target: Settings
         function onSettingsLoaded() {
-            root._rebuildSettingsWorkspaces();
+            if (qdwinBinding && qdwinBinding.bound)
+                qdwinBinding.setWorkspaceCount(root._settingsWorkspaceCount);
+            root._rebuildWorkspaces();
         }
     }
 
@@ -516,7 +578,31 @@ Singleton {
     // a row from the `windows` ListModel (has .handle) or a bare
     // numeric handle; we accept both so callers don't have to wrap.
 
-    function switchToWorkspace(workspace) { /* qdwin: no workspaces yet */ }
+    // Switch the active workspace. Accepts a workspace model row (has
+    // .id == 0-based index, or .idx == 1-based), or a bare numeric index.
+    // Drives ext-workspace-v1 via the binding; the active cell updates
+    // when the resulting workspacesChanged fires.
+    function switchToWorkspace(workspace) {
+        var idx = -1;
+        if (typeof workspace === "number")
+            idx = workspace;
+        else if (workspace && workspace.id !== undefined)
+            idx = workspace.id;
+        else if (workspace && workspace.idx !== undefined)
+            idx = workspace.idx - 1;
+        if (idx < 0) return;
+        if (qdwinBinding && qdwinBinding.bound)
+            qdwinBinding.activateWorkspace(idx);
+    }
+
+    // Move a window to a workspace ("send to workspace N"). `window` is a
+    // windows-model row (has .handle) or a bare numeric handle.
+    function moveToWorkspace(window, index) {
+        const h = _handleOf(window);
+        if (h < 0 || index < 0) return;
+        if (qdwinBinding && qdwinBinding.bound)
+            qdwinBinding.moveToplevelToWorkspace(h, index);
+    }
 
     function _handleOf(w) {
         if (w === null || w === undefined) return -1;

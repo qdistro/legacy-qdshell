@@ -13,6 +13,9 @@
 
 #include <wayland-client.h>
 #include "qdwin-shell-v1-client-protocol.h"
+#include "ext-workspace-v1-client-protocol.h"
+
+#include <algorithm>
 
 #include <QDebug>
 #include <QMetaType>
@@ -36,7 +39,12 @@ namespace {
 // Earlier bumps in this file:
 //   22 — toplevel_peer_identity (Option-B identity sidecar, see
 //        todo/decisions/secctx-identity-contract.md)
-constexpr uint32_t kBindVersion = 23;
+// Bump to 24 to pick up `toplevel_workspace` (per-window→workspace
+// sidecar for the bar's occupancy) and the `move_toplevel_to_workspace`
+// request. The workspace list/active state itself rides the standard
+// ext-workspace-v1 client below, not this private binding. See
+// todo/decisions/qdwin-workspaces-ext-protocol.md.
+constexpr uint32_t kBindVersion = 24;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -274,6 +282,11 @@ struct QdwinBindingDispatch {
     static void popup_button(void *, qdwin_shell_v1 *,
                              uint32_t, wl_fixed_t, wl_fixed_t,
                              uint32_t, uint32_t) {}
+    // v24 sidecar — which workspace a toplevel is on.
+    static void toplevel_workspace(void *d, qdwin_shell_v1 *,
+                                   uint32_t handle, uint32_t index) {
+        emit static_cast<QdwinBinding *>(d)->toplevelWorkspace(handle, index);
+    }
 };
 
 static const qdwin_shell_v1_listener kShellListener = {
@@ -307,6 +320,92 @@ static const qdwin_shell_v1_listener kShellListener = {
     .hotkey_pressed            = QdwinBindingDispatch::hotkey_pressed,
     .chrome_button             = QdwinBindingDispatch::chrome_button,
     .popup_button              = QdwinBindingDispatch::popup_button,
+    .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
+};
+
+// -------------------- ext-workspace-v1 client trampolines --------------------
+//
+// The standard workspace protocol. We bind the manager on the same
+// wl_display as qdwin_shell_v1 (one notifier, one dispatch loop). The
+// manager streams workspace_group + workspace handles and batches state
+// with `done`; we collapse that into workspaceCount_ / activeWorkspace_
+// on each done and emit workspacesChanged. Handle/group binding is routed
+// through QdwinBinding members so the trampolines don't need to reference
+// the listener globals defined below them.
+
+struct QdwinWsDispatch {
+    // ---- ext_workspace_handle_v1 ----
+    static void h_id(void *, ext_workspace_handle_v1 *, const char *) {}
+    static void h_name(void *, ext_workspace_handle_v1 *, const char *) {}
+    static void h_coordinates(void *d, ext_workspace_handle_v1 *h,
+                              wl_array *coords) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        auto *e = b->wsEntryFor(h);
+        if (e && coords && coords->size >= sizeof(uint32_t)) {
+            e->coord = *static_cast<uint32_t *>(coords->data);
+            e->haveCoord = true;
+        }
+    }
+    static void h_state(void *d, ext_workspace_handle_v1 *h, uint32_t state) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        auto *e = b->wsEntryFor(h);
+        if (e) e->state = state;
+    }
+    static void h_capabilities(void *, ext_workspace_handle_v1 *, uint32_t) {}
+    static void h_removed(void *d, ext_workspace_handle_v1 *h) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        auto *e = b->wsEntryFor(h);
+        if (e) e->removed = true;
+    }
+    // ---- ext_workspace_group_handle_v1 (single desktop-spanning group) ----
+    static void g_capabilities(void *, ext_workspace_group_handle_v1 *, uint32_t) {}
+    static void g_output_enter(void *, ext_workspace_group_handle_v1 *, wl_output *) {}
+    static void g_output_leave(void *, ext_workspace_group_handle_v1 *, wl_output *) {}
+    static void g_workspace_enter(void *, ext_workspace_group_handle_v1 *,
+                                  ext_workspace_handle_v1 *) {}
+    static void g_workspace_leave(void *, ext_workspace_group_handle_v1 *,
+                                  ext_workspace_handle_v1 *) {}
+    static void g_removed(void *, ext_workspace_group_handle_v1 *) {}
+    // ---- ext_workspace_manager_v1 ----
+    static void m_workspace_group(void *d, ext_workspace_manager_v1 *,
+                                  ext_workspace_group_handle_v1 *grp) {
+        static_cast<QdwinBinding *>(d)->wsBindGroup(grp);
+    }
+    static void m_workspace(void *d, ext_workspace_manager_v1 *,
+                            ext_workspace_handle_v1 *ws) {
+        static_cast<QdwinBinding *>(d)->wsBindHandle(ws);
+    }
+    static void m_done(void *d, ext_workspace_manager_v1 *) {
+        static_cast<QdwinBinding *>(d)->wsRebuild();
+    }
+    static void m_finished(void *d, ext_workspace_manager_v1 *) {
+        static_cast<QdwinBinding *>(d)->wsFinished();
+    }
+};
+
+static const ext_workspace_handle_v1_listener kWsHandleListener = {
+    .id           = QdwinWsDispatch::h_id,
+    .name         = QdwinWsDispatch::h_name,
+    .coordinates  = QdwinWsDispatch::h_coordinates,
+    .state        = QdwinWsDispatch::h_state,
+    .capabilities = QdwinWsDispatch::h_capabilities,
+    .removed      = QdwinWsDispatch::h_removed,
+};
+
+static const ext_workspace_group_handle_v1_listener kWsGroupListener = {
+    .capabilities    = QdwinWsDispatch::g_capabilities,
+    .output_enter    = QdwinWsDispatch::g_output_enter,
+    .output_leave    = QdwinWsDispatch::g_output_leave,
+    .workspace_enter = QdwinWsDispatch::g_workspace_enter,
+    .workspace_leave = QdwinWsDispatch::g_workspace_leave,
+    .removed         = QdwinWsDispatch::g_removed,
+};
+
+static const ext_workspace_manager_v1_listener kWsManagerListener = {
+    .workspace_group = QdwinWsDispatch::m_workspace_group,
+    .workspace       = QdwinWsDispatch::m_workspace,
+    .done            = QdwinWsDispatch::m_done,
+    .finished        = QdwinWsDispatch::m_finished,
 };
 
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.
@@ -317,13 +416,23 @@ struct QdwinRegistry {
     static void global(void *data, wl_registry *reg, uint32_t name,
                        const char *interface, uint32_t version) {
         auto *b = static_cast<QdwinBinding *>(data);
-        if (std::strcmp(interface, qdwin_shell_v1_interface.name) != 0)
+        if (std::strcmp(interface, qdwin_shell_v1_interface.name) == 0) {
+            uint32_t v = version < kBindVersion ? version : kBindVersion;
+            auto *proxy = static_cast<qdwin_shell_v1 *>(
+                wl_registry_bind(reg, name, &qdwin_shell_v1_interface, v));
+            b->shell_ = proxy;
+            b->shellVersion_ = v;
             return;
-        uint32_t v = version < kBindVersion ? version : kBindVersion;
-        auto *proxy = static_cast<qdwin_shell_v1 *>(
-            wl_registry_bind(reg, name, &qdwin_shell_v1_interface, v));
-        b->shell_ = proxy;
-        b->shellVersion_ = v;
+        }
+        // v24: standard workspace protocol (advertised to all clients).
+        if (std::strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
+            auto *mgr = static_cast<ext_workspace_manager_v1 *>(
+                wl_registry_bind(reg, name,
+                                 &ext_workspace_manager_v1_interface, 1));
+            b->wsManager_ = mgr;
+            ext_workspace_manager_v1_add_listener(mgr, &kWsManagerListener, b);
+            return;
+        }
     }
     static void global_remove(void *, wl_registry *, uint32_t) {}
 };
@@ -428,6 +537,7 @@ void QdwinBinding::teardown(const QString &reason) {
     }
     registry_ = nullptr;
     shell_ = nullptr;
+    wsTeardownState();
     if (bound_) setBound(false);
     if (!reason.isEmpty() && lastError_.isEmpty())
         setLastError(reason);
@@ -508,6 +618,164 @@ void QdwinBinding::requestMinimize(quint32 handle) {
 void QdwinBinding::setBorderColor(quint32 handle, quint32 argb) {
     if (!shell_) return;
     qdwin_shell_v1_set_border_color(shell_, handle, argb);
+    if (display_) wl_display_flush(display_);
+}
+
+// -------- v24 workspaces (ext-workspace-v1 client) --------
+
+void QdwinBinding::wsBindGroup(ext_workspace_group_handle_v1 *grp) {
+    wsGroup_ = grp;
+    ext_workspace_group_handle_v1_add_listener(grp, &kWsGroupListener, this);
+}
+
+void QdwinBinding::wsBindHandle(ext_workspace_handle_v1 *ws) {
+    WsEntry e;
+    e.proxy = ws;
+    wsEntries_.push_back(e);
+    ext_workspace_handle_v1_add_listener(ws, &kWsHandleListener, this);
+}
+
+QdwinBinding::WsEntry *QdwinBinding::wsEntryFor(ext_workspace_handle_v1 *h) {
+    for (auto &e : wsEntries_)
+        if (e.proxy == h)
+            return &e;
+    return nullptr;
+}
+
+// Collapse the accumulated handle events (fired since the last `done`)
+// into the index-ordered view the bar consumes. Drops removed entries,
+// orders by the 1-D coordinate qdwin sends (falls back to arrival order),
+// and recomputes count + active. Emits workspacesChanged only on a real
+// change so QML rebinds aren't spammed by no-op state echoes.
+void QdwinBinding::wsRebuild() {
+    // Reap removed handles (the compositor sent `removed`; the proxy is
+    // inert — destroy it and forget the entry).
+    for (auto it = wsEntries_.begin(); it != wsEntries_.end();) {
+        if (it->removed) {
+            if (it->proxy)
+                ext_workspace_handle_v1_destroy(it->proxy);
+            it = wsEntries_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // Order by coordinate so wsByIndex_[i] is workspace i.
+    std::vector<WsEntry *> ordered;
+    ordered.reserve(wsEntries_.size());
+    for (auto &e : wsEntries_)
+        ordered.push_back(&e);
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const WsEntry *a, const WsEntry *b) {
+                         if (a->haveCoord && b->haveCoord)
+                             return a->coord < b->coord;
+                         return false;  // keep arrival order otherwise
+                     });
+
+    std::vector<ext_workspace_handle_v1 *> byIndex;
+    quint32 active = 0;
+    constexpr uint32_t kActive = 1u;  // EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE
+    byIndex.reserve(ordered.size());
+    for (auto *e : ordered) {
+        if (e->state & kActive)
+            active = static_cast<quint32>(byIndex.size());
+        byIndex.push_back(e->proxy);
+    }
+
+    const quint32 count = static_cast<quint32>(byIndex.size());
+    const bool changed = (count != workspaceCount_) ||
+                         (active != activeWorkspace_) ||
+                         (byIndex != wsByIndex_);
+    wsByIndex_ = std::move(byIndex);
+    workspaceCount_ = count;
+    activeWorkspace_ = active;
+    if (changed)
+        emit workspacesChanged();
+}
+
+void QdwinBinding::wsTeardownState() {
+    // Disconnect path: the wl_display is already gone (teardown()
+    // disconnects before calling us), so the proxies are reaped with it.
+    // Just drop our view so a fresh bind starts clean — do NOT touch the
+    // dead proxies.
+    wsEntries_.clear();
+    wsByIndex_.clear();
+    wsManager_ = nullptr;
+    wsGroup_ = nullptr;
+    if (workspaceCount_ != 0 || activeWorkspace_ != 0) {
+        workspaceCount_ = 0;
+        activeWorkspace_ = 0;
+        emit workspacesChanged();
+    }
+}
+
+// manager.finished path: the display is still live, so we own and must
+// release the workspace/group proxies. (We never call ext_workspace_
+// manager_v1.stop ourselves, so in practice this only fires if the
+// compositor tears the manager down on its own.) The manager interface
+// has no destroy request; we drop our reference and the proxy is reaped
+// on the next disconnect.
+void QdwinBinding::wsFinished() {
+    for (auto &e : wsEntries_)
+        if (e.proxy)
+            ext_workspace_handle_v1_destroy(e.proxy);
+    if (wsGroup_)
+        ext_workspace_group_handle_v1_destroy(wsGroup_);
+    wsTeardownState();
+}
+
+void QdwinBinding::activateWorkspace(quint32 index) {
+    if (!wsManager_ || index >= wsByIndex_.size())
+        return;
+    ext_workspace_handle_v1_activate(wsByIndex_[index]);
+    ext_workspace_manager_v1_commit(wsManager_);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::createWorkspace() {
+    if (!wsManager_ || !wsGroup_)
+        return;
+    // Name is positional on the qdwin side (ignored); the user's display
+    // name is a shell-side overlay. Pass empty.
+    ext_workspace_group_handle_v1_create_workspace(wsGroup_, "");
+    ext_workspace_manager_v1_commit(wsManager_);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::removeWorkspace(quint32 index) {
+    if (!wsManager_ || index >= wsByIndex_.size())
+        return;
+    ext_workspace_handle_v1_remove(wsByIndex_[index]);
+    ext_workspace_manager_v1_commit(wsManager_);
+    if (display_) wl_display_flush(display_);
+}
+
+// Reconcile the compositor's workspace count to the shell's persisted
+// setting by appending / removing from the end, then commit once. The
+// model updates asynchronously via the manager `done`(s) that follow.
+void QdwinBinding::setWorkspaceCount(quint32 count) {
+    if (!wsManager_ || !wsGroup_)
+        return;
+    if (count < 1) count = 1;
+    if (count > 32) count = 32;
+    const quint32 cur = static_cast<quint32>(wsByIndex_.size());
+    if (count > cur) {
+        for (quint32 i = cur; i < count; i++)
+            ext_workspace_group_handle_v1_create_workspace(wsGroup_, "");
+    } else if (count < cur) {
+        // Remove the highest-index workspaces first.
+        for (quint32 i = cur; i > count; i--)
+            ext_workspace_handle_v1_remove(wsByIndex_[i - 1]);
+    } else {
+        return;  // already matches
+    }
+    ext_workspace_manager_v1_commit(wsManager_);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::moveToplevelToWorkspace(quint32 handle, quint32 index) {
+    if (!shell_ || shellVersion_ < 24)
+        return;
+    qdwin_shell_v1_move_toplevel_to_workspace(shell_, handle, index);
     if (display_) wl_display_flush(display_);
 }
 

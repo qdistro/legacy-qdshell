@@ -63,6 +63,66 @@ Singleton {
     }
   }
 
+  // v24 workspaces. Drives the real compositor workspace state
+  // (ext-workspace-v1 via Qdwin). Used by window-manager keybindings and
+  // by the VM GUI test harness (`qs ipc call workspace activate 2`).
+  IpcHandler {
+    target: "workspace"
+
+    // Switch to a 0-based workspace index.
+    function activate(index: int): void {
+      Qdwin.switchToWorkspace(index);
+    }
+    // Cycle relative to the active workspace (wraps).
+    function next(): void {
+      root._workspaceCycle(1);
+    }
+    function prev(): void {
+      root._workspaceCycle(-1);
+    }
+    // Send a window (by qdwin toplevel handle) to a 0-based workspace.
+    function move(handle: int, index: int): void {
+      Qdwin.moveToWorkspace(handle, index);
+    }
+    // Total workspace count (compositor-live when bound).
+    function count(): int {
+      return Qdwin.workspaces.count;
+    }
+    // 0-based active workspace index, or -1 if none.
+    function active(): int {
+      return root._activeWorkspaceIndex();
+    }
+    // Greppable one-line summary for test assertions, e.g.
+    // "count=4 active=2 occupied=0,2".
+    function list(): string {
+      var occ = [];
+      for (var i = 0; i < Qdwin.workspaces.count; i++) {
+        if (Qdwin.workspaces.get(i).isOccupied)
+          occ.push(i);
+      }
+      return "count=" + Qdwin.workspaces.count + " active=" + root._activeWorkspaceIndex() + " occupied=" + occ.join(",");
+    }
+  }
+
+  function _activeWorkspaceIndex() {
+    for (var i = 0; i < Qdwin.workspaces.count; i++) {
+      if (Qdwin.workspaces.get(i).isActive)
+        return i;
+    }
+    return -1;
+  }
+
+  function _workspaceCycle(dir) {
+    var n = Qdwin.workspaces.count;
+    if (n <= 0)
+      return;
+    var cur = root._activeWorkspaceIndex();
+    if (cur < 0)
+      cur = 0;
+    var next = ((cur + dir) % n + n) % n;
+    Qdwin.switchToWorkspace(next);
+  }
+
   // Settings IPC helpers (outside IpcHandler to avoid QVariant IPC warnings)
   readonly property var _settingsTabMap: ({
                                             "about": SettingsPanel.Tab.About,

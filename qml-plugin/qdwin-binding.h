@@ -27,12 +27,16 @@
 #include <QTimer>
 #include <QVariantMap>
 #include <cstdint>
+#include <vector>
 
 class CtrlServer;
 
 struct wl_display;
 struct wl_registry;
 struct qdwin_shell_v1;
+struct ext_workspace_manager_v1;
+struct ext_workspace_group_handle_v1;
+struct ext_workspace_handle_v1;
 
 class QdwinBinding : public QObject {
     Q_OBJECT
@@ -42,6 +46,12 @@ class QdwinBinding : public QObject {
     Q_PROPERTY(quint32 focusedHandle READ focusedHandle NOTIFY focusedHandleChanged)
     Q_PROPERTY(QString focusedSeat READ focusedSeat NOTIFY focusedHandleChanged)
     Q_PROPERTY(quint64 overlayKeyCount READ overlayKeyCount NOTIFY overlayKeyCountChanged)
+    // v24 workspaces (ext-workspace-v1). count + active index reflect the
+    // compositor's live workspace state; the bar overlays user names from
+    // qdshell settings by index and computes occupancy from per-window
+    // workspace ids (toplevelWorkspace sidecar).
+    Q_PROPERTY(quint32 workspaceCount READ workspaceCount NOTIFY workspacesChanged)
+    Q_PROPERTY(quint32 activeWorkspace READ activeWorkspace NOTIFY workspacesChanged)
 
 public:
     explicit QdwinBinding(QObject *parent = nullptr);
@@ -56,12 +66,25 @@ public:
     quint32 lastOverlayRole() const { return lastOverlayRole_; }
     quint32 lastOverlaySym() const { return lastOverlaySym_; }
     QString lastOverlayUtf8() const { return lastOverlayUtf8_; }
+    quint32 workspaceCount() const { return workspaceCount_; }
+    quint32 activeWorkspace() const { return activeWorkspace_; }
 
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
     Q_INVOKABLE void closeWindow(quint32 handle);
     Q_INVOKABLE void requestMaximize(quint32 handle, bool maximized);
     Q_INVOKABLE void requestMinimize(quint32 handle);
     Q_INVOKABLE void setBorderColor(quint32 handle, quint32 argb);
+
+    // v24 workspaces. activate/create/remove drive ext-workspace-v1;
+    // setWorkspaceCount reconciles the compositor's workspace count to
+    // the shell's persisted setting (issuing create/remove as needed);
+    // moveToplevelToWorkspace rides the qdwin_shell_v1 sidecar request.
+    // All are no-ops until the relevant global is bound.
+    Q_INVOKABLE void activateWorkspace(quint32 index);
+    Q_INVOKABLE void createWorkspace();
+    Q_INVOKABLE void removeWorkspace(quint32 index);
+    Q_INVOKABLE void setWorkspaceCount(quint32 count);
+    Q_INVOKABLE void moveToplevelToWorkspace(quint32 handle, quint32 index);
 
     // spec/10 §"compositor-mediated gating" — once the shell has a
     // broker verdict on the most recent selection_set, it calls
@@ -146,6 +169,14 @@ signals:
     void toplevelGeometry(quint32 handle, int x, int y, quint32 width, quint32 height);
     void toplevelState(quint32 handle, quint32 state);
     void seatFocusChanged(const QString &seat, quint32 handle);
+
+    // v24 sidecar — qdwin_shell_v1.toplevel_workspace. Fires after
+    // toplevelAdded (and on move / bind replay) telling the shell which
+    // workspace a window lives on, so the bar can compute occupancy.
+    void toplevelWorkspace(quint32 handle, quint32 index);
+    // Fires after every ext-workspace done that changes the workspace
+    // count or active index. Drives Qdwin.qml's workspace ListModel.
+    void workspacesChanged();
 
     // spec/10 §"selection-set event" — fires whenever a client sets
     // the seat selection. Carries the source toplevel handle, the
@@ -250,6 +281,7 @@ private:
     // keep the C callback signatures clean.
     friend struct QdwinBindingDispatch;
     friend struct QdwinRegistry;
+    friend struct QdwinWsDispatch;
 
     wl_display *display_ = nullptr;
     wl_registry *registry_ = nullptr;
@@ -265,6 +297,32 @@ private:
     quint32 lastOverlayRole_ = 0;
     quint32 lastOverlaySym_ = 0;
     QString lastOverlayUtf8_;
+
+    // ---- v24 ext-workspace-v1 client state ----
+    // One manager + one group (qdwin advertises a single desktop-spanning
+    // group). wsEntries_ accumulates per-workspace handles as the
+    // workspace/handle events arrive; rebuildWorkspaces() (called on the
+    // manager `done`) collapses them into workspaceCount_/activeWorkspace_
+    // and the index-ordered wsByIndex_ used to target activate/remove.
+    struct WsEntry {
+        ext_workspace_handle_v1 *proxy = nullptr;
+        quint32 coord = 0;     // 1-D coordinate (== index) from qdwin
+        bool haveCoord = false;
+        quint32 state = 0;     // ext_workspace_handle_v1 state bitmask
+        bool removed = false;
+    };
+    ext_workspace_manager_v1 *wsManager_ = nullptr;
+    ext_workspace_group_handle_v1 *wsGroup_ = nullptr;
+    std::vector<WsEntry> wsEntries_;
+    std::vector<ext_workspace_handle_v1 *> wsByIndex_;
+    quint32 workspaceCount_ = 0;
+    quint32 activeWorkspace_ = 0;
+    void wsBindGroup(ext_workspace_group_handle_v1 *grp);
+    void wsBindHandle(ext_workspace_handle_v1 *ws);
+    void wsRebuild();              // collapse wsEntries_ → count/active/index
+    WsEntry *wsEntryFor(ext_workspace_handle_v1 *h);
+    void wsTeardownState();        // disconnect path: drop state, proxies dead
+    void wsFinished();             // manager.finished: release live proxies
 
     CtrlServer *ctrlServer_ = nullptr;
 
