@@ -73,6 +73,26 @@ ext_workspace_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+# Output (display) management: wlr-output-management-unstable-v1 (client).
+# qdwin implements the server; the Display layout tab binds it through this
+# plugin. Unlike ext-workspace-v1 this protocol is NOT in wayland-protocols
+# (it is a wlr-protocols extension), so the xml is vendored here (a verbatim
+# copy of qdwin's qdwin/protocols/ vendored xml). See
+# todo/decisions/qdwin-output-management.md.
+wlr_output_mgmt_xml = files('wlr-output-management-unstable-v1.xml')
+wlr_output_mgmt_client_header = custom_target(
+  'wlr-output-management-v1-client-header',
+  input: wlr_output_mgmt_xml,
+  output: 'wlr-output-management-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+wlr_output_mgmt_protocol_code = custom_target(
+  'wlr-output-management-v1-private-code',
+  input: wlr_output_mgmt_xml,
+  output: 'wlr-output-management-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 dep_qt6_network = dependency('Qt6Network')
 
 moc_files = qt6.preprocess(
@@ -94,6 +114,8 @@ shared_library(
     qdwin_shell_protocol_code,
     ext_workspace_client_header,
     ext_workspace_protocol_code,
+    wlr_output_mgmt_client_header,
+    wlr_output_mgmt_protocol_code,
   ],
   dependencies: [
     dep_wayland_client,

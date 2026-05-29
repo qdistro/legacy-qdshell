@@ -42,7 +42,20 @@ Singleton {
   // Window-manager policy mutation (focus, placement, snapping, decorations).
   readonly property bool wmPolicy: false
   // Output management (resolution, scale, rotation, position, enable/disable).
-  readonly property bool outputManagement: false
+  // qdwin implements wlr-output-management-v1; unlike the other flags this is
+  // LIVE. It is gated on the binding actually advertising the manager global
+  // (not merely compiled in): Qdwin.qml calls setOutputManagement() once
+  // QdwinBinding.outputManagementAvailable goes true (and back to false on a
+  // disconnect). Writable (not readonly / not a binding on Qdwin) to keep the
+  // import direction Qdwin → CapabilityService, avoiding a singleton import
+  // cycle (CapabilityService imports only Commons).
+  property bool outputManagement: false
+  function setOutputManagement(available) {
+    if (outputManagement !== available) {
+      outputManagement = available;
+      Logger.i("CapabilityService", "outputManagement -> " + available);
+    }
+  }
   // Workspace creation/switching/mutation.
   readonly property bool workspaceMutation: false
   // Idle timeout + display DPMS control.

@@ -43,4 +43,5 @@ if node.found()
   test('brightness-policy', node, args: files('tests/test_brightness_policy.js'))
   test('system-clock', node, args: files('tests/test_system_clock.js'))
   test('desktop-icons', node, args: files('tests/test_desktop_icons.js'))
+  test('output-layout', node, args: files('tests/test_output_layout.js'))
 endif
