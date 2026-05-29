@@ -18,9 +18,11 @@ Design notes:
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import dataclasses
 import os
+import re
 import shutil
 import signal
 import socket
@@ -29,7 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union
 
 QDSHELL_ROOT = Path(__file__).resolve().parents[2]
 UI_TESTS_ROOT = Path(__file__).resolve().parent
@@ -404,6 +406,249 @@ def ipc(q: Qdshell, *args: str, timeout: float = 5.0) -> subprocess.CompletedPro
             f"  stderr: {res.stderr.strip()}"
         )
     return res
+
+
+# ---------------------------------------------------------------------------
+# VM session transport
+#
+# The host headless nested-compositor path (above) cannot screenshot tabs:
+# quickshell SIGSEGVs during the early FileView settings load when the
+# headless Wayland output drops (see
+# todo/qdwin-vm/agent-ui-harness-headless-quickshell-crash.md). qdshell
+# renders fine in a REAL qdwin VM session, so the qci `gui` gate runs this
+# harness against the live VM session it already acquired.
+#
+# Transport:
+#   * IPC tab-driving runs INSIDE the VM via vm-exec -> qemu-guest-agent,
+#     as the admin user against the live qdshell quickshell instance on
+#     wayland-1. We use `qs ipc -p /usr/share/quickshell/qdshell call ...`,
+#     matching the deployed qdshell.service ExecStart.
+#   * Screenshots are captured from the HOST with `virsh screenshot`, which
+#     grabs the VM's framebuffer (the qdwin/weston output) — the validated
+#     pattern from qdwin/tests/gui (qdwin_screenshot). No in-VM screenshot
+#     tool (grim/weston-screenshooter) is required.
+#   * Codex describe/judge still run on the HOST against the pulled-back PNG.
+#
+# SECURITY: every argument that reaches the VM's `/bin/sh -c` (via
+# qemu-guest-agent) MUST be from a fixed allowlist. IPC verbs/targets/tab
+# names come only from manifests.SETTINGS_TABS and the hard-coded panel
+# commands; we additionally hard-validate each token against _IPC_TOKEN_RE
+# before it is ever shipped, so an out-of-band manifest edit cannot smuggle
+# shell metacharacters through. The command body itself is base64-encoded
+# (the vm-script idiom) so nothing dynamic is interpolated into the guest
+# `sh -c` string except an opaque ASCII token plus literal command text.
+# ---------------------------------------------------------------------------
+
+# qdshell is deployed at this path inside the VM (deploy/qdshell.service:
+# `qs -p /usr/share/quickshell/qdshell`). IPC must target the same config.
+VM_QDSHELL_PATH = "/usr/share/quickshell/qdshell"
+VM_WAYLAND_DISPLAY = "wayland-1"
+VM_XDG_RUNTIME_DIR = "/run/user/1000"
+VM_USER = "admin"
+
+# Defense-in-depth: only safe shell-free tokens may reach the guest sh -c.
+_IPC_TOKEN_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.:=/-]*\Z")
+
+
+@dataclasses.dataclass
+class VMSession:
+    """A handle to a live qdshell session inside a qdwin VM.
+
+    `vm` is the libvirt domain name (already acquired/validated by qci).
+    `vm_exec` / `virsh` are the host-side tool invocations (lists of argv
+    tokens) used to reach the guest and grab its framebuffer.
+    """
+    vm: str
+    vm_exec: list[str]
+    virsh: list[str]
+
+
+def _validate_ipc_token(tok: str) -> str:
+    """Reject any IPC arg that isn't a plain allowlisted token.
+
+    Tab names / IPC verbs are developer-authored constants (manifests.py),
+    never user input — but they get funnelled through qemu-guest-agent's
+    `/bin/sh -c`, so we refuse anything containing shell metacharacters as a
+    hard backstop against an accidental unsafe manifest entry.
+    """
+    if not isinstance(tok, str) or not _IPC_TOKEN_RE.match(tok):
+        raise ValueError(
+            f"refusing to drive unsafe IPC token {tok!r}: IPC args must match "
+            f"{_IPC_TOKEN_RE.pattern} (developer-authored manifest constants only)"
+        )
+    return tok
+
+
+def _vm_run_script(session: VMSession, script: str, *, timeout: float = 60.0
+                   ) -> subprocess.CompletedProcess:
+    """Run a shell script inside the VM, base64-wrapped (the vm-script idiom).
+
+    The script body is base64-encoded on the host so nothing in it is
+    interpolated into the guest's `sh -c` — qemu-guest-agent only ever sees
+    `echo <opaque-ascii> | base64 -d | bash`. The caller is responsible for
+    building `script` from validated tokens only.
+    """
+    b64 = base64.b64encode(script.encode()).decode("ascii")
+    guest_cmd = f"echo {b64} | base64 -d | bash"
+    return subprocess.run(
+        session.vm_exec + [session.vm, guest_cmd],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def ipc_vm(session: VMSession, *args: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
+    """Send a `qs ipc call` to the qdshell instance running inside the VM.
+
+    Runs as the admin user against wayland-1, targeting the deployed qdshell
+    config path. Every arg is validated against the token allowlist first.
+    """
+    safe_args = [_validate_ipc_token(a) for a in args]
+    # Build the guest command from validated tokens; safe to embed in the
+    # base64'd script body. `qs ipc -p <path> call <args...>`.
+    arg_str = " ".join(safe_args)
+    script = (
+        f"set -eu\n"
+        f"runuser -u {VM_USER} -- env "
+        f"XDG_RUNTIME_DIR={VM_XDG_RUNTIME_DIR} WAYLAND_DISPLAY={VM_WAYLAND_DISPLAY} "
+        f"qs ipc -p {VM_QDSHELL_PATH} call {arg_str}\n"
+    )
+    res = _vm_run_script(session, script, timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"VM ipc call {' '.join(safe_args)} failed (rc={res.returncode})\n"
+            f"  stdout: {res.stdout.strip()}\n"
+            f"  stderr: {res.stderr.strip()}"
+        )
+    return res
+
+
+def _convert_ppm_to_png(ppm_path: Path, png_path: Path) -> None:
+    """Convert a virsh-screenshot PPM to PNG so codex --image accepts it."""
+    if shutil.which("pnmtopng"):
+        with open(png_path, "wb") as out:
+            res = subprocess.run(["pnmtopng", str(ppm_path)], stdout=out,
+                                 stderr=subprocess.PIPE, text=True, timeout=30)
+        if res.returncode == 0 and png_path.stat().st_size > 0:
+            return
+    for tool in ("magick", "convert"):
+        if shutil.which(tool):
+            res = subprocess.run([tool, str(ppm_path), str(png_path)],
+                                 capture_output=True, text=True, timeout=30)
+            if res.returncode == 0 and png_path.exists() and png_path.stat().st_size > 0:
+                return
+    # Last resort: Pillow.
+    try:
+        from PIL import Image
+        Image.open(ppm_path).save(png_path)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"could not convert {ppm_path} to PNG (no pnmtopng/convert/magick/PIL): {exc}"
+        )
+    if not (png_path.exists() and png_path.stat().st_size > 0):
+        raise RuntimeError(
+            f"PPM->PNG conversion of {ppm_path} produced no usable PNG"
+        )
+
+
+def screenshot_vm(session: VMSession, out_path: Path) -> Path:
+    """Capture the VM's framebuffer (the live qdwin session) to a PNG.
+
+    Uses host-side `virsh screenshot`, which writes a PPM; we convert to PNG.
+    This is the same mechanism qdwin/tests/gui uses (qdwin_screenshot).
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ppm_path = out_path.with_suffix(".ppm")
+    res = subprocess.run(
+        session.virsh + ["screenshot", session.vm, str(ppm_path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    if res.returncode != 0 or not ppm_path.exists():
+        raise RuntimeError(
+            f"virsh screenshot {session.vm} failed (rc={res.returncode}): "
+            f"{res.stderr.strip() or res.stdout.strip()}"
+        )
+    _convert_ppm_to_png(ppm_path, out_path)
+    with contextlib.suppress(OSError):
+        ppm_path.unlink()
+    return out_path
+
+
+def capture_surface_vm(session: VMSession, surface, *, settle: float = 1.2
+                       ) -> tuple[Path, str]:
+    """VM analogue of capture_surface: open via in-VM IPC, virsh-screenshot, describe."""
+    from .manifests import NO_IPC
+
+    png_path = ARTIFACTS_DIR / f"{surface.id}.png"
+
+    if surface.open_cmd is NO_IPC:
+        raise RuntimeError(
+            f"{surface.id} has no IPC handle; cannot drive automatically"
+        )
+    if surface.open_cmd is not None:
+        ipc_vm(session, *surface.open_cmd)
+        time.sleep(settle)
+
+    screenshot_vm(session, png_path)
+    description = describe(png_path)
+
+    if surface.close_cmd is not None and surface.close_cmd is not NO_IPC:
+        with contextlib.suppress(Exception):
+            ipc_vm(session, *surface.close_cmd)
+            time.sleep(0.4)
+
+    return png_path, description
+
+
+def vm_session_from_env() -> Optional[VMSession]:
+    """Build a VMSession from QDSHELL_UI_VM / tool-path env, or None.
+
+    qci sets QDSHELL_UI_VM=<domain>. VM_TOOLS / VIRSH overrides let the gate
+    point at the exact vm-exec script and virsh connection it already uses.
+    """
+    vm = os.environ.get("QDSHELL_UI_VM", "").strip()
+    if not vm:
+        return None
+    if not _IPC_TOKEN_RE.match(vm):
+        raise RuntimeError(
+            f"QDSHELL_UI_VM={vm!r} is not a valid libvirt domain name "
+            f"(must match {_IPC_TOKEN_RE.pattern})"
+        )
+    vm_exec_path = os.environ.get("QDSHELL_UI_VM_EXEC", "").strip()
+    if not vm_exec_path:
+        raise RuntimeError(
+            "QDSHELL_UI_VM is set but QDSHELL_UI_VM_EXEC (path to scripts/vm/vm-exec) is not"
+        )
+    if not (Path(vm_exec_path).is_file() and os.access(vm_exec_path, os.X_OK)):
+        raise RuntimeError(f"QDSHELL_UI_VM_EXEC={vm_exec_path!r} is not an executable file")
+    virsh_cmd = os.environ.get("QDSHELL_UI_VIRSH", "virsh -c qemu:///session").split()
+    return VMSession(vm=vm, vm_exec=[vm_exec_path], virsh=virsh_cmd)
+
+
+def vm_session_healthy(session: VMSession) -> tuple[bool, str]:
+    """Probe that a live qdshell session is reachable in the VM.
+
+    Returns (ok, reason). ok=False means the harness must FAIL/skip loudly
+    rather than capture a blank/labwc framebuffer and silently pass.
+    """
+    # 1. wayland-1 socket present (qdwin/weston session up).
+    script = (
+        f"set -eu\n"
+        f"test -S {VM_XDG_RUNTIME_DIR}/{VM_WAYLAND_DISPLAY}\n"
+    )
+    res = _vm_run_script(session, script, timeout=30)
+    if res.returncode != 0:
+        return (False, f"{VM_XDG_RUNTIME_DIR}/{VM_WAYLAND_DISPLAY} not present "
+                       f"(no live qdwin session in VM {session.vm}); "
+                       f"stderr: {res.stderr.strip()}")
+    # 2. qdshell IPC answers — proves the quickshell config is the deployed
+    #    qdshell (not labwc/another shell) and IPC is live.
+    try:
+        ipc_vm(session, "bar", "showBar", timeout=30)
+    except RuntimeError as exc:
+        return (False,
+                f"qdshell IPC not reachable in VM {session.vm} "
+                f"(session may be labwc-only, not qdshell): {exc}")
+    return (True, "qdshell session live")
 
 
 # ---------------------------------------------------------------------------
