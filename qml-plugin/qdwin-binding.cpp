@@ -15,6 +15,7 @@
 #include "qdwin-shell-v1-client-protocol.h"
 #include "ext-workspace-v1-client-protocol.h"
 #include "wlr-output-management-unstable-v1-client-protocol.h"
+#include "ext-idle-notify-v1-client-protocol.h"
 
 #include <algorithm>
 
@@ -49,7 +50,10 @@ namespace {
 // `request_fullscreen`, `request_tile`) — the WindowManager settings tab's
 // live-apply path — plus the previously-unwired v19 `register_hotkey` /
 // `hotkey_pressed` (WM keyboard shortcuts).
-constexpr uint32_t kBindVersion = 25;
+// Bump to 26 for set_display_power (idle/DPMS — the Power tab's display-off
+// timer). The idle *trigger* rides the standard ext-idle-notify-v1 client
+// bound below, not this private binding.
+constexpr uint32_t kBindVersion = 26;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -577,6 +581,25 @@ static const zwlr_output_configuration_v1_listener kOmConfigListener = {
     .cancelled = QdwinOmDispatch::cfg_cancelled,
 };
 
+// ---- ext-idle-notify-v1 (v26): idled / resumed -> idleStateChanged ----
+// The listener user_data is the per-slot QdwinBinding::IdleSlot, which holds
+// the binding back-pointer + the caller's slot index.
+struct QdwinIdleDispatch {
+    static void idled(void *d, ext_idle_notification_v1 *) {
+        auto *s = static_cast<QdwinBinding::IdleSlot *>(d);
+        if (s && s->self) emit s->self->idleStateChanged(s->slot, true);
+    }
+    static void resumed(void *d, ext_idle_notification_v1 *) {
+        auto *s = static_cast<QdwinBinding::IdleSlot *>(d);
+        if (s && s->self) emit s->self->idleStateChanged(s->slot, false);
+    }
+};
+
+static const ext_idle_notification_v1_listener kIdleListener = {
+    QdwinIdleDispatch::idled,
+    QdwinIdleDispatch::resumed,
+};
+
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.
 // QdwinBindingDispatch is already a friend of QdwinBinding so it can
 // write shell_ / shellVersion_ directly. We piggyback the registry
@@ -611,8 +634,33 @@ struct QdwinRegistry {
             b->omBindManager(mgr);
             return;
         }
+        // v26 idle/DPMS: a wl_seat (for get_idle_notification) +
+        // ext_idle_notifier_v1. Both are needed before PowerService can arm
+        // idle notifications, so flag availability once both are present.
+        if (std::strcmp(interface, wl_seat_interface.name) == 0) {
+            if (!b->seat_) {
+                uint32_t v = version < 5 ? version : 5;
+                b->seat_ = static_cast<wl_seat *>(
+                    wl_registry_bind(reg, name, &wl_seat_interface, v));
+                b->seatName_ = name;
+                emit b->idleNotifierAvailableChanged();
+            }
+            return;
+        }
+        if (std::strcmp(interface, ext_idle_notifier_v1_interface.name) == 0) {
+            if (!b->idleNotifier_) {
+                b->idleNotifier_ = static_cast<ext_idle_notifier_v1 *>(
+                    wl_registry_bind(reg, name,
+                                     &ext_idle_notifier_v1_interface, 1));
+                b->idleNotifierName_ = name;
+                emit b->idleNotifierAvailableChanged();
+            }
+            return;
+        }
     }
-    static void global_remove(void *, wl_registry *, uint32_t) {}
+    static void global_remove(void *data, wl_registry *, uint32_t name) {
+        static_cast<QdwinBinding *>(data)->idleGlobalRemoved(name);
+    }
 };
 
 static const wl_registry_listener kRegistryListener = {
@@ -717,6 +765,7 @@ void QdwinBinding::teardown(const QString &reason) {
     shell_ = nullptr;
     wsTeardownState();
     omTeardownState();
+    idleTeardownState();
     if (bound_) setBound(false);
     if (!reason.isEmpty() && lastError_.isEmpty())
         setLastError(reason);
@@ -1002,6 +1051,83 @@ void QdwinBinding::unregisterHotkey(quint32 id) {
         return;
     qdwin_shell_v1_unregister_hotkey(shell_, id);
     if (display_) wl_display_flush(display_);
+}
+
+// ==================== v26 idle / DPMS ====================
+
+void QdwinBinding::setIdleNotification(quint32 slot, quint32 timeoutMs) {
+    if (slot >= static_cast<quint32>(kIdleSlots))
+        return;
+    IdleSlot &s = idleSlots_[slot];
+    // Always drop any prior notification for this slot first (timeout edit /
+    // disarm) so we never leak or double-fire.
+    if (s.notif) {
+        ext_idle_notification_v1_destroy(s.notif);
+        s.notif = nullptr;
+    }
+    if (timeoutMs == 0 || !idleNotifier_ || !seat_) {
+        if (display_) wl_display_flush(display_);
+        return;
+    }
+    s.self = this;
+    s.slot = slot;
+    s.notif = ext_idle_notifier_v1_get_idle_notification(
+        idleNotifier_, timeoutMs, seat_);
+    if (s.notif)
+        ext_idle_notification_v1_add_listener(s.notif, &kIdleListener, &s);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::setDisplayPower(bool on) {
+    if (!shell_ || shellVersion_ < 26)
+        return;
+    qdwin_shell_v1_set_display_power(shell_, on ? 1u : 0u);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::idleGlobalRemoved(uint32_t name) {
+    // Wayland registry hot-remove (display still valid, so we DO destroy the
+    // live proxies — unlike idleTeardownState's disconnect path). If the seat
+    // or the notifier goes away the idle capability is gone: cancel every live
+    // notification and drop both proxies so a later setIdleNotification can't
+    // touch a stale global. (Single-seat qdwin doesn't do this today, but the
+    // protocol permits it.)
+    if (name != seatName_ && name != idleNotifierName_)
+        return;
+    for (int i = 0; i < kIdleSlots; ++i) {
+        if (idleSlots_[i].notif) {
+            ext_idle_notification_v1_destroy(idleSlots_[i].notif);
+            idleSlots_[i].notif = nullptr;
+        }
+    }
+    if (name == idleNotifierName_ && idleNotifier_) {
+        ext_idle_notifier_v1_destroy(idleNotifier_);
+        idleNotifier_ = nullptr;
+        idleNotifierName_ = 0;
+    }
+    if (name == seatName_ && seat_) {
+        wl_seat_destroy(seat_);
+        seat_ = nullptr;
+        seatName_ = 0;
+    }
+    if (display_) wl_display_flush(display_);
+    emit idleNotifierAvailableChanged();
+}
+
+void QdwinBinding::idleTeardownState() {
+    // Disconnect path: the wl proxies are reaped with the display (same as
+    // omTeardownState), so DON'T wl_*_destroy here — just drop our view so a
+    // fresh bind re-arms cleanly. (Live re-arm/disarm in setIdleNotification
+    // destroys proxies explicitly while the display is alive.)
+    for (int i = 0; i < kIdleSlots; ++i) {
+        idleSlots_[i].notif = nullptr;
+        idleSlots_[i].self = nullptr;
+    }
+    idleNotifier_ = nullptr;
+    idleNotifierName_ = 0;
+    seat_ = nullptr;
+    seatName_ = 0;
+    emit idleNotifierAvailableChanged();
 }
 
 // ==================== output (display) management ====================

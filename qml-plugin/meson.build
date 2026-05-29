@@ -95,6 +95,25 @@ wlr_output_mgmt_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+# Idle notifications: ext-idle-notify-v1 (standard, from wayland-protocols).
+# qdwin implements the server; the Power tab's inactivity-action and
+# display-off timers bind it through this plugin (client) to observe input
+# idle. Same discovery as ext-workspace-v1 above.
+ext_idle_notify_xml = files(
+  wayland_protocols_dir / 'staging/ext-idle-notify/ext-idle-notify-v1.xml')
+ext_idle_notify_client_header = custom_target(
+  'ext-idle-notify-v1-client-header',
+  input: ext_idle_notify_xml,
+  output: 'ext-idle-notify-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+ext_idle_notify_protocol_code = custom_target(
+  'ext-idle-notify-v1-private-code',
+  input: ext_idle_notify_xml,
+  output: 'ext-idle-notify-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 dep_qt6_network = dependency('Qt6Network')
 
 moc_files = qt6.preprocess(
@@ -118,6 +137,8 @@ shared_library(
     ext_workspace_protocol_code,
     wlr_output_mgmt_client_header,
     wlr_output_mgmt_protocol_code,
+    ext_idle_notify_client_header,
+    ext_idle_notify_protocol_code,
   ],
   dependencies: [
     dep_wayland_client,

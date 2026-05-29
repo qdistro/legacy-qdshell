@@ -8,6 +8,7 @@ import qs.Services.Hardware
 import qs.Services.Qdwin
 import qs.Services.UI
 import "BrightnessPolicy.js" as BrightnessPolicy
+import "IdlePolicy.js" as IdlePolicy
 
 Singleton {
   id: root
@@ -54,6 +55,7 @@ Singleton {
     detectACState();
     startButtonMonitor();
     checkCriticalBattery();
+    applyIdlePolicy();  // arm idle/display-off if the backend supports it
   }
 
   // ─── Capability detection (loginctl) ─────────────────────────────
@@ -349,20 +351,78 @@ Singleton {
     }
   }
 
-  // ─── Idle timeout + display-off policy (persist-only on qdwin) ────
-  // Observing real Wayland input idle and driving display DPMS requires a
-  // compositor-side idle/DPMS API. qdwin's qdwin_shell_v1 does not expose one
-  // yet (CapabilityService.idleDpms === false), so the inactivity-action and
-  // display-off-timeout policy is PERSIST-ONLY: the values are stored and the
-  // Power tab surfaces a capability note, and they will be enforced once qdwin
-  // provides idle/DPMS IPC. We deliberately do NOT shell out to swayidle /
-  // wlopm / wlr-randr / hyprctl — qdwin is the only supported compositor and
-  // those tools target foreign compositors.
+  // ─── Idle timeout + display-off policy (live as of qdwin v26) ─────
+  // Driven by the standard ext-idle-notify-v1: qdwin observes real input idle
+  // and the binding arms two notifications (slot 0 = inactivity action,
+  // slot 1 = display-off). On `idled` we run the inactivity action /
+  // DPMS-off the displays; on `resumed` (input wakes the compositor) we
+  // DPMS them back on. Display-off uses the v26 set_display_power request.
+  // Gated on CapabilityService.idleDpms (a >= v26 bind AND ext_idle_notifier
+  // + a wl_seat); persist-only otherwise. NO swayidle / wlopm / wlr-randr —
+  // qdwin is the only supported compositor.
   //
-  // (Critical-battery, lid and power/sleep-button actions still work: they are
-  // driven by logind capability + evdev, not by a compositor idle API.)
+  // (Critical-battery, lid and power/sleep-button actions are separate: they
+  // are driven by logind capability + evdev, not by the compositor idle API.)
   readonly property int activeInactivityTimeout: onAC ? inactivityTimeoutAC : inactivityTimeoutBattery
   readonly property int activeDisplayOffTimeout: onAC ? displayOffAC : displayOffBattery
+
+  // Idle notification slots (must match the slot ids passed to the binding).
+  readonly property int _idleSlotInactivity: 0
+  readonly property int _idleSlotDisplayOff: 1
+
+  // (Re)arm or cancel both idle notifications from the current policy. A
+  // timeout of 0 means "never" (cancel). Presentation mode suppresses BOTH —
+  // the user explicitly asked to stay awake, and qdwin's ext-idle-notify
+  // respects only Wayland idle-inhibitors, not our systemd-inhibit presentation
+  // path, so we must gate here. Minutes → ms.
+  function applyIdlePolicy() {
+    if (!canApplyIdle)
+      return;
+    var arm = IdlePolicy.resolveArming(inactivityAction, activeInactivityTimeout,
+                                       activeDisplayOffTimeout,
+                                       IdleInhibitorService.presentationModeActive);
+    Qdwin.setIdleNotification(_idleSlotInactivity, arm.inactivityMs);
+    Qdwin.setIdleNotification(_idleSlotDisplayOff, arm.displayOffMs);
+    Logger.i("PowerService", "idle policy armed: inactivity=" + arm.inactivityMs
+             + "ms (" + inactivityAction + "), displayOff=" + arm.displayOffMs
+             + "ms, presentation=" + IdleInhibitorService.presentationModeActive);
+  }
+
+  function _onIdleState(slot, idle) {
+    // Re-check presentation mode at fire time: applyIdlePolicy() cancels both
+    // slots when it turns on, but an `idled` already in flight could still
+    // race the cancel. Suppress idle=true actions while inhibited; always
+    // honour resume (DPMS-on) so the screen can't get stuck off.
+    var suppress = IdleInhibitorService.presentationModeActive;
+    if (slot === _idleSlotInactivity) {
+      if (idle && !suppress) {
+        Logger.i("PowerService", "inactivity idle reached -> " + inactivityAction);
+        executeAction(inactivityAction);
+      }
+    } else if (slot === _idleSlotDisplayOff) {
+      // Off on idle (unless inhibited), back on when the user returns.
+      if (idle && suppress)
+        return;
+      Logger.i("PowerService", "display-off idle " + (idle ? "-> DPMS off" : "resume -> DPMS on"));
+      Qdwin.setDisplayPower(!idle);
+    }
+  }
+
+  Connections {
+    target: Qdwin
+    function onIdleStateChanged(slot, idle) { root._onIdleState(slot, idle); }
+  }
+
+  // Re-arm whenever the policy, capability, AC source, or presentation mode
+  // changes (the effective timeouts depend on onAC).
+  onActiveInactivityTimeoutChanged: applyIdlePolicy()
+  onActiveDisplayOffTimeoutChanged: applyIdlePolicy()
+  onInactivityActionChanged: applyIdlePolicy()
+  onCanApplyIdleChanged: applyIdlePolicy()
+  Connections {
+    target: IdleInhibitorService
+    function onPresentationModeActiveChanged() { root.applyIdlePolicy(); }
+  }
 
   // ─── Per-power-source brightness (xfce4-power-manager parity) ─────
   // When automatic battery reduction is enabled, dropping to battery applies
@@ -403,7 +463,10 @@ Singleton {
   }
 
   // React to AC<->battery transitions.
-  onOnACChanged: applyPerSourceBrightness()
+  onOnACChanged: {
+    applyPerSourceBrightness();
+    applyIdlePolicy();  // effective idle/display-off timeouts depend on onAC
+  }
 
   // ─── Critical battery handling ───────────────────────────────────
   // Watch the primary battery and trigger the configured action once when the

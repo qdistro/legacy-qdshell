@@ -69,8 +69,19 @@ Singleton {
   }
   // Workspace creation/switching/mutation.
   readonly property bool workspaceMutation: false
-  // Idle timeout + display DPMS control.
-  readonly property bool idleDpms: false
+  // Idle timeout + display DPMS control. Live as of qdwin_shell_v1 v26: the
+  // idle *trigger* rides the standard ext-idle-notify-v1 (a client in the
+  // binding) and display-off uses the v26 set_display_power request. Gated on
+  // BOTH being available (a >= v26 bind AND ext_idle_notifier_v1 + a wl_seat
+  // bound), set from Qdwin.qml. Writable to keep the Qdwin → CapabilityService
+  // import direction and avoid a singleton cycle.
+  property bool idleDpms: false
+  function setIdleDpms(available) {
+    if (idleDpms !== available) {
+      idleDpms = available;
+      Logger.i("CapabilityService", "idleDpms -> " + available);
+    }
+  }
   // Global keyboard-shortcut (keybind) registration. Live as of v25 — the
   // qdwin_shell_v1 v19 register_hotkey path is now wired in the binding and
   // used by WindowManagerService for the WM keyboard shortcuts. Gated on the

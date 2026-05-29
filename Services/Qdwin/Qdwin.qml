@@ -328,12 +328,18 @@ Singleton {
                 // compositor leaves the WindowManager tab persist-only.
                 CapabilityService.setWmPolicy(shellVersion >= 25);
                 CapabilityService.setKeybindRegistration(shellVersion >= 25);
+                // v26: idle/DPMS needs both the v26 set_display_power request
+                // and the ext-idle-notify client (notifier + seat). The latter
+                // arrives via its own global, so also re-evaluate on
+                // idleNotifierAvailable change below.
+                root._refreshIdleDpmsCapability();
             } else {
                 // Unbound: the compositor can no longer apply WM policy or
                 // hold our hotkeys, so drop the capability (the tab reverts
                 // to persist-only until the next bind).
                 CapabilityService.setWmPolicy(false);
                 CapabilityService.setKeybindRegistration(false);
+                CapabilityService.setIdleDpms(false);
                 if (lastError.length > 0)
                     Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
@@ -396,6 +402,11 @@ Singleton {
             CapabilityService.setOutputManagement(
                 qdwinBinding.outputManagementAvailable);
         }
+        // v26: ext_idle_notifier_v1 + wl_seat became (un)available — re-derive
+        // the idle/DPMS capability (which also needs a >= v26 shell bind).
+        onIdleNotifierAvailableChanged: root._refreshIdleDpmsCapability()
+        // v26: an armed idle notification fired — relay to PowerService.
+        onIdleStateChanged: (slot, idle) => root.idleStateChanged(slot, idle)
         onLauncherRequested: {
             const screen = PanelService.findScreenForPanels();
             if (screen)
@@ -566,6 +577,23 @@ Singleton {
     // token passed to registerHotkey(); WindowManagerService maps it back to
     // a window-manager action on the focused window. Relayed from the binding.
     signal hotkeyPressed(int id)
+    // v26: an armed idle notification changed state (idle=true on idled,
+    // false on resumed). `slot` is the PowerService slot. Relayed from the
+    // ext-idle-notify client in the binding.
+    signal idleStateChanged(int slot, bool idle)
+
+    // v26: whether the ext-idle-notify client + a wl_seat are bound (one half
+    // of the idle/DPMS capability; the other is a >= v26 shell bind).
+    readonly property bool idleNotifierAvailable: qdwinBinding ? qdwinBinding.idleNotifierAvailable : false
+
+    // Re-derive CapabilityService.idleDpms from the two requirements: a
+    // >= v26 shell bind (set_display_power) AND the ext-idle-notify source.
+    function _refreshIdleDpmsCapability() {
+      const ok = qdwinBinding && qdwinBinding.bound
+               && qdwinBinding.shellVersion >= 26
+               && qdwinBinding.idleNotifierAvailable;
+      CapabilityService.setIdleDpms(!!ok);
+    }
 
     // v25: compositor-focused toplevel handle (0 = none). Source of truth for
     // the WM keyboard shortcuts, which act on whatever window currently holds
@@ -831,6 +859,20 @@ Singleton {
     function windowState(handle) {
         const row = _windowByHandle(handle);
         return row ? (row.state >>> 0) : 0;
+    }
+
+    // ── v26 idle / DPMS helpers ─────────────────────────────────────
+    // Arm (timeoutMs > 0) or cancel (0) an ext-idle-notify notification for
+    // `slot`; idleStateChanged(slot, idle) fires on idled/resumed. PowerService
+    // uses slot 0 = inactivity action, slot 1 = display-off.
+    function setIdleNotification(slot, timeoutMs) {
+        if (!qdwinBinding) return;
+        qdwinBinding.setIdleNotification(slot, timeoutMs);
+    }
+    // Force all outputs on/off (DPMS) via set_display_power (>= v26).
+    function setDisplayPower(on) {
+        if (!qdwinBinding) return;
+        qdwinBinding.setDisplayPower(!!on);
     }
 
     function cycleKeyboardLayout() { /* qdwin: not in qdwin_shell_v1 */ }

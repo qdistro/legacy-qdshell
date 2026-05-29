@@ -43,6 +43,9 @@ struct zwlr_output_manager_v1;
 struct zwlr_output_head_v1;
 struct zwlr_output_mode_v1;
 struct zwlr_output_configuration_v1;
+struct wl_seat;
+struct ext_idle_notifier_v1;
+struct ext_idle_notification_v1;
 
 class QdwinBinding : public QObject {
     Q_OBJECT
@@ -69,6 +72,11 @@ class QdwinBinding : public QObject {
                NOTIFY outputsChanged)
     Q_PROPERTY(QVariantList outputs READ outputs NOTIFY outputsChanged)
     Q_PROPERTY(quint32 outputSerial READ outputSerial NOTIFY outputsChanged)
+    // v26 idle/DPMS. idleNotifierAvailable flips true once qdwin advertises
+    // ext_idle_notifier_v1 AND a wl_seat is bound (needed for
+    // get_idle_notification). PowerService gates its idle wiring on it.
+    Q_PROPERTY(bool idleNotifierAvailable READ idleNotifierAvailable
+               NOTIFY idleNotifierAvailableChanged)
 
 public:
     explicit QdwinBinding(QObject *parent = nullptr);
@@ -89,6 +97,10 @@ public:
     bool outputManagementAvailable() const { return omManager_ != nullptr; }
     QVariantList outputs() const { return outputs_; }
     quint32 outputSerial() const { return outputSerial_; }
+
+    bool idleNotifierAvailable() const {
+        return idleNotifier_ != nullptr && seat_ != nullptr;
+    }
 
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
     Q_INVOKABLE void closeWindow(quint32 handle);
@@ -125,6 +137,13 @@ public:
     // linux input keycode. hotkeyPressed(id) fires on each press.
     Q_INVOKABLE void registerHotkey(quint32 id, quint32 modifiers, quint32 key);
     Q_INVOKABLE void unregisterHotkey(quint32 id);
+
+    // v26 idle/DPMS. setIdleNotification arms (or, with timeoutMs == 0,
+    // cancels) an ext-idle-notify-v1 notification for `slot`; idleStateChanged
+    // (slot, idle) fires on idled/resumed. setDisplayPower forces all outputs
+    // on/off via qdwin_shell_v1.set_display_power (>= v26).
+    Q_INVOKABLE void setIdleNotification(quint32 slot, quint32 timeoutMs);
+    Q_INVOKABLE void setDisplayPower(bool on);
 
     // Output (display) management. applyLayout builds a configuration
     // against `serial` (pass outputSerial), enabling/disabling + configuring
@@ -238,6 +257,12 @@ signals:
     // shell-assigned token from registerHotkey(); WindowManagerService maps
     // it back to a window-manager action on the focused window.
     void hotkeyPressed(quint32 id);
+    // v26: an armed idle notification's state changed (idle=true on idled,
+    // false on resumed). `slot` is the caller's setIdleNotification slot.
+    void idleStateChanged(quint32 slot, bool idle);
+    // Fires when ext_idle_notifier_v1 + a wl_seat become available (so
+    // PowerService can (re)arm its notifications).
+    void idleNotifierAvailableChanged();
     // Fires after every ext-workspace done that changes the workspace
     // count or active index. Drives Qdwin.qml's workspace ListModel.
     void workspacesChanged();
@@ -442,6 +467,29 @@ private:
     void omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
                         bool cancelled);
     friend struct QdwinOmDispatch;
+
+    // v26 idle/DPMS. A wl_seat (for get_idle_notification) + the
+    // ext_idle_notifier_v1 global, both bound in the registry handler. Up to
+    // kIdleSlots independent notifications (PowerService uses 2: inactivity +
+    // display-off); each carries a back-pointer + slot so the idled/resumed
+    // listener can emit idleStateChanged(slot, ...).
+    static constexpr int kIdleSlots = 4;
+    struct IdleSlot {
+        ext_idle_notification_v1 *notif = nullptr;
+        QdwinBinding *self = nullptr;
+        quint32 slot = 0;
+    };
+    wl_seat *seat_ = nullptr;
+    ext_idle_notifier_v1 *idleNotifier_ = nullptr;
+    // Registry names of the bound seat / notifier, so a global_remove (Wayland
+    // permits hot-removal) can tear down the live proxies and drop the idle
+    // capability rather than leave stale globals behind.
+    uint32_t seatName_ = 0;
+    uint32_t idleNotifierName_ = 0;
+    IdleSlot idleSlots_[kIdleSlots];
+    void idleTeardownState();
+    void idleGlobalRemoved(uint32_t name);  // registry global_remove handler
+    friend struct QdwinIdleDispatch;
 
     CtrlServer *ctrlServer_ = nullptr;
 
