@@ -27,6 +27,7 @@ import qs.Modules.Panels.Settings.Tabs.Notifications
 import qs.Modules.Panels.Settings.Tabs.Osd
 import qs.Modules.Panels.Settings.Tabs.Plugins
 import qs.Modules.Panels.Settings.Tabs.Power
+import qs.Modules.Panels.Settings.Tabs.RemovableMedia
 import qs.Modules.Panels.Settings.Tabs.Region
 import qs.Modules.Panels.Settings.Tabs.Session
 import qs.Modules.Panels.Settings.Tabs.SessionMenu
@@ -503,6 +504,10 @@ Item {
     PowerTab {}
   }
   Component {
+    id: removableMediaTab
+    RemovableMediaTab {}
+  }
+  Component {
     id: desktopWidgetsTab
     DesktopWidgetsTab {}
   }
@@ -684,6 +689,12 @@ Item {
             "label": "panels.power.title",
             "icon": "bolt",
             "source": powerTab
+          },
+          {
+            "id": SettingsPanel.Tab.RemovableMedia,
+            "label": "panels.removable-media.title",
+            "icon": "usb",
+            "source": removableMediaTab
           },
           {
             "id": SettingsPanel.Tab.WindowManager,

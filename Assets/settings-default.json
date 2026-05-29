@@ -469,6 +469,13 @@
     "acBrightnessLevel": 100,
     "batteryBrightnessLevel": 40
   },
+  "removableMedia": {
+    "enabled": true,
+    "notifyOnInsert": true,
+    "notifyOnRemove": true,
+    "mountPolicy": "prompt",
+    "autorunPolicy": "prompt"
+  },
   "colorSchemes": {
     "useWallpaperColors": false,
     "predefinedScheme": "Qdshell (default)",

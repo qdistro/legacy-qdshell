@@ -185,6 +185,12 @@ ShellRoot {
           // Tier4Apps. (P05a integration HIGH-1.)
           void Tier4Apps.tier4Prefix;
 
+          // Force RemovableMediaService instantiation so its
+          // `udisksctl monitor` starts watching for device insert/remove
+          // even when no panel is open. Mount/unmount is brokered via
+          // qdistro-media-exec; autorun never auto-executes anything.
+          void RemovableMediaService.enabled;
+
           // And for Tier3FocusIPC — registers the "tier3focus" IPC
           // target so `qs ipc call tier3focus …` resolves. Needed
           // by tests/integration/vm/s48-focus-aware-clear.sh in
