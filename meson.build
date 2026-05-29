@@ -41,4 +41,5 @@ if node.found()
   test('launcher-items', node, args: files('tests/test_launcher_items.js'))
   test('presentation-policy', node, args: files('tests/test_presentation_policy.js'))
   test('brightness-policy', node, args: files('tests/test_brightness_policy.js'))
+  test('system-clock', node, args: files('tests/test_system_clock.js'))
 endif

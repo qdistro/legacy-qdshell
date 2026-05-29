@@ -2501,6 +2501,33 @@
     "subTabLabel": "common.location"
   },
   {
+    "labelKey": "panels.location.system-clock-timezone-label",
+    "descriptionKey": "panels.location.system-clock-timezone-description",
+    "widget": "NSearchableComboBox",
+    "tab": 25,
+    "tabLabel": "panels.region.title",
+    "subTab": 3,
+    "subTabLabel": "common.system-clock"
+  },
+  {
+    "labelKey": "panels.location.system-clock-ntp-label",
+    "descriptionKey": "panels.location.system-clock-ntp-description",
+    "widget": "NToggle",
+    "tab": 25,
+    "tabLabel": "panels.region.title",
+    "subTab": 3,
+    "subTabLabel": "common.system-clock"
+  },
+  {
+    "labelKey": "panels.location.system-clock-manual-label",
+    "descriptionKey": null,
+    "widget": "NTextInputButton",
+    "tab": 25,
+    "tabLabel": "panels.region.title",
+    "subTab": 3,
+    "subTabLabel": "common.system-clock"
+  },
+  {
     "labelKey": "panels.session.save-on-logout-label",
     "descriptionKey": "panels.session.save-on-logout-description",
     "widget": "NToggle",
