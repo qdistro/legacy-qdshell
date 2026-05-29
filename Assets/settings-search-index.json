@@ -2305,6 +2305,38 @@
     "subTab": null
   },
   {
+    "labelKey": "panels.power.presentation-mode-label",
+    "descriptionKey": "panels.power.presentation-mode-description",
+    "widget": "NToggle",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.presentation-auto-disable-label",
+    "descriptionKey": "panels.power.presentation-auto-disable-description",
+    "widget": "NSpinBox",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.inhibit-fullscreen-label",
+    "descriptionKey": "panels.power.inhibit-fullscreen-description",
+    "widget": "NToggle",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.disable-notifications-inhibited-label",
+    "descriptionKey": "panels.power.disable-notifications-inhibited-description",
+    "widget": "NToggle",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
     "labelKey": "panels.power.critical-level-label",
     "descriptionKey": "panels.power.critical-level-description",
     "widget": "NSpinBox",
@@ -2331,6 +2363,30 @@
   {
     "labelKey": "panels.power.display-off-ac-label",
     "descriptionKey": "panels.power.display-off-ac-description",
+    "widget": "NSpinBox",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.auto-reduce-brightness-label",
+    "descriptionKey": "panels.power.auto-reduce-brightness-description",
+    "widget": "NToggle",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.ac-brightness-level-label",
+    "descriptionKey": "panels.power.ac-brightness-level-description",
+    "widget": "NSpinBox",
+    "tab": 22,
+    "tabLabel": "panels.power.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.power.battery-brightness-level-label",
+    "descriptionKey": "panels.power.battery-brightness-level-description",
     "widget": "NSpinBox",
     "tab": 22,
     "tabLabel": "panels.power.title",

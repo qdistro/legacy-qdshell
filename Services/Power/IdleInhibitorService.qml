@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Services.UI
+import "PresentationPolicy.js" as Policy
 
 Singleton {
   id: root
@@ -14,12 +15,66 @@ Singleton {
   property var activeInhibitors: []
   property var timeout: null // in seconds
 
+  // Dedicated inhibitor id owned by presentation mode (see PresentationPolicy.js).
+  readonly property string presentationInhibitorId: Policy.PRESENTATION_INHIBITOR_ID
+
   // Different inhibitor strategies
   property string strategy: "systemd" // "systemd", "wayland", or "auto"
 
   function init() {
     Logger.i("IdleInhibitor", "Service started");
     detectStrategy();
+    // Restore persisted presentation mode on startup (xfce-style).
+    if (Policy.shouldRestorePresentationMode(Settings.data.power.presentationMode)) {
+      setPresentationMode(true, false);
+    }
+  }
+
+  // ─── Presentation mode (xfce4-power-manager parity) ──────────────
+  // Toggling presentation mode adds/removes a single dedicated inhibitor id.
+  // The on/off state is persisted in Settings.data.power.presentationMode and
+  // restored at startup. An optional auto-disable timer turns it back off after
+  // Settings.data.power.presentationAutoDisableMinutes minutes (0 = never).
+  readonly property bool presentationModeActive: activeInhibitors.includes(presentationInhibitorId)
+
+  function setPresentationMode(enabled, persist = true) {
+    // Delegate the set algebra to the pure policy so it stays testable, then
+    // reassign the array so QML change-notifications fire for the viewer.
+    activeInhibitors = Policy.applyPresentationMode(activeInhibitors, enabled);
+    updateInhibition(enabled ? I18n.tr("panels.power.presentation-mode-reason") : reason);
+    if (persist)
+      Settings.data.power.presentationMode = enabled;
+    if (enabled) {
+      var mins = Policy.clampAutoDisableMinutes(Settings.data.power.presentationAutoDisableMinutes);
+      if (mins > 0) {
+        presentationAutoDisableTimer.interval = mins * 60 * 1000;
+        presentationAutoDisableTimer.restart();
+      } else {
+        presentationAutoDisableTimer.stop();
+      }
+    } else {
+      presentationAutoDisableTimer.stop();
+    }
+    Logger.i("IdleInhibitor", "Presentation mode:", enabled);
+  }
+
+  function togglePresentationMode() {
+    setPresentationMode(!presentationModeActive);
+    return presentationModeActive;
+  }
+
+  // Auto-disable timer: fires once after the configured window and turns
+  // presentation mode back off.
+  Timer {
+    id: presentationAutoDisableTimer
+    repeat: false
+    running: false
+    onTriggered: {
+      if (root.presentationModeActive) {
+        Logger.i("IdleInhibitor", "Presentation mode auto-disabled after timeout");
+        root.setPresentationMode(false);
+      }
+    }
   }
 
   // Auto-detect the best strategy
@@ -58,7 +113,9 @@ Singleton {
       return false;
     }
 
-    activeInhibitors.push(id);
+    // Reassign (not in-place push) so QML change-notifications fire for the
+    // read-only active-inhibitor viewer. Set algebra lives in the pure policy.
+    activeInhibitors = Policy.addInhibitor(activeInhibitors, id);
     updateInhibition(reason);
     Logger.d("IdleInhibitor", "Added inhibitor:", id);
     return true;
@@ -72,7 +129,7 @@ Singleton {
       return false;
     }
 
-    activeInhibitors.splice(index, 1);
+    activeInhibitors = Policy.removeInhibitor(activeInhibitors, id);
     updateInhibition();
     Logger.d("IdleInhibitor", "Removed inhibitor:", id);
     return true;

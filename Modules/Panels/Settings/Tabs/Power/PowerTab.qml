@@ -223,6 +223,144 @@ ColumnLayout {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // Presentation mode + idle inhibition section
+  // ═══════════════════════════════════════════════════════════════════
+  NDivider {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginM
+    Layout.bottomMargin: Style.marginM
+  }
+
+  NText {
+    text: I18n.tr("panels.power.section-presentation")
+    pointSize: Style.fontSizeM
+    font.weight: Style.fontWeightBold
+    color: Color.mPrimary
+  }
+
+  NToggle {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.power.presentation-mode-label")
+    description: I18n.tr("panels.power.presentation-mode-description")
+    checked: IdleInhibitorService.presentationModeActive
+    onToggled: checked => IdleInhibitorService.setPresentationMode(checked)
+    defaultValue: Settings.getDefaultValue("power.presentationMode")
+  }
+
+  NSpinBox {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.power.presentation-auto-disable-label")
+    description: I18n.tr("panels.power.presentation-auto-disable-description")
+    minimum: 0
+    maximum: 1440
+    value: Settings.data.power.presentationAutoDisableMinutes
+    stepSize: 5
+    suffix: " min"
+    onValueChanged: {
+      Settings.data.power.presentationAutoDisableMinutes = value;
+      // Re-arm the timer if presentation mode is currently on.
+      if (IdleInhibitorService.presentationModeActive)
+        IdleInhibitorService.setPresentationMode(true);
+    }
+    defaultValue: Settings.getDefaultValue("power.presentationAutoDisableMinutes")
+  }
+
+  NToggle {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.power.inhibit-fullscreen-label")
+    description: I18n.tr("panels.power.inhibit-fullscreen-description")
+    checked: Settings.data.power.inhibitWhenFullscreen
+    onToggled: checked => Settings.data.power.inhibitWhenFullscreen = checked
+    defaultValue: Settings.getDefaultValue("power.inhibitWhenFullscreen")
+  }
+
+  // Capability note: qdwin exposes no fullscreen-window signal yet, so the
+  // inhibit-when-fullscreen toggle is persist-only until that lands.
+  Rectangle {
+    Layout.fillWidth: true
+    visible: Settings.data.power.inhibitWhenFullscreen
+    radius: Style.iRadiusS
+    color: Color.mSurfaceVariant
+    border.color: Color.mOutline
+    border.width: Style.borderS
+    implicitHeight: fsBannerRow.implicitHeight + Style.marginM * 2
+
+    RowLayout {
+      id: fsBannerRow
+      anchors.fill: parent
+      anchors.margins: Style.marginM
+      spacing: Style.marginM
+
+      NIcon {
+        icon: "info-circle"
+        pointSize: Style.fontSizeXL
+        color: Color.mTertiary
+        Layout.alignment: Qt.AlignTop
+      }
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("panels.power.inhibit-fullscreen-persist-only")
+        color: Color.mOnSurfaceVariant
+        pointSize: Style.fontSizeS
+        wrapMode: Text.WordWrap
+      }
+    }
+  }
+
+  NToggle {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.power.disable-notifications-inhibited-label")
+    description: I18n.tr("panels.power.disable-notifications-inhibited-description")
+    checked: Settings.data.power.disableNotificationsWhileInhibited
+    onToggled: checked => Settings.data.power.disableNotificationsWhileInhibited = checked
+    defaultValue: Settings.getDefaultValue("power.disableNotificationsWhileInhibited")
+  }
+
+  // Read-only active-inhibitor viewer. ids/reasons are untrusted opaque text:
+  // rendered as PlainText, never interpolated into a command.
+  NText {
+    Layout.fillWidth: true
+    Layout.topMargin: Style.marginS
+    text: I18n.tr("panels.power.active-inhibitors-label")
+    font.weight: Style.fontWeightSemiBold
+  }
+
+  NText {
+    Layout.fillWidth: true
+    visible: IdleInhibitorService.activeInhibitors.length === 0
+    text: I18n.tr("panels.power.active-inhibitors-none")
+    color: Color.mOnSurfaceVariant
+    pointSize: Style.fontSizeS
+    wrapMode: Text.WordWrap
+  }
+
+  Repeater {
+    model: IdleInhibitorService.activeInhibitors
+    delegate: RowLayout {
+      required property var modelData
+      Layout.fillWidth: true
+      spacing: Style.marginS
+
+      NIcon {
+        icon: "shield"
+        pointSize: Style.fontSizeM
+        color: Color.mTertiary
+      }
+
+      NText {
+        Layout.fillWidth: true
+        // Untrusted inhibitor id — render verbatim as PlainText, never as
+        // rich text and never interpolated into a shell command.
+        text: String(modelData)
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        pointSize: Style.fontSizeS
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Critical battery section
   // ═══════════════════════════════════════════════════════════════════
   NDivider {
@@ -309,5 +447,90 @@ ColumnLayout {
     color: Color.mOnSurfaceVariant
     pointSize: Style.fontSizeS
     wrapMode: Text.WordWrap
+  }
+
+  // ─── Per-power-source brightness (xfce4-power-manager parity) ─────
+  // Whether any monitor's backlight can actually be driven. When false the
+  // controls show a capability note and stay persist-only.
+  readonly property bool brightnessControllable: PowerService.brightnessControllable
+
+  NToggle {
+    Layout.fillWidth: true
+    label: I18n.tr("panels.power.auto-reduce-brightness-label")
+    description: I18n.tr("panels.power.auto-reduce-brightness-description")
+    checked: Settings.data.brightness.autoReduceOnBattery
+    onToggled: checked => {
+                 Settings.data.brightness.autoReduceOnBattery = checked;
+                 PowerService.applyPerSourceBrightness();
+               }
+    defaultValue: Settings.getDefaultValue("brightness.autoReduceOnBattery")
+  }
+
+  // Capability note: no controllable backlight detected, so the levels below
+  // are stored but cannot be applied on this machine.
+  Rectangle {
+    Layout.fillWidth: true
+    visible: Settings.data.brightness.autoReduceOnBattery && !root.brightnessControllable
+    radius: Style.iRadiusS
+    color: Color.mSurfaceVariant
+    border.color: Color.mOutline
+    border.width: Style.borderS
+    implicitHeight: brightnessBannerRow.implicitHeight + Style.marginM * 2
+
+    RowLayout {
+      id: brightnessBannerRow
+      anchors.fill: parent
+      anchors.margins: Style.marginM
+      spacing: Style.marginM
+
+      NIcon {
+        icon: "info-circle"
+        pointSize: Style.fontSizeXL
+        color: Color.mTertiary
+        Layout.alignment: Qt.AlignTop
+      }
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("panels.power.brightness-persist-only")
+        color: Color.mOnSurfaceVariant
+        pointSize: Style.fontSizeS
+        wrapMode: Text.WordWrap
+      }
+    }
+  }
+
+  NSpinBox {
+    Layout.fillWidth: true
+    visible: Settings.data.brightness.autoReduceOnBattery
+    label: I18n.tr("panels.power.ac-brightness-level-label")
+    description: I18n.tr("panels.power.ac-brightness-level-description")
+    minimum: 1
+    maximum: 100
+    value: Settings.data.brightness.acBrightnessLevel
+    stepSize: 5
+    suffix: "%"
+    onValueChanged: {
+      Settings.data.brightness.acBrightnessLevel = value;
+      PowerService.applyPerSourceBrightness();
+    }
+    defaultValue: Settings.getDefaultValue("brightness.acBrightnessLevel")
+  }
+
+  NSpinBox {
+    Layout.fillWidth: true
+    visible: Settings.data.brightness.autoReduceOnBattery
+    label: I18n.tr("panels.power.battery-brightness-level-label")
+    description: I18n.tr("panels.power.battery-brightness-level-description")
+    minimum: 1
+    maximum: 100
+    value: Settings.data.brightness.batteryBrightnessLevel
+    stepSize: 5
+    suffix: "%"
+    onValueChanged: {
+      Settings.data.brightness.batteryBrightnessLevel = value;
+      PowerService.applyPerSourceBrightness();
+    }
+    defaultValue: Settings.getDefaultValue("brightness.batteryBrightnessLevel")
   }
 }

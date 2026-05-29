@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Services.Hardware
 import qs.Services.Qdwin
 import qs.Services.UI
+import "BrightnessPolicy.js" as BrightnessPolicy
 
 Singleton {
   id: root
@@ -362,6 +363,47 @@ Singleton {
   // driven by logind capability + evdev, not by a compositor idle API.)
   readonly property int activeInactivityTimeout: onAC ? inactivityTimeoutAC : inactivityTimeoutBattery
   readonly property int activeDisplayOffTimeout: onAC ? displayOffAC : displayOffBattery
+
+  // ─── Per-power-source brightness (xfce4-power-manager parity) ─────
+  // When automatic battery reduction is enabled, dropping to battery applies
+  // the reduced level and returning to AC restores the normal level. This is
+  // LIVE-APPLY (not compositor-gated): BrightnessService drives a real backlight
+  // via brightnessctl/ddcutil/asdbctl. It is effectively gated by
+  // brightnessControlAvailable — if no backlight is controllable, setBrightness
+  // is a no-op. All maths (clamp 0..100, percent->fraction, transition
+  // decision) lives in the pure BrightnessPolicy.js so it is unit-tested.
+  readonly property bool autoReduceBrightnessOnBattery: Settings.data.brightness.autoReduceOnBattery
+  readonly property int  acBrightnessLevel:             Settings.data.brightness.acBrightnessLevel
+  readonly property int  batteryBrightnessLevel:        Settings.data.brightness.batteryBrightnessLevel
+
+  // Whether at least one monitor can actually have its brightness set.
+  readonly property bool brightnessControllable: {
+    var ms = BrightnessService.monitors;
+    if (!ms)
+      return false;
+    for (var i = 0; i < ms.length; i++) {
+      if (ms[i] && ms[i].brightnessControlAvailable)
+        return true;
+    }
+    return false;
+  }
+
+  function applyPerSourceBrightness() {
+    if (!autoReduceBrightnessOnBattery)
+      return;
+    if (!brightnessControllable) {
+      Logger.d("PowerService", "Per-source brightness: no controllable backlight, skipping");
+      return;
+    }
+    var res = BrightnessPolicy.resolveTransition(onAC, autoReduceBrightnessOnBattery, acBrightnessLevel, batteryBrightnessLevel);
+    if (!res.apply)
+      return;
+    Logger.i("PowerService", "Applying per-source brightness:", Math.round(res.fraction * 100) + "%", "(onAC:", onAC + ")");
+    BrightnessService.setBrightness(res.fraction);
+  }
+
+  // React to AC<->battery transitions.
+  onOnACChanged: applyPerSourceBrightness()
 
   // ─── Critical battery handling ───────────────────────────────────
   // Watch the primary battery and trigger the configured action once when the

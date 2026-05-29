@@ -39,4 +39,6 @@ if node.found()
   test('mime-associations', node, args: files('tests/test_mime_associations.js'))
   test('session-model', node, args: files('tests/test_session_model.js'))
   test('launcher-items', node, args: files('tests/test_launcher_items.js'))
+  test('presentation-policy', node, args: files('tests/test_presentation_policy.js'))
+  test('brightness-policy', node, args: files('tests/test_brightness_policy.js'))
 endif

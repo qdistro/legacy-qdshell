@@ -695,6 +695,12 @@ Singleton {
       property int brightnessStep: 5
       property bool enforceMinimum: true
       property bool enableDdcSupport: false
+      // Per-power-source brightness (xfce4-power-manager parity). When
+      // autoReduceOnBattery is on, the display drops to batteryBrightnessLevel
+      // on battery and restores acBrightnessLevel on AC. Levels are 0..100%.
+      property bool autoReduceOnBattery: false
+      property int acBrightnessLevel: 100
+      property int batteryBrightnessLevel: 40
     }
 
     property JsonObject colorSchemes: JsonObject {
