@@ -121,6 +121,38 @@ PNG of `settings_audio` ends up at `artifacts/settings_audio.png`.
 * **Bar** — one idle screenshot is captured to baseline overall
   bar/dock/widget layout.
 
+### Stateful-interaction + real-input depth (VM-only)
+
+Beyond "the surface opens", these assert concrete STATE and survive a real
+qdshell restart. They require the VM transport (persisted config, the user
+systemd unit, the qdshell ctrl-socket, and QEMU QMP input injection have no
+host nested-compositor equivalent); without `QDSHELL_UI_VM` they SKIP with a
+precise reason. The host-runnable depth for the pure logic they exercise lives
+in the Node suites `tests/test_launcher_navigation.js` and
+`tests/test_settings_recovery.js`.
+
+* `test_interaction.py` — a toggle flipped via IPC lands in `settings.json`
+  and survives a `systemctl --user restart qdshell.service` (read back from
+  disk); color-scheme selection round-trips; a sequence of panel open/close
+  cycles leaves a clean idle bar (state across multiple opens, not isolated
+  captures).
+* `test_degraded.py` — each panel (Bluetooth/Network/Audio/Battery/Media/Tray)
+  renders a coherent empty/unavailable state under a missing backing service
+  (judged against `expectations/panel_*_degraded.md`), never a blank panel or
+  a crash.
+* `test_config_recovery.py` — a truncated / empty `settings.json` does not
+  brick the shell: qdshell recovers to defaults, restarts, answers IPC, and
+  rewrites a valid config.
+* `test_real_input.py` — REAL keyboard/mouse via QMP `input-send-event` (the
+  same evdev-layer path a physical keyboard takes, NOT the ctrl-socket
+  shortcut): typing into the launcher search field, arrow/Enter/Esc nav,
+  mouse-click result selection, Shift/Backspace handling, and a real
+  password+Enter locker unlock. Some of these exercise the documented qdwin
+  overlay-keyboard-grab gap (see `qdwin/tests/gui/qdwin-helpers.sh` header) and
+  are written to fail loudly so they pin the fix when qdwin lands the grab. The
+  locker test needs `QDSHELL_UI_VM_PASSWORD` and skips without it (no
+  credential is hard-coded).
+
 ## Updating expectations after a refactor
 
 If you intentionally change a surface (e.g. you merge OSD into User
@@ -146,11 +178,17 @@ regressions (a section heading disappeared, a slider lost its label).
 
 * `runner.py` — primitives: VM-session transport (IPC + virsh-screenshot)
   and the legacy host Weston/Qdshell lifecycle, plus IPC, screenshot,
-  describe, judge.
+  describe, judge. Also the stateful-interaction transport: settings.json
+  read/write, qdshell restart, ctrl-socket, and real keyboard/mouse via QMP
+  (`tap_key`/`chord`/`type_text`/`mouse_click`).
 * `manifests.py` — the canonical surface list.
 * `conftest.py` — pytest fixtures: a unified `capture` fixture that routes
-  to the VM transport when `QDSHELL_UI_VM` is set, else the host transport.
-* `test_settings_tabs.py`, `test_panels.py`, `test_bar.py` — actual
-  test cases.
-* `expectations/` — one `.md` per surface.
+  to the VM transport when `QDSHELL_UI_VM` is set, else the host transport;
+  and a `vm_session` fixture that SKIPs when no VM is provided (used by the
+  stateful-interaction / real-input suites).
+* `test_settings_tabs.py`, `test_panels.py`, `test_bar.py` — surface-render
+  regression cases.
+* `test_interaction.py`, `test_degraded.py`, `test_config_recovery.py`,
+  `test_real_input.py` — VM-only stateful-interaction + real-input depth.
+* `expectations/` — one `.md` per surface (incl. `panel_*_degraded.md`).
 * `artifacts/` — PNGs + logs from each run (git-ignored).

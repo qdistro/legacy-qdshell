@@ -522,6 +522,250 @@ def ipc_vm(session: VMSession, *args: str, timeout: float = 30.0) -> subprocess.
     return res
 
 
+# ---------------------------------------------------------------------------
+# Stateful-interaction transport (VM): config read/write + restart + real input
+#
+# These power the §1 (stateful interaction / persistence-after-restart /
+# degraded-service) and §2 (real keyboard/mouse) coverage. They all run
+# against the SAME live qdwin VM session as the screenshot harness. The
+# config path is the deployed qdshell's, under the admin user's XDG config.
+#
+# The IPC surface (ipc_vm) is mostly fire-and-forget toggles; for CONCRETE
+# state assertions we read the persisted settings.json on disk (the durable
+# postcondition of a setting change) and the qdshell ctrl-socket snapshots
+# (machine-readable launcher/switcher/locker state). Real keyboard/mouse use
+# QEMU QMP input-send-event — the SAME mechanism qdwin/tests/gui/qdwin-helpers.sh
+# uses — so the keystrokes enter below Wayland at the evdev layer, exactly like
+# a physical keyboard (not the ctrl-socket shortcut path).
+# ---------------------------------------------------------------------------
+
+# Deployed qdshell writes its config here (Commons/Settings.qml: configDir =
+# $XDG_CONFIG_HOME/qdshell/). Under the admin session XDG_CONFIG_HOME defaults
+# to /home/admin/.config.
+VM_SETTINGS_PATH = "/home/admin/.config/qdshell/settings.json"
+VM_QDSHELL_UNIT = "qdshell.service"
+
+
+def read_settings_vm(session: VMSession, *, timeout: float = 30.0) -> Optional[dict]:
+    """Read and JSON-parse the persisted qdshell settings.json inside the VM.
+
+    Returns the parsed dict, or None if the file is absent. Raises on a
+    present-but-unreadable file so a broken read never silently passes.
+    """
+    import json
+
+    script = (
+        f"set -eu\n"
+        f"if [ -f {VM_SETTINGS_PATH} ]; then cat {VM_SETTINGS_PATH}; else echo __ABSENT__; fi\n"
+    )
+    res = _vm_run_script(session, script, timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"reading {VM_SETTINGS_PATH} failed (rc={res.returncode}): {res.stderr.strip()}"
+        )
+    text = res.stdout
+    if text.strip() == "__ABSENT__":
+        return None
+    return json.loads(text)
+
+
+def write_settings_vm(session: VMSession, content: str, *, timeout: float = 30.0) -> None:
+    """Overwrite the VM's qdshell settings.json with `content` (verbatim bytes).
+
+    Used by the malformed-config-recovery test to plant a corrupt config, and
+    to seed a known baseline before a restart. The body is base64'd through the
+    vm-script idiom so arbitrary (even malformed) JSON survives intact.
+    """
+    b64 = base64.b64encode(content.encode()).decode("ascii")
+    script = (
+        f"set -eu\n"
+        f"install -d -o {VM_USER} -g {VM_USER} -m 700 $(dirname {VM_SETTINGS_PATH})\n"
+        f"echo {b64} | base64 -d > {VM_SETTINGS_PATH}\n"
+        f"chown {VM_USER}:{VM_USER} {VM_SETTINGS_PATH}\n"
+    )
+    res = _vm_run_script(session, script, timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"writing {VM_SETTINGS_PATH} failed (rc={res.returncode}): {res.stderr.strip()}"
+        )
+
+
+def restart_qdshell_vm(session: VMSession, *, settle: float = 6.0,
+                       timeout: float = 60.0) -> None:
+    """Restart the qdshell user service inside the VM and wait for IPC to return.
+
+    This is the real persistence path: a setting changed in one qdshell process
+    must survive a full process restart and reload from settings.json. Restart
+    is via the admin user's systemd (the deployed unit), then we poll IPC.
+    """
+    script = (
+        f"set -eu\n"
+        f"runuser -u {VM_USER} -- env XDG_RUNTIME_DIR={VM_XDG_RUNTIME_DIR} "
+        f"systemctl --user restart {VM_QDSHELL_UNIT}\n"
+    )
+    res = _vm_run_script(session, script, timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"restarting {VM_QDSHELL_UNIT} failed (rc={res.returncode}): {res.stderr.strip()}"
+        )
+    deadline = time.time() + settle + 20
+    last_exc: Optional[Exception] = None
+    while time.time() < deadline:
+        try:
+            ipc_vm(session, "bar", "showBar", timeout=15)
+            return
+        except RuntimeError as exc:
+            last_exc = exc
+            time.sleep(1.0)
+    raise RuntimeError(
+        f"qdshell did not answer IPC within {settle + 20:.0f}s after restart; "
+        f"last error: {last_exc}"
+    )
+
+
+def ctrl_socket_vm(session: VMSession, command: str, *, timeout: float = 30.0) -> str:
+    """Send a one-line command to qdshell's ctrl-socket inside the VM, return reply.
+
+    The ctrl-socket (qdshell.sock) exposes machine-readable snapshots —
+    launcher / switcher / locker / panel state — used as concrete-state
+    assertions where no `qs ipc` getter exists. The command is restricted to a
+    small allowlist so nothing arbitrary reaches the socket.
+    """
+    allowed = {
+        "launcher", "launcher-toggle", "launcher-activate",
+        "switcher", "switcher-next", "switcher-commit",
+        "list", "tray", "panel", "locker",
+    }
+    base = command.split(" ", 1)[0]
+    if base not in allowed:
+        raise ValueError(f"refusing ctrl-socket command {command!r} (base {base!r} not allowlisted)")
+    b64 = base64.b64encode((command + "\n").encode()).decode("ascii")
+    script = (
+        f"set -eu\n"
+        f"runuser -u {VM_USER} -- bash -c "
+        f"'echo {b64} | base64 -d | socat -t 2 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock'\n"
+    )
+    res = _vm_run_script(session, script, timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"ctrl-socket {command!r} failed (rc={res.returncode}): {res.stderr.strip()}"
+        )
+    return res.stdout.strip()
+
+
+# ---- real keyboard / mouse via QEMU QMP ------------------------------------
+#
+# Ported from qdwin/tests/gui/qdwin-helpers.sh. qcodes are QEMU key codes (NOT
+# linux KEY_*), see qapi/ui.json QKeyCode. Injecting individual down/up events
+# keeps modifier state consistent across calls (a virsh send-key chord leaves
+# dangling modifiers — see that helper's header).
+
+# Screen size for pixel->absolute (0..32767) mouse mapping; override via env.
+VM_SCREEN_W = int(os.environ.get("QDSHELL_UI_SCREEN_W", "1280"))
+VM_SCREEN_H = int(os.environ.get("QDSHELL_UI_SCREEN_H", "800"))
+
+_QMP_KEY_RE = re.compile(r"\A[a-z0-9_]+\Z")  # qcodes are lowercase ascii + _
+
+# ASCII char -> (qcode, needs_shift). Lowercase, digits, space, common punct.
+_CHAR_TO_QCODE = {
+    " ": ("spc", False), ".": ("dot", False), "-": ("minus", False),
+    "/": ("slash", False), "=": ("equal", False),
+}
+for _c in "abcdefghijklmnopqrstuvwxyz":
+    _CHAR_TO_QCODE[_c] = (_c, False)
+    _CHAR_TO_QCODE[_c.upper()] = (_c, True)        # uppercase = shift + key
+for _c in "0123456789":
+    _CHAR_TO_QCODE[_c] = (_c, False)
+
+
+def _qmp(session: VMSession, qmp_json: str, *, timeout: float = 15.0) -> None:
+    res = subprocess.run(
+        session.virsh + ["qemu-monitor-command", session.vm, qmp_json],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"QMP command failed (rc={res.returncode}): {res.stderr.strip() or res.stdout.strip()}"
+        )
+
+
+def qmp_key(session: VMSession, qcode: str, down: bool) -> None:
+    """Send a single key down/up event by qcode (real evdev-level input)."""
+    if not _QMP_KEY_RE.match(qcode):
+        raise ValueError(f"invalid qcode {qcode!r}")
+    flag = "true" if down else "false"
+    _qmp(session,
+         '{"execute": "input-send-event", "arguments": {"events": '
+         f'[{{"type": "key", "data": {{"down": {flag}, "key": '
+         f'{{"type": "qcode", "data": "{qcode}"}}}}}}]}}}}')
+
+
+def tap_key(session: VMSession, qcode: str, *, gap: float = 0.04) -> None:
+    """Press and release a single key."""
+    qmp_key(session, qcode, True)
+    time.sleep(0.03)
+    qmp_key(session, qcode, False)
+    time.sleep(gap)
+
+
+def chord(session: VMSession, hold: list[str], tap: list[str], *, gap: float = 0.05) -> None:
+    """Hold modifier(s), tap key(s), release modifier(s) — a real chord."""
+    for k in hold:
+        qmp_key(session, k, True)
+        time.sleep(0.03)
+    for k in tap:
+        qmp_key(session, k, True)
+        time.sleep(gap)
+        qmp_key(session, k, False)
+        time.sleep(gap)
+    for k in reversed(hold):
+        qmp_key(session, k, False)
+        time.sleep(0.03)
+
+
+def type_text(session: VMSession, text: str, *, gap: float = 0.05) -> None:
+    """Type an ASCII string letter-by-letter as real key events.
+
+    Uppercase letters are sent as shift+key (real Shift handling). Unsupported
+    characters raise — the test must use a typeable string so a silent drop
+    never masks a regression.
+    """
+    for ch in text:
+        if ch not in _CHAR_TO_QCODE:
+            raise ValueError(f"type_text: unsupported char {ch!r}")
+        qcode, needs_shift = _CHAR_TO_QCODE[ch]
+        if needs_shift:
+            qmp_key(session, "shift", True)
+            time.sleep(0.02)
+        tap_key(session, qcode, gap=gap)
+        if needs_shift:
+            qmp_key(session, "shift", False)
+            time.sleep(0.02)
+
+
+def mouse_move(session: VMSession, x: int, y: int) -> None:
+    """Move the pointer to absolute pixel (x, y)."""
+    ax = max(0, min(32767, x * 32767 // VM_SCREEN_W))
+    ay = max(0, min(32767, y * 32767 // VM_SCREEN_H))
+    _qmp(session,
+         '{"execute": "input-send-event", "arguments": {"events": ['
+         f'{{"type":"abs","data":{{"axis":"x","value":{ax}}}}},'
+         f'{{"type":"abs","data":{{"axis":"y","value":{ay}}}}}]}}}}')
+
+
+def mouse_click(session: VMSession, x: int, y: int, button: str = "left") -> None:
+    """Move to (x, y) and click the given button."""
+    if button not in ("left", "middle", "right"):
+        raise ValueError(f"invalid mouse button {button!r}")
+    mouse_move(session, x, y)
+    time.sleep(0.05)
+    for down in ("true", "false"):
+        _qmp(session,
+             '{"execute": "input-send-event", "arguments": {"events": ['
+             f'{{"type":"btn","data":{{"button":"{button}","down":{down}}}}}]}}}}')
+        time.sleep(0.05)
+
+
 def _convert_ppm_to_png(ppm_path: Path, png_path: Path) -> None:
     """Convert a virsh-screenshot PPM to PNG so codex --image accepts it."""
     if shutil.which("pnmtopng"):

@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Widgets
 
 import "Providers"
+import "../../../Services/UI/LauncherNavigation.js" as Nav
 import qs.Commons
 import qs.Services.Keyboard
 import qs.Services.Qdshell
@@ -302,15 +303,10 @@ Rectangle {
         }
       }
 
-      // Sort by _score (higher = better match), items without _score go first
-      if (searchText.trim() !== "") {
-        allResults.sort((a, b) => {
-                          const sa = a._score !== undefined ? a._score : 0;
-                          const sb = b._score !== undefined ? b._score : 0;
-                          return sb - sa;
-                        });
-      }
-      results = allResults;
+      // Sort by _score (higher = better match) for a non-blank query. The
+      // merge+sort is in Services/UI/LauncherNavigation.js::orderResults so
+      // the result ordering is unit-tested (tests/test_launcher_navigation.js).
+      results = Nav.orderResults(allResults, searchText);
     }
 
     // Update activeProvider only after computing new state to avoid UI flicker
@@ -319,148 +315,66 @@ Rectangle {
   }
 
   // Navigation functions
+  //
+  // The index math lives in Services/UI/LauncherNavigation.js so it can be
+  // unit-tested under Node (tests/test_launcher_navigation.js); each wrapper
+  // here just feeds the current results/index/columns state in and assigns
+  // the returned new index back. Behavior is unchanged from the inline
+  // implementation these replaced.
   function selectNext() {
-    if (results.length > 0 && selectedIndex < results.length - 1) {
-      selectedIndex++;
-    }
+    selectedIndex = Nav.selectNext(selectedIndex, results.length);
   }
 
   function selectPrevious() {
-    if (results.length > 0 && selectedIndex > 0) {
-      selectedIndex--;
-    }
+    selectedIndex = Nav.selectPrevious(selectedIndex, results.length);
   }
 
   function selectNextWrapped() {
-    if (results.length > 0) {
-      if (allowWrapNavigation) {
-        selectedIndex = (selectedIndex + 1) % results.length;
-      } else {
-        selectNext();
-      }
-    }
+    selectedIndex = Nav.selectNextWrapped(selectedIndex, results.length, allowWrapNavigation);
   }
 
   function selectPreviousWrapped() {
-    if (results.length > 0) {
-      if (allowWrapNavigation) {
-        selectedIndex = (((selectedIndex - 1) % results.length) + results.length) % results.length;
-      } else {
-        selectPrevious();
-      }
-    }
+    selectedIndex = Nav.selectPreviousWrapped(selectedIndex, results.length, allowWrapNavigation);
   }
 
   function selectFirst() {
-    selectedIndex = 0;
+    selectedIndex = Nav.selectFirst();
   }
 
   function selectLast() {
-    selectedIndex = results.length > 0 ? results.length - 1 : 0;
+    selectedIndex = Nav.selectLast(results.length);
   }
 
   function selectNextPage() {
-    if (results.length > 0) {
-      const page = Math.max(1, Math.floor(600 / entryHeight));
-      selectedIndex = Math.min(selectedIndex + page, results.length - 1);
-    }
+    selectedIndex = Nav.selectNextPage(selectedIndex, results.length, Math.max(1, Math.floor(600 / entryHeight)));
   }
 
   function selectPreviousPage() {
-    if (results.length > 0) {
-      const page = Math.max(1, Math.floor(600 / entryHeight));
-      selectedIndex = Math.max(selectedIndex - page, 0);
-    }
+    selectedIndex = Nav.selectPreviousPage(selectedIndex, results.length, Math.max(1, Math.floor(600 / entryHeight)));
   }
 
-  // Grid view navigation functions
+  // Grid view navigation functions — index math delegated to
+  // Services/UI/LauncherNavigation.js (see tests/test_launcher_navigation.js).
+  // The isGridView/gridColumns guard stays here; the wrap/clamp math is the
+  // unit-tested module's.
   function selectPreviousRow() {
-    if (results.length > 0 && isGridView && gridColumns > 0) {
-      const currentRow = Math.floor(selectedIndex / gridColumns);
-      const currentCol = selectedIndex % gridColumns;
-
-      if (currentRow > 0) {
-        const targetRow = currentRow - 1;
-        const targetIndex = targetRow * gridColumns + currentCol;
-        const itemsInTargetRow = Math.min(gridColumns, results.length - targetRow * gridColumns);
-        if (currentCol < itemsInTargetRow) {
-          selectedIndex = targetIndex;
-        } else {
-          selectedIndex = targetRow * gridColumns + itemsInTargetRow - 1;
-        }
-      } else {
-        // Wrap to last row, same column
-        const totalRows = Math.ceil(results.length / gridColumns);
-        const lastRow = totalRows - 1;
-        const itemsInLastRow = Math.min(gridColumns, results.length - lastRow * gridColumns);
-        if (currentCol < itemsInLastRow) {
-          selectedIndex = lastRow * gridColumns + currentCol;
-        } else {
-          selectedIndex = results.length - 1;
-        }
-      }
-    }
+    if (results.length > 0 && isGridView && gridColumns > 0)
+      selectedIndex = Nav.selectPreviousRow(selectedIndex, results.length, gridColumns);
   }
 
   function selectNextRow() {
-    if (results.length > 0 && isGridView && gridColumns > 0) {
-      const currentRow = Math.floor(selectedIndex / gridColumns);
-      const currentCol = selectedIndex % gridColumns;
-      const totalRows = Math.ceil(results.length / gridColumns);
-
-      if (currentRow < totalRows - 1) {
-        const targetRow = currentRow + 1;
-        const targetIndex = targetRow * gridColumns + currentCol;
-        if (targetIndex < results.length) {
-          selectedIndex = targetIndex;
-        } else {
-          const itemsInTargetRow = results.length - targetRow * gridColumns;
-          if (itemsInTargetRow > 0) {
-            selectedIndex = targetRow * gridColumns + itemsInTargetRow - 1;
-          } else {
-            selectedIndex = Math.min(currentCol, results.length - 1);
-          }
-        }
-      } else {
-        // Wrap to first row, same column
-        selectedIndex = Math.min(currentCol, results.length - 1);
-      }
-    }
+    if (results.length > 0 && isGridView && gridColumns > 0)
+      selectedIndex = Nav.selectNextRow(selectedIndex, results.length, gridColumns);
   }
 
   function selectPreviousColumn() {
-    if (results.length > 0 && isGridView) {
-      const currentRow = Math.floor(selectedIndex / gridColumns);
-      const currentCol = selectedIndex % gridColumns;
-      if (currentCol > 0) {
-        selectedIndex = currentRow * gridColumns + (currentCol - 1);
-      } else if (currentRow > 0) {
-        selectedIndex = (currentRow - 1) * gridColumns + (gridColumns - 1);
-      } else {
-        const totalRows = Math.ceil(results.length / gridColumns);
-        const lastRowIndex = (totalRows - 1) * gridColumns + (gridColumns - 1);
-        selectedIndex = Math.min(lastRowIndex, results.length - 1);
-      }
-    }
+    if (results.length > 0 && isGridView && gridColumns > 0)
+      selectedIndex = Nav.selectPreviousColumn(selectedIndex, results.length, gridColumns);
   }
 
   function selectNextColumn() {
-    if (results.length > 0 && isGridView) {
-      const currentRow = Math.floor(selectedIndex / gridColumns);
-      const currentCol = selectedIndex % gridColumns;
-      const itemsInCurrentRow = Math.min(gridColumns, results.length - currentRow * gridColumns);
-
-      if (currentCol < itemsInCurrentRow - 1) {
-        selectedIndex = currentRow * gridColumns + (currentCol + 1);
-      } else {
-        const totalRows = Math.ceil(results.length / gridColumns);
-        if (currentRow < totalRows - 1) {
-          selectedIndex = (currentRow + 1) * gridColumns;
-        } else {
-          selectedIndex = 0;
-        }
-      }
-    }
+    if (results.length > 0 && isGridView && gridColumns > 0)
+      selectedIndex = Nav.selectNextColumn(selectedIndex, results.length, gridColumns);
   }
 
   function activate() {

@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../Helpers/QtObj2JS.js" as QtObj2JS
+import "../Services/Qdshell/SettingsRecovery.js" as SettingsRecovery
 import qs.Commons
 import qs.Modules.OSD
 import qs.Services.Qdshell
@@ -1374,38 +1375,14 @@ Singleton {
   }
 
   // -----------------------------------------------------
-  // Function to clean up deprecated user/custom bar widgets settings
+  // Function to clean up deprecated user/custom bar widgets settings.
+  //
+  // The strip-deprecated-keys + inject-missing-defaults rule lives in
+  // Services/Qdshell/SettingsRecovery.js::upgradeWidget so it is unit-tested
+  // under Node (tests/test_settings_recovery.js); here we just hand it the
+  // widget and the registry's default metadata map for that widget id, and
+  // return whether anything changed (Settings logs only on a change).
   function upgradeWidget(widget) {
-    // Backup the widget definition before altering
-    const widgetBefore = JSON.stringify(widget);
-
-    // Get all existing custom settings keys
-    const keys = Object.keys(BarWidgetRegistry.widgetMetadata[widget.id]);
-
-    // Delete deprecated user settings from the wiget
-    for (const k of Object.keys(widget)) {
-      if (k === "id") {
-        continue;
-      }
-      if (!keys.includes(k)) {
-        delete widget[k];
-      }
-    }
-
-    // Inject missing default setting (metaData) from BarWidgetRegistry
-    for (var i = 0; i < keys.length; i++) {
-      const k = keys[i];
-      if (k === "id") {
-        continue;
-      }
-
-      if (widget[k] === undefined) {
-        widget[k] = BarWidgetRegistry.widgetMetadata[widget.id][k];
-      }
-    }
-
-    // Compare settings, to detect if something has been upgraded
-    const widgetAfter = JSON.stringify(widget);
-    return (widgetAfter !== widgetBefore);
+    return SettingsRecovery.upgradeWidget(widget, BarWidgetRegistry.widgetMetadata[widget.id]).changed;
   }
 }

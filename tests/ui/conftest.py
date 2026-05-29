@@ -136,6 +136,26 @@ def _vm_session():
     return session
 
 
+@pytest.fixture(scope="session")
+def vm_session(_vm_session):
+    """A live qdshell VM session; SKIP when no VM is provided.
+
+    The stateful-interaction (§1) and real-keyboard/mouse (§2) suites need the
+    real qdwin VM transport: persisted-config-after-restart, the qdshell
+    ctrl-socket, the user systemd unit, and QEMU QMP input injection have no
+    host nested-compositor equivalent (and the host path SIGSEGVs on headless
+    Wayland anyway). When QDSHELL_UI_VM is unset we skip rather than fail — the
+    host-runnable depth for this logic lives in the Node suites
+    (tests/test_launcher_navigation.js, tests/test_settings_recovery.js).
+    """
+    if _vm_session is None:
+        pytest.skip(
+            "VM-only: set QDSHELL_UI_VM=<domain> + QDSHELL_UI_VM_EXEC to run "
+            "stateful-interaction / real-input tests against a live qdwin VM"
+        )
+    return _vm_session
+
+
 # ---------------------------------------------------------------------------
 # Host transport (legacy fallback)
 # ---------------------------------------------------------------------------
