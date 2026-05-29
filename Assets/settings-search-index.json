@@ -760,6 +760,62 @@
     "subTabLabel": "panels.default-apps.subtab-categories"
   },
   {
+    "labelKey": "desktop-icons.enabled-label",
+    "descriptionKey": "desktop-icons.enabled-description",
+    "widget": "NToggle",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.single-click-label",
+    "descriptionKey": "desktop-icons.single-click-description",
+    "widget": "NToggle",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.show-hidden-label",
+    "descriptionKey": "desktop-icons.show-hidden-description",
+    "widget": "NToggle",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.sort-label",
+    "descriptionKey": "desktop-icons.sort-description",
+    "widget": "NComboBox",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.folders-first-label",
+    "descriptionKey": "desktop-icons.folders-first-description",
+    "widget": "NToggle",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.icon-size-label",
+    "descriptionKey": "desktop-icons.icon-size-description",
+    "widget": "NSpinBox",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "desktop-icons.label-size-label",
+    "descriptionKey": "desktop-icons.label-size-description",
+    "widget": "NSpinBox",
+    "tab": 9,
+    "tabLabel": "desktop-icons.title",
+    "subTab": null
+  },
+  {
     "labelKey": "panels.desktop-widgets.enabled-label",
     "descriptionKey": "panels.desktop-widgets.enabled-description",
     "widget": "NToggle",
@@ -2308,7 +2364,7 @@
     "labelKey": "panels.power.presentation-mode-label",
     "descriptionKey": "panels.power.presentation-mode-description",
     "widget": "NToggle",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2316,7 +2372,7 @@
     "labelKey": "panels.power.presentation-auto-disable-label",
     "descriptionKey": "panels.power.presentation-auto-disable-description",
     "widget": "NSpinBox",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2324,7 +2380,7 @@
     "labelKey": "panels.power.inhibit-fullscreen-label",
     "descriptionKey": "panels.power.inhibit-fullscreen-description",
     "widget": "NToggle",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2332,7 +2388,7 @@
     "labelKey": "panels.power.disable-notifications-inhibited-label",
     "descriptionKey": "panels.power.disable-notifications-inhibited-description",
     "widget": "NToggle",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2372,7 +2428,7 @@
     "labelKey": "panels.power.auto-reduce-brightness-label",
     "descriptionKey": "panels.power.auto-reduce-brightness-description",
     "widget": "NToggle",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2380,7 +2436,7 @@
     "labelKey": "panels.power.ac-brightness-level-label",
     "descriptionKey": "panels.power.ac-brightness-level-description",
     "widget": "NSpinBox",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2388,7 +2444,7 @@
     "labelKey": "panels.power.battery-brightness-level-label",
     "descriptionKey": "panels.power.battery-brightness-level-description",
     "widget": "NSpinBox",
-    "tab": 22,
+    "tab": 23,
     "tabLabel": "panels.power.title",
     "subTab": null
   },
@@ -2504,7 +2560,7 @@
     "labelKey": "panels.location.system-clock-timezone-label",
     "descriptionKey": "panels.location.system-clock-timezone-description",
     "widget": "NSearchableComboBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -2513,7 +2569,7 @@
     "labelKey": "panels.location.system-clock-ntp-label",
     "descriptionKey": "panels.location.system-clock-ntp-description",
     "widget": "NToggle",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -2522,7 +2578,7 @@
     "labelKey": "panels.location.system-clock-manual-label",
     "descriptionKey": null,
     "widget": "NTextInputButton",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -3020,62 +3076,6 @@
     "widget": "NTextInput",
     "tab": 24,
     "tabLabel": "panels.window-manager.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.enabled-label",
-    "descriptionKey": "desktop-icons.enabled-description",
-    "widget": "NToggle",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.single-click-label",
-    "descriptionKey": "desktop-icons.single-click-description",
-    "widget": "NToggle",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.show-hidden-label",
-    "descriptionKey": "desktop-icons.show-hidden-description",
-    "widget": "NToggle",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.sort-label",
-    "descriptionKey": "desktop-icons.sort-description",
-    "widget": "NComboBox",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.folders-first-label",
-    "descriptionKey": "desktop-icons.folders-first-description",
-    "widget": "NToggle",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.icon-size-label",
-    "descriptionKey": "desktop-icons.icon-size-description",
-    "widget": "NSpinBox",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
-    "subTab": null
-  },
-  {
-    "labelKey": "desktop-icons.label-size-label",
-    "descriptionKey": "desktop-icons.label-size-description",
-    "widget": "NSpinBox",
-    "tab": 9,
-    "tabLabel": "desktop-icons.title",
     "subTab": null
   }
 ]
