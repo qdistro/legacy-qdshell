@@ -138,4 +138,209 @@ assert.strictEqual(SC.buildSetTimeArgv("garbage"), null);
     a.forEach(function (tok) { assert.strictEqual(typeof tok, "string"); });
 });
 
+// ════════════════════════════════════════════════════════════════════
+// EXPANDED COVERAGE
+// ════════════════════════════════════════════════════════════════════
+
+// ─── parseShow robustness: CRLF, blanks, extra/missing keys, '=' in value ─
+// Note: parseShow splits on "\n"; a CRLF file leaves a trailing "\r" on each
+// value. The KEY (before '=') is .trim()'d, so keys are clean; values are not
+// trimmed, so a "\r" rides along — assert the key still resolves and the value
+// is the raw remainder (this documents the exact contract).
+{
+  // NOTE: parseShow splits on "\n" and does NOT trim values, so a CRLF file
+  // leaves a trailing "\r" on the structured timezone too. This documents the
+  // exact (imperfect) contract — a value-with-CR is NOT laundered. Booleans ARE
+  // trimmed by _parseBool, so NTP=yes\r still parses true.
+  const crlf = "Timezone=Europe/Berlin\r\nNTP=yes\r\n\r\n";
+  const p = SC.parseShow(crlf);
+  assert.strictEqual(p.raw.Timezone, "Europe/Berlin\r", "value keeps trailing CR (not trimmed)");
+  assert.strictEqual(p.timezone, "Europe/Berlin\r", "structured timezone inherits the raw CR");
+  assert.strictEqual(p.ntp, true, "boolean parse trims trailing CR");
+  // Crucially, even a CR-tainted timezone is laundered by normalizeTimezone,
+  // which .trim()s before the exact-membership check — so the trailing CR is
+  // stripped and it matches the clean enumerated name. The argv that results
+  // therefore carries the CLEAN name, never the CR-tainted one.
+  assert.strictEqual(SC.normalizeTimezone(p.timezone, ["Europe/Berlin"]), "Europe/Berlin",
+    "CR is trimmed before membership check -> clean name used");
+  assert.deepStrictEqual(SC.buildSetTimezoneArgv(p.timezone, ["Europe/Berlin"]),
+    ["timedatectl", "set-timezone", "Europe/Berlin"],
+    "argv carries the trimmed clean name, no CR leaks into the command token");
+}
+{
+  // Blank lines, a key with no '=' , a leading '=' (eq<=0 dropped), extra
+  // unknown keys, and a value that itself contains '='.
+  const messy = [
+    "",
+    "Timezone=Asia/Tokyo",
+    "garbage-no-equals",
+    "=leadingEquals",            // eq===0 -> dropped
+    "SomeFutureKey=whatever",    // unknown key preserved in raw only
+    "TimeUSec=Thu 2026-05-29 12:00:00 JST=DST",  // '=' inside value
+    "",
+  ].join("\n");
+  const p = SC.parseShow(messy);
+  assert.strictEqual(p.timezone, "Asia/Tokyo");
+  assert.strictEqual(p.raw["garbage-no-equals"], undefined, "line without '=' dropped");
+  assert.strictEqual(p.raw[""], undefined, "leading '=' line dropped");
+  assert.strictEqual(p.raw.SomeFutureKey, "whatever", "unknown key kept in raw map");
+  assert.strictEqual(p.timeUSec, "Thu 2026-05-29 12:00:00 JST=DST",
+    "value with embedded '=' preserved whole");
+}
+{
+  // Entirely missing keys -> safe defaults; NTPSynchronized absent -> false,
+  // CanNTP absent -> true, timezone absent -> "".
+  const p = SC.parseShow("LocalRTC=yes\n");
+  assert.strictEqual(p.timezone, "");
+  assert.strictEqual(p.ntp, false);
+  assert.strictEqual(p.ntpSynchronized, false);
+  assert.strictEqual(p.localRTC, true);
+  assert.strictEqual(p.canNTP, true, "CanNTP missing -> default true");
+  assert.strictEqual(p.timeUSec, "");
+}
+// CanNTP explicitly "no" disables the toggle.
+assert.strictEqual(SC.parseShow("CanNTP=no\n").canNTP, false);
+// _parseBool accepts the documented spellings via the parsed booleans.
+assert.strictEqual(SC.parseShow("NTP=on\n").ntp, true, "'on' is truthy");
+assert.strictEqual(SC.parseShow("NTP=1\n").ntp, true, "'1' is truthy");
+assert.strictEqual(SC.parseShow("NTP=YES\n").ntp, true, "case-insensitive");
+assert.strictEqual(SC.parseShow("NTP=off\n").ntp, false, "'off' is falsy");
+assert.strictEqual(SC.parseShow("NTP=\n").ntp, false, "empty value -> false");
+// parseShow on non-string never throws.
+assert.strictEqual(SC.parseShow(undefined).timezone, "");
+assert.strictEqual(SC.parseShow(12345).timezone, "");
+
+// ─── parseTimezones extra robustness (CRLF + duplicates kept) ────────
+{
+  const z = SC.parseTimezones("UTC\r\nEurope/Berlin\r\nUTC\r\n");
+  // CRLF: each line is trimmed in parseTimezones, so CR is stripped.
+  assert.deepStrictEqual(z, ["UTC", "Europe/Berlin", "UTC"],
+    "CRLF trimmed; parseTimezones does NOT dedupe (mirrors OS output)");
+  assert.deepStrictEqual(SC.parseTimezones(null), []);
+  assert.deepStrictEqual(SC.parseTimezones(""), []);
+}
+
+// ─── isWellFormedTimezone additional shape cases ────────────────────
+assert.ok(SC.isWellFormedTimezone("Etc/GMT+12"), "'+' allowed in component");
+assert.ok(SC.isWellFormedTimezone("America/Argentina/La_Rioja"));
+assert.ok(!SC.isWellFormedTimezone("Europe//Berlin"), "empty component rejected");
+assert.ok(!SC.isWellFormedTimezone("Europe/Berlin/"), "trailing slash rejected");
+assert.ok(!SC.isWellFormedTimezone("/UTC"), "leading slash rejected");
+assert.ok(!SC.isWellFormedTimezone("Europe/Ber..lin"), "embedded '..' rejected");
+assert.ok(!SC.isWellFormedTimezone("a/" + "b".repeat(200)), "over-128 length rejected");
+assert.ok(!SC.isWellFormedTimezone(42), "non-string rejected");
+assert.ok(!SC.isWellFormedTimezone(null));
+// Option-shaped components are rejected: every component must START with an
+// alphanumeric, so a leading dash/dot/plus (which timedatectl could mis-read as
+// a flag) is refused at the shape gate — and therefore dropped by parseTimezones.
+assert.ok(!SC.isWellFormedTimezone("-foo"), "leading-dash component rejected (option-injection guard)");
+assert.ok(!SC.isWellFormedTimezone("Europe/-Berlin"), "leading-dash subcomponent rejected");
+assert.ok(!SC.isWellFormedTimezone(".hidden"), "leading-dot component rejected");
+assert.ok(!SC.isWellFormedTimezone("+zone"), "leading-plus component rejected");
+assert.deepStrictEqual(SC.parseTimezones("-foo\nEurope/Berlin\n"), ["Europe/Berlin"],
+    "parseTimezones drops an option-shaped zone, keeps the clean one");
+
+// ─── normalizeTimezone: leading-dash + traversal-shaped strings ─────
+// Even values that LOOK plausible are rejected unless they are exact members.
+{
+  // normalizeTimezone gates purely on EXACT membership (the shape check lives in
+  // isWellFormedTimezone / parseTimezones, which already drop option-shaped
+  // names). So a leading-dash or traversal-shaped value is rejected here simply
+  // by not being in the allow-list:
+  assert.strictEqual(SC.normalizeTimezone("-foo", ["Europe/Berlin"]), null,
+    "leading-dash zone NOT in list -> rejected");
+  assert.strictEqual(SC.normalizeTimezone("../../etc", ["Europe/Berlin"]), null,
+    "traversal-shaped zone NOT in list -> rejected");
+  // Membership is exact even for odd strings — but buildSetTimezoneArgv below
+  // shows the real interface only ever ships enumerated, OS-blessed names.
+  assert.strictEqual(SC.normalizeTimezone("America/New_York; rm -rf /",
+    ["Europe/Berlin", "UTC"]), null);
+  assert.strictEqual(SC.normalizeTimezone("  Europe/Berlin\t", ["Europe/Berlin"]),
+    "Europe/Berlin", "surrounding whitespace trimmed before membership check");
+  assert.strictEqual(SC.normalizeTimezone(42, ["UTC"]), null, "non-string rejected");
+  assert.strictEqual(SC.normalizeTimezone("UTC", "UTC"), null, "non-array allow-list rejected");
+}
+
+// ─── validateDateTime additional boundary cases ─────────────────────
+assert.strictEqual(SC.validateDateTime("1970-01-01 00:00:00"), "1970-01-01 00:00:00", "lower year bound");
+assert.strictEqual(SC.validateDateTime("2100-12-31 23:59:59"), "2100-12-31 23:59:59", "upper year bound");
+assert.strictEqual(SC.validateDateTime("2101-01-01 00:00:00"), null, "year just over bound");
+assert.strictEqual(SC.validateDateTime("2026-00-01 00:00:00"), null, "month 0");
+assert.strictEqual(SC.validateDateTime("2026-01-00 00:00:00"), null, "day 0");
+assert.strictEqual(SC.validateDateTime("2026-01-32 00:00:00"), null, "Jan has 31 days");
+assert.strictEqual(SC.validateDateTime("2026-04-31 00:00:00"), null, "April has 30 days");
+assert.strictEqual(SC.validateDateTime("2000-02-29 00:00:00"), "2000-02-29 00:00:00", "2000 is leap (div 400)");
+assert.strictEqual(SC.validateDateTime("1900-02-29 00:00:00"), null, "1900 not leap (div 100, in band? no -> year<1970)");
+assert.strictEqual(SC.validateDateTime("2026-12-31 23:59:59"), "2026-12-31 23:59:59", "max valid fields");
+assert.strictEqual(SC.validateDateTime(" 2026-05-29 12:34:56"), null, "leading space breaks anchored regex");
+assert.strictEqual(SC.validateDateTime("2026-05-29 12:34:56 "), null, "trailing space breaks anchored regex");
+assert.strictEqual(SC.validateDateTime("2026-05-29  12:34:56"), null, "double space rejected");
+assert.strictEqual(SC.validateDateTime(42), null, "non-string rejected");
+
+// ─── argv builders: explicit no-`sh -c`, all-string, no metachar tokens ─
+{
+  const zonesOk = ["Europe/Berlin", "UTC", "America/New_York"];
+  // Build every kind of argv and assert the safety invariants on each.
+  const builds = [
+    SC.buildSetTimezoneArgv("Europe/Berlin", zonesOk),
+    SC.buildSetNtpArgv(true),
+    SC.buildSetNtpArgv(false),
+    SC.buildSetTimeArgv("2026-05-29 12:34:56"),
+  ];
+  builds.forEach(function (argv, i) {
+    assert.ok(Array.isArray(argv), "build #" + i + " is an array");
+    // First element is the program; it is NEVER a shell.
+    assert.notStrictEqual(argv[0], "sh", "build #" + i + " is not sh");
+    assert.notStrictEqual(argv[0], "bash", "build #" + i + " is not bash");
+    assert.strictEqual(argv.indexOf("-c"), -1, "build #" + i + " has no -c (not a shell string)");
+    assert.strictEqual(argv[0], "timedatectl", "build #" + i + " invokes timedatectl directly");
+    argv.forEach(function (tok) {
+      assert.strictEqual(typeof tok, "string", "every token is a string");
+    });
+  });
+  // The set-time argv carries the datetime as ONE element WITH a space inside —
+  // proving the space does not split it (no shell word-splitting).
+  const tArgv = SC.buildSetTimeArgv("2026-05-29 12:34:56");
+  assert.strictEqual(tArgv.length, 3);
+  assert.ok(tArgv[2].indexOf(" ") !== -1, "datetime element legitimately contains a space");
+
+  // buildSetNtpArgv NEVER passes through arbitrary text — only the two literals.
+  // (Truthy/falsy inputs both collapse to the canonical "true"/"false".)
+  assert.deepStrictEqual(SC.buildSetNtpArgv("anything truthy"), ["timedatectl", "set-ntp", "true"]);
+  assert.deepStrictEqual(SC.buildSetNtpArgv(0), ["timedatectl", "set-ntp", "false"]);
+  assert.deepStrictEqual(SC.buildSetNtpArgv(""), ["timedatectl", "set-ntp", "false"]);
+  // No NTP argv token ever contains the user's raw value.
+  ["true", "false"].forEach(function (lit) {
+    const a = SC.buildSetNtpArgv(lit === "true");
+    assert.strictEqual(a[2], lit);
+  });
+
+  // CRITICAL: a crafted timezone / datetime returns null (no argv at all), so
+  // there is nothing for a shell to ever see.
+  assert.strictEqual(SC.buildSetTimezoneArgv("Europe/Berlin; rm -rf /", zonesOk), null);
+  assert.strictEqual(SC.buildSetTimezoneArgv("$(reboot)", zonesOk), null);
+  assert.strictEqual(SC.buildSetTimezoneArgv("../../etc", zonesOk), null);
+  assert.strictEqual(SC.buildSetTimezoneArgv("-foo", zonesOk), null);
+  assert.strictEqual(SC.buildSetTimezoneArgv("Europe/Berlin", null), null, "no allow-list -> null");
+  assert.strictEqual(SC.buildSetTimeArgv("2026-05-29 12:34:56 && reboot"), null);
+  assert.strictEqual(SC.buildSetTimeArgv("`date`"), null);
+  assert.strictEqual(SC.buildSetTimeArgv(null), null);
+
+  // For ANY successfully-built argv, no element contains a shell metacharacter
+  // EXCEPT the single legitimate space inside the datetime token. Verify that
+  // the only space lives in the set-time payload and nowhere in set-timezone.
+  const meta = /[;&|`$()<>\\"'\t\n*?]/;
+  [SC.buildSetTimezoneArgv("Europe/Berlin", zonesOk),
+   SC.buildSetNtpArgv(true)].forEach(function (argv) {
+    argv.forEach(function (tok) {
+      assert.ok(!meta.test(tok) && tok.indexOf(" ") === -1,
+        "no metachar / no space in token: " + tok);
+    });
+  });
+  // set-time tokens: no shell metachar; the only space is the datetime separator.
+  SC.buildSetTimeArgv("2026-05-29 12:34:56").forEach(function (tok) {
+    assert.ok(!meta.test(tok), "no shell metachar in set-time token: " + tok);
+  });
+}
+
 console.log("system-clock: all assertions passed");
