@@ -1,21 +1,20 @@
 # Settings → Default Applications
 
-This tab is not currently reachable via a dedicated `settings openTab` IPC name
-(it has no entry in `IPCService.qml::_settingsTabMap`), so it is NOT listed in
-`tests/ui/manifests.py::SETTINGS_TABS` and the screenshot harness does not open
-it automatically. This file documents the expected layout for manual review and
-for when an IPC handle is added.
+The harness opens this tab via `settings openTab defaultapps`
+(`SettingsPanel.Tab.DefaultApps`).
 
 Top of the tab (always visible):
 - A description paragraph (`panels.default-apps.description`) explaining the
   settings are written to the XDG `mimeapps.list`.
-- A "Scanning installed applications…" placeholder (`panels.default-apps.scanning`)
-  while `DefaultAppsService.ready` is false.
 - A sub-tab strip (`NTabBar`) with two tabs:
   - "Categories" (`panels.default-apps.subtab-categories`)
   - "File Types" (`panels.default-apps.subtab-mime-editor`)
+
+State-dependent (mutually exclusive on `DefaultAppsService.ready`):
+- A "Scanning installed applications…" placeholder (`panels.default-apps.scanning`)
+  while the service is not yet ready.
 - A "Rescan applications" button (`panels.default-apps.rescan`) below the
-  sub-tab view, applying to both sub-tabs.
+  sub-tab view (only once ready), applying to both sub-tabs.
 
 ## Categories sub-tab (default)
 
