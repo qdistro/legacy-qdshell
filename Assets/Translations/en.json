@@ -611,7 +611,14 @@
     "label-size-description": "Font size of the icon labels.",
     "menu-open-applications": "Open Applications",
     "menu-change-wallpaper": "Change Wallpaper",
-    "menu-desktop-settings": "Desktop Settings"
+    "menu-desktop-settings": "Desktop Settings",
+    "menu-open": "Open",
+    "menu-copy-path": "Copy path",
+    "menu-move-to-trash": "Move to Trash",
+    "menu-reset-position": "Reset position",
+    "menu-reset-arrangement": "Reset icon arrangement",
+    "arrange-hint-label": "Manual arrangement",
+    "arrange-hint-description": "Drag icons to rearrange them; positions are saved. Right-click an icon to Open, Copy path, or Move to Trash."
   },
   "display-modes": {
     "always-hide": "Always hide",

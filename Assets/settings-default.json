@@ -571,7 +571,8 @@
     "iconSize": 48,
     "labelSize": 11,
     "sortMode": "name",
-    "arrangeFoldersFirst": true
+    "arrangeFoldersFirst": true,
+    "positions": {}
   },
   "session": {
     "showSystemAutostart": true,

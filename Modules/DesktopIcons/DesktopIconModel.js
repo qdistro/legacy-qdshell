@@ -275,6 +275,222 @@ function activatesOnSingleClick(singleClickSetting) {
     return !!singleClickSetting;
 }
 
+// ─── free-arrangement grid layout (drag-to-arrange persistence) ─────────────
+//
+// Icons are laid out on a grid. A user can drag an icon to a cell; that cell is
+// persisted (per file NAME) in the `positions` map { name: {col, row} }. On
+// layout, entries with a valid saved cell are placed there; everything else
+// auto-flows row-major into the first free cell. With an EMPTY positions map
+// the result is identical to a plain left-to-right wrapping flow, so the
+// default behaviour (and every existing user) is unchanged.
+//
+// All functions here are pure: they take plain numbers/objects and return new
+// values, never mutating inputs and never touching Settings/Qt.
+
+function _isFiniteInt(n) {
+    return typeof n === "number" && isFinite(n) && Math.floor(n) === n;
+}
+
+// Number of columns/rows that fit in a content box. Always at least 1 so a
+// tiny or zero-size surface still lays out deterministically.
+function gridColumns(width, cellW, spacing, margin) {
+    var avail = Number(width) - 2 * Number(margin);
+    var step = Number(cellW) + Number(spacing);
+    if (!(step > 0) || !(avail > 0))
+        return 1;
+    return Math.max(1, Math.floor((avail + Number(spacing)) / step));
+}
+
+function gridRows(height, cellH, spacing, margin) {
+    return gridColumns(height, cellH, spacing, margin);
+}
+
+// Top-left pixel of a grid cell.
+function cellToPixel(col, row, cellW, cellH, spacing, margin) {
+    return {
+        "x": Number(margin) + Number(col) * (Number(cellW) + Number(spacing)),
+        "y": Number(margin) + Number(row) * (Number(cellH) + Number(spacing))
+    };
+}
+
+// Nearest grid cell for a pixel position, clamped into [0,cols) x [0,rows).
+function pixelToCell(x, y, cellW, cellH, spacing, margin, cols, rows) {
+    var stepX = Number(cellW) + Number(spacing);
+    var stepY = Number(cellH) + Number(spacing);
+    var c = (stepX > 0) ? Math.round((Number(x) - Number(margin)) / stepX) : 0;
+    var r = (stepY > 0) ? Math.round((Number(y) - Number(margin)) / stepY) : 0;
+    c = Math.max(0, Math.min(Number(cols) - 1, c));
+    r = Math.max(0, Math.min(Number(rows) - 1, r));
+    return { "col": c, "row": r };
+}
+
+function _cellKey(col, row) {
+    return col + "," + row;
+}
+
+// Return a clean positions map: keep only string keys whose value is a
+// {col,row} of non-negative integers. The stored map is untrusted persisted
+// JSON, so a malformed/garbage entry is dropped rather than trusted. Returns a
+// NEW object.
+function sanitizePositions(positions) {
+    // Null-prototype map: keys come from untrusted persisted JSON, so a key
+    // like "__proto__" must become an ordinary entry, never mutate a prototype.
+    var out = Object.create(null);
+    if (!positions || typeof positions !== "object")
+        return out;
+    var keys = Object.keys(positions);
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var v = positions[k];
+        if (!v || typeof v !== "object")
+            continue;
+        if (_isFiniteInt(v.col) && _isFiniteInt(v.row) && v.col >= 0 && v.row >= 0)
+            out[k] = { "col": v.col, "row": v.row };
+    }
+    return out;
+}
+
+// Compute the on-screen placement for a sorted entry list.
+//   entries: [{ name|fileName, ... }] already in display (sort) order.
+//   positions: persisted { name: {col,row} } map (untrusted; sanitized here).
+//   cols, rows: grid dimensions (>=1).
+// Returns [{ entry, col, row, x, y }] — saved cells honoured first (when in
+// bounds and not colliding), the rest auto-flowed row-major into free cells.
+// Pure + deterministic; inputs are not mutated.
+function computeLayout(entries, positions, cols, rows, cellW, cellH, spacing, margin) {
+    var list = Array.isArray(entries) ? entries : [];
+    var nCols = Math.max(1, Number(cols) || 1);
+    var nRows = Math.max(1, Number(rows) || 1);
+    var clean = sanitizePositions(positions);
+    var occupied = {};
+    var placed = [];
+    var deferred = [];
+
+    function nameOf(e) {
+        return String((e && (e.fileName !== undefined ? e.fileName : e.name)) || "");
+    }
+
+    // Pass 1: honour saved cells that are in-bounds and not already taken.
+    for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        var nm = nameOf(e);
+        var saved = clean[nm];
+        if (saved && saved.col < nCols && saved.row < nRows && !occupied[_cellKey(saved.col, saved.row)]) {
+            occupied[_cellKey(saved.col, saved.row)] = true;
+            placed.push({ "entry": e, "col": saved.col, "row": saved.row });
+        } else {
+            deferred.push(e);
+        }
+    }
+
+    // Pass 2: auto-flow the rest row-major into the first free cell.
+    var scan = 0;
+    for (var j = 0; j < deferred.length; j++) {
+        while (scan < nCols * nRows) {
+            var col = scan % nCols;
+            var row = Math.floor(scan / nCols);
+            if (!occupied[_cellKey(col, row)])
+                break;
+            scan++;
+        }
+        var fcol = scan % nCols;
+        var frow = Math.floor(scan / nCols);
+        occupied[_cellKey(fcol, frow)] = true;
+        placed.push({ "entry": deferred[j], "col": fcol, "row": frow });
+        scan++;
+    }
+
+    // Attach pixel coordinates (kept here so the QML layer stays declarative).
+    for (var k = 0; k < placed.length; k++) {
+        var px = cellToPixel(placed[k].col, placed[k].row, cellW, cellH, spacing, margin);
+        placed[k].x = px.x;
+        placed[k].y = px.y;
+    }
+    return placed;
+}
+
+// Find the nearest free cell to a target, searching outward by Chebyshev
+// ring distance, scanning in a stable order so the result is deterministic.
+// `occupied` is a { "col,row": true } set (the dragged icon's own cell must be
+// excluded by the caller). Falls back to the clamped target if the grid is
+// full. Never mutates `occupied`.
+function nearestFreeCell(targetCol, targetRow, occupied, cols, rows) {
+    var nCols = Math.max(1, Number(cols) || 1);
+    var nRows = Math.max(1, Number(rows) || 1);
+    var occ = occupied || {};
+    var tc = Math.max(0, Math.min(nCols - 1, Number(targetCol) || 0));
+    var tr = Math.max(0, Math.min(nRows - 1, Number(targetRow) || 0));
+    if (!occ[_cellKey(tc, tr)])
+        return { "col": tc, "row": tr };
+    var maxRadius = nCols + nRows;
+    for (var radius = 1; radius <= maxRadius; radius++) {
+        for (var dr = -radius; dr <= radius; dr++) {
+            for (var dc = -radius; dc <= radius; dc++) {
+                if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius)
+                    continue;
+                var c = tc + dc;
+                var r = tr + dr;
+                if (c < 0 || r < 0 || c >= nCols || r >= nRows)
+                    continue;
+                if (!occ[_cellKey(c, r)])
+                    return { "col": c, "row": r };
+            }
+        }
+    }
+    return { "col": tc, "row": tr };
+}
+
+// Return a NEW positions map with `name` set to {col,row}. Never mutates input.
+function setPosition(positions, name, col, row) {
+    var out = sanitizePositions(positions);
+    if (typeof name === "string" && name.length > 0 && _isFiniteInt(col) && _isFiniteInt(row) && col >= 0 && row >= 0)
+        out[name] = { "col": col, "row": row };
+    return out;
+}
+
+// Return a NEW positions map without `name`. Never mutates input.
+function clearPosition(positions, name) {
+    var out = sanitizePositions(positions);
+    if (typeof name === "string")
+        delete out[name];
+    return out;
+}
+
+// Drop saved positions for files that are no longer present, so a deleted file
+// does not keep reserving a cell forever. `presentNames` is an array of the
+// current file names. Returns a NEW map.
+function prunePositions(positions, presentNames) {
+    var clean = sanitizePositions(positions);
+    var present = Object.create(null);
+    if (Array.isArray(presentNames)) {
+        for (var i = 0; i < presentNames.length; i++)
+            present[String(presentNames[i])] = true;
+    }
+    var out = Object.create(null);
+    var keys = Object.keys(clean);
+    for (var j = 0; j < keys.length; j++) {
+        if (present[keys[j]])
+            out[keys[j]] = clean[keys[j]];
+    }
+    return out;
+}
+
+// Build a safe argv to move a file to the trash (glib's `gio trash`). The path
+// is a single argv token after `--`, so a leading-dash or metacharacter name
+// can neither be parsed as an option nor break out of a shell (none is used).
+function buildTrashArgv(path) {
+    if (typeof path !== "string" || path.length === 0 || path.charAt(0) !== "/")
+        return null;
+    return ["gio", "trash", "--", path];
+}
+
+// Build a safe argv to copy text (a file path) to the Wayland clipboard.
+function buildCopyTextArgv(text) {
+    if (typeof text !== "string" || text.length === 0)
+        return null;
+    return ["wl-copy", "--", text];
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         isDesktopId: isDesktopId,
@@ -288,6 +504,18 @@ if (typeof module !== "undefined" && module.exports) {
         iconNameForEntry: iconNameForEntry,
         parseDesktopEntry: parseDesktopEntry,
         activatesOnSingleClick: activatesOnSingleClick,
+        gridColumns: gridColumns,
+        gridRows: gridRows,
+        cellToPixel: cellToPixel,
+        pixelToCell: pixelToCell,
+        sanitizePositions: sanitizePositions,
+        computeLayout: computeLayout,
+        nearestFreeCell: nearestFreeCell,
+        setPosition: setPosition,
+        clearPosition: clearPosition,
+        prunePositions: prunePositions,
+        buildTrashArgv: buildTrashArgv,
+        buildCopyTextArgv: buildCopyTextArgv,
         GENERIC_FILE_ICON: GENERIC_FILE_ICON
     };
 }

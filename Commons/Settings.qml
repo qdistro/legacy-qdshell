@@ -811,6 +811,9 @@ Singleton {
       // "name" | "type"
       property string sortMode: "name"
       property bool arrangeFoldersFirst: true
+      // Drag-to-arrange persistence: per-file-name grid cell { "<name>": {col,row} }.
+      // Empty => icons auto-flow by sortMode (identical to no manual arrangement).
+      property var positions: ({})
     }
 
     // session / autostart + save/restore (xfce4-session parity)

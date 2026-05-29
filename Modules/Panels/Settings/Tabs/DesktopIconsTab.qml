@@ -94,5 +94,32 @@ ColumnLayout {
       defaultValue: Settings.getDefaultValue("desktopIcons.labelSize")
       onValueChanged: Settings.data.desktopIcons.labelSize = value
     }
+
+    ColumnLayout {
+      Layout.fillWidth: true
+      spacing: Style.marginXS
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("desktop-icons.arrange-hint-label")
+        color: Color.mOnSurface
+      }
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("desktop-icons.arrange-hint-description")
+        color: Color.mOnSurfaceVariant
+        pointSize: Style.fontSizeS
+        wrapMode: Text.Wrap
+      }
+
+      NButton {
+        Layout.topMargin: Style.marginXS
+        text: I18n.tr("desktop-icons.menu-reset-arrangement")
+        icon: "refresh"
+        // Clears every saved drag position; icons fall back to auto-flow.
+        onClicked: Settings.data.desktopIcons.positions = ({})
+      }
+    }
   }
 }

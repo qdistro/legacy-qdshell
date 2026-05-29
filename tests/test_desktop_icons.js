@@ -390,5 +390,145 @@ const M = require("../Modules/DesktopIcons/DesktopIconModel.js");
   assert.deepStrictEqual(Object.keys(comments).sort(), ["hidden", "icon", "name", "noDisplay"]);
 }
 
+// ── grid geometry ─────────────────────────────────────────────────────
+{
+    // width 1000, margin 20, cellW 100, spacing 10 -> step 110.
+    // avail = 1000-40 = 960; floor((960+10)/110) = floor(8.81) = 8.
+    assert.strictEqual(M.gridColumns(1000, 100, 10, 20), 8);
+    assert.strictEqual(M.gridRows(1000, 100, 10, 20), 8, "rows mirror columns");
+    // Degenerate sizes never return < 1.
+    assert.strictEqual(M.gridColumns(0, 100, 10, 20), 1);
+    assert.strictEqual(M.gridColumns(10, 100, 10, 20), 1);
+    assert.strictEqual(M.gridColumns(1000, 0, 0, 0), 1, "zero cell width -> 1");
+
+    assert.deepStrictEqual(M.cellToPixel(0, 0, 100, 100, 10, 20), { x: 20, y: 20 });
+    assert.deepStrictEqual(M.cellToPixel(2, 3, 100, 100, 10, 20), { x: 20 + 2 * 110, y: 20 + 3 * 110 });
+
+    // pixelToCell rounds to nearest and clamps into bounds.
+    assert.deepStrictEqual(M.pixelToCell(20, 20, 100, 100, 10, 20, 8, 8), { col: 0, row: 0 });
+    assert.deepStrictEqual(M.pixelToCell(20 + 110, 20 + 2 * 110, 100, 100, 10, 20, 8, 8), { col: 1, row: 2 });
+    assert.deepStrictEqual(M.pixelToCell(-9999, -9999, 100, 100, 10, 20, 8, 8), { col: 0, row: 0 }, "clamp low");
+    assert.deepStrictEqual(M.pixelToCell(99999, 99999, 100, 100, 10, 20, 8, 8), { col: 7, row: 7 }, "clamp high");
+}
+
+// ── sanitizePositions: untrusted persisted JSON ───────────────────────
+{
+    const dirty = {
+        "good.txt": { col: 1, row: 2 },
+        "neg": { col: -1, row: 0 },
+        "float": { col: 1.5, row: 0 },
+        "nostr": { col: "1", row: 0 },
+        "missing": { col: 3 },
+        "null": null,
+        "garbage": "x"
+    };
+    const clean = M.sanitizePositions(dirty);
+    assert.deepStrictEqual(Object.keys(clean), ["good.txt"], "only valid integer cells kept");
+    assert.deepStrictEqual(clean["good.txt"], { col: 1, row: 2 });
+    assert.strictEqual(Object.keys(M.sanitizePositions(null)).length, 0);
+    assert.strictEqual(Object.keys(M.sanitizePositions("nope")).length, 0);
+    // Returns a NEW object (no aliasing of the nested value).
+    assert.notStrictEqual(clean["good.txt"], dirty["good.txt"]);
+
+    // Prototype-pollution safety: positions is untrusted persisted JSON, so a
+    // "__proto__" / "constructor" key must become an ordinary own entry and
+    // never mutate Object.prototype.
+    const evil = M.sanitizePositions({ "__proto__": { col: 1, row: 1 }, "constructor": { col: 2, row: 2 } });
+    assert.strictEqual(({}).col, undefined, "Object.prototype not polluted by __proto__ key");
+    assert.deepStrictEqual(evil["constructor"], { col: 2, row: 2 }, "constructor stored as a normal own entry");
+    const evilSet = M.setPosition({}, "__proto__", 3, 4);
+    assert.strictEqual(({}).col, undefined, "setPosition('__proto__') does not pollute");
+    assert.deepStrictEqual(evilSet["__proto__"], { col: 3, row: 4 });
+}
+
+// ── computeLayout: empty positions == plain row-major flow (no regression) ──
+{
+    const entries = [
+        { name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }, { name: "e" }
+    ];
+    const flow = M.computeLayout(entries, {}, 2, 4, 100, 100, 10, 20);
+    // 2 columns, row-major: a(0,0) b(1,0) c(0,1) d(1,1) e(0,2)
+    const cells = flow.map(p => [p.entry.name, p.col, p.row]);
+    assert.deepStrictEqual(cells, [
+        ["a", 0, 0], ["b", 1, 0], ["c", 0, 1], ["d", 1, 1], ["e", 0, 2]
+    ]);
+    // Pixel coords attached and consistent with cellToPixel.
+    assert.deepStrictEqual({ x: flow[3].x, y: flow[3].y }, M.cellToPixel(1, 1, 100, 100, 10, 20));
+}
+
+// ── computeLayout: saved cells honoured, rest auto-flow around them ───
+{
+    const entries = [{ name: "a" }, { name: "b" }, { name: "c" }];
+    // Pin "c" to (0,0); a and b should flow into the next free cells.
+    const pos = { "c": { col: 0, row: 0 } };
+    const out = M.computeLayout(entries, pos, 2, 4, 100, 100, 10, 20);
+    const byName = {};
+    out.forEach(p => (byName[p.entry.name] = [p.col, p.row]));
+    assert.deepStrictEqual(byName["c"], [0, 0], "saved cell honoured");
+    assert.deepStrictEqual(byName["a"], [1, 0], "a flows past the occupied (0,0)");
+    assert.deepStrictEqual(byName["b"], [0, 1]);
+    // Out-of-bounds saved cell is treated as unplaced (auto-flow).
+    const oob = M.computeLayout([{ name: "x" }], { "x": { col: 99, row: 99 } }, 2, 2, 100, 100, 10, 20);
+    assert.deepStrictEqual([oob[0].col, oob[0].row], [0, 0], "oob saved cell falls back to flow");
+    // Two entries pinned to the SAME cell: first wins, second auto-flows.
+    const clash = M.computeLayout([{ name: "p" }, { name: "q" }],
+        { "p": { col: 0, row: 0 }, "q": { col: 0, row: 0 } }, 2, 2, 100, 100, 10, 20);
+    const cmap = {};
+    clash.forEach(p => (cmap[p.entry.name] = [p.col, p.row]));
+    assert.deepStrictEqual(cmap["p"], [0, 0]);
+    assert.notDeepStrictEqual(cmap["q"], [0, 0], "colliding pin auto-flows elsewhere");
+    // fileName preferred over name when present (matches QML entry shape).
+    const fn = M.computeLayout([{ name: "Label", fileName: "real.txt" }],
+        { "real.txt": { col: 1, row: 0 } }, 2, 2, 100, 100, 10, 20);
+    assert.deepStrictEqual([fn[0].col, fn[0].row], [1, 0], "keyed by fileName");
+}
+
+// ── nearestFreeCell ───────────────────────────────────────────────────
+{
+    // Target free -> returned as-is.
+    assert.deepStrictEqual(M.nearestFreeCell(1, 1, {}, 4, 4), { col: 1, row: 1 });
+    // Target occupied -> nearest ring neighbour (Chebyshev distance 1).
+    const occ = { "1,1": true };
+    const got = M.nearestFreeCell(1, 1, occ, 4, 4);
+    assert.ok(Math.max(Math.abs(got.col - 1), Math.abs(got.row - 1)) === 1, "moves to an adjacent cell");
+    assert.deepStrictEqual(occ, { "1,1": true }, "input set not mutated");
+    // Full grid -> falls back to clamped target.
+    const full = { "0,0": true, "1,0": true, "0,1": true, "1,1": true };
+    assert.deepStrictEqual(M.nearestFreeCell(0, 0, full, 2, 2), { col: 0, row: 0 });
+}
+
+// ── setPosition / clearPosition / prunePositions (all pure) ───────────
+{
+    const base = { "a.txt": { col: 0, row: 0 } };
+    const set = M.setPosition(base, "b.txt", 2, 3);
+    assert.deepStrictEqual(set["b.txt"], { col: 2, row: 3 });
+    assert.deepStrictEqual(base, { "a.txt": { col: 0, row: 0 } }, "setPosition does not mutate input");
+    // Invalid args are ignored (no entry added).
+    assert.strictEqual(M.setPosition(base, "", 1, 1)[""], undefined);
+    assert.strictEqual(M.setPosition(base, "z", -1, 0)["z"], undefined);
+
+    const cleared = M.clearPosition(set, "a.txt");
+    assert.strictEqual(cleared["a.txt"], undefined);
+    assert.deepStrictEqual(set["a.txt"], { col: 0, row: 0 }, "clearPosition does not mutate input");
+
+    const pruned = M.prunePositions({ "keep": { col: 0, row: 0 }, "gone": { col: 1, row: 1 } }, ["keep", "other"]);
+    assert.deepStrictEqual(Object.keys(pruned), ["keep"], "removes positions for absent files");
+}
+
+// ── injection-safe argv builders (trash + clipboard copy) ─────────────
+{
+    assert.deepStrictEqual(M.buildTrashArgv("/home/u/Desktop/a b;c.txt"), ["gio", "trash", "--", "/home/u/Desktop/a b;c.txt"]);
+    assert.strictEqual(M.buildTrashArgv("relative"), null, "non-absolute rejected");
+    assert.strictEqual(M.buildTrashArgv(""), null);
+    assert.strictEqual(M.buildTrashArgv("-rf"), null, "option-shaped non-absolute rejected");
+    // The path is always a distinct token after `--`; metacharacters are inert.
+    const t = M.buildTrashArgv("/x/$(reboot).txt");
+    assert.ok(M.isSafeArgv(t) && t[2] === "--" && t[3] === "/x/$(reboot).txt", "no shell, path is one token");
+
+    assert.deepStrictEqual(M.buildCopyTextArgv("/home/u/Desktop/x"), ["wl-copy", "--", "/home/u/Desktop/x"]);
+    assert.strictEqual(M.buildCopyTextArgv(""), null);
+    assert.ok(M.isSafeArgv(M.buildCopyTextArgv("a; rm -rf ~")), "copy arg stays a single inert token");
+}
+
 console.log("desktop-icons: all assertions passed");
 process.exit(0);
