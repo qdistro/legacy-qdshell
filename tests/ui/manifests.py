@@ -5,7 +5,9 @@ close_cmd are lists passed to `qs ipc call`. expectation_file is the path
 (relative to tests/ui/expectations/) of the human-authored golden description.
 
 Coverage status:
-  - Settings tabs: all 23, via `settings openTab <name>` IPC.
+  - Settings tabs: all 30 IPC-reachable tabs, via `settings openTab <name>`.
+    "autostart" and "vault" appear in SettingsContent.qml's tabsModel but have no
+    _settingsTabMap entry, so they are not openable via IPC and not covered here.
   - Panels: 9 of 13 have first-class IPC toggle hooks. Audio, Brightness, Tray,
     Plugins lack panel-open IPC in current qdshell — listed with NO_IPC for now
     so the manifest stays complete; the harness skips them with a clear message.
@@ -28,21 +30,22 @@ class Surface:
     expectation: str           # filename under tests/ui/expectations/
 
 
-# 25 covered settings tabs — `qs ipc call settings openTab <name>`.
+# 30 covered settings tabs — `qs ipc call settings openTab <name>`.
 # Names are a subset of IPCService.qml::_settingsTabMap keys; the map also
 # contains "about", which we deliberately omit (see notes below — "about"
 # falls back to General).
 SETTINGS_TABS = [
     "general", "userinterface", "colorscheme", "wallpaper", "bar", "dock",
-    "desktopwidgets", "controlcenter", "launcher", "notifications", "audio",
-    "display", "location", "mouse", "keyboard", "accessibility", "osd",
+    "desktopwidgets", "desktopicons", "controlcenter", "launcher", "notifications",
+    "audio", "display", "location", "mouse", "keyboard", "accessibility", "osd",
     "connections", "hooks", "lockscreen", "session", "sessionmenu", "systemmonitor",
-    "plugins", "windowmanager", "advanced", "appearance",
+    "plugins", "power", "windowmanager", "advanced", "appearance", "defaultapps",
 ]
 # Notes on tabs we deliberately don't cover:
-#  - "about" — qdshell strips the upstream About box. The IPC map keeps the
-#    name but the underlying SettingsPanel.Tab enum has no About member, so
-#    `openTab about` falls back to General. Not testable.
+#  - "about" — the IPC map keeps the name and SettingsPanel.Tab.About exists,
+#    but qdshell strips the About entry from SettingsContent's tabsModel, so
+#    `openTab about` resolves to a tab with no model row and falls back to the
+#    General view. Not testable.
 #  - "appearance" — `openTab appearance` resolves to SettingsPanel.Tab.Appearance.
 #    Now covers GTK-theme/font-rendering/icon-policy/sound-theme controls that no
 #    longer overlap colorscheme/userinterface, so it has its own expectation.
