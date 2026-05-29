@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import "ClipboardBroker.js" as ClipboardBroker
 import "ClipboardSilo.js" as ClipboardSilo
+import "ClipboardFocusClear.js" as ClipboardFocusClear
 
 // spec/10 Phase-1 — compositor-mediated clipboard gate.
 // Track-04 Phase-1 scope. Implements the cross-silo clipboard
@@ -30,10 +31,19 @@ import "ClipboardSilo.js" as ClipboardSilo
 // because there is no trustworthy action key for rules/cache lookup.
 // ClipboardPolicy.qml is still loaded for settings/probe compatibility
 // but is intentionally not used as a fallback for live enforcement.
-// TODO(track-04-phase-2): focus-aware-clear primitive (clipboard.md
-// §"focus-aware-clear"). On every seatFocusChanged, if the newly
-// focused toplevel's silo differs from the silo that set the active
-// selection, call clearSelection. Phase-1 only gates set-time.
+// Focus-aware-clear (track-04 Phase-2, clipboard.md §"focus-aware-clear").
+// IMPLEMENTED: _onSelectionSet records the silo that set the active
+// selection (per kind: regular + primary) in _selectionSourceSilo. On
+// every seatFocusChanged(seat, handle) — qdwin's seat_focus_changed —
+// _onSeatFocusChanged resolves the newly focused toplevel's silo and, for
+// each tracked selection kind whose source silo differs from it, calls
+// clearSelection(seat, isPrimary) and emits a CLIPBOARD_FOCUS_GATE journal
+// verdict. Same-silo focus changes are a no-op so same-silo paste keeps
+// working (work-user copy → focus work-user terminal still pastes; only
+// crossing into another silo clears). Unknown source silo is never tracked
+// (nothing trustworthy to clear); unknown destination differs from any
+// known source and thus clears (fail-closed). This complements — does not
+// replace — the set-time and receive-time gates below.
 // Receive-time gate (qdwin_shell_v1 v15+ `data_offer_receive_pending`).
 // IMPLEMENTED: on every gated `wl_data_offer.receive`, qdwin blocks the
 // destination fd (~2s timeout → deny) and emits dataOfferReceivePending
@@ -90,6 +100,15 @@ Singleton {
         if (binding.dataOfferReceivePending !== undefined) {
             binding.dataOfferReceivePending.connect(root._onDataOfferReceivePending);
         }
+        // focus-aware-clear (clipboard.md §"focus-aware-clear"). qdwin emits
+        // seatFocusChanged(seat, handle) on every keyboard-focus transition
+        // (qdwin_shell_v1 seat_focus_changed). Older bindings without the
+        // signal simply never emit; the set-time gate then remains the only
+        // line of defence. Phase-1 gates set-time; Phase-2 clears when focus
+        // crosses out of the selection-source silo.
+        if (binding.seatFocusChanged !== undefined) {
+            binding.seatFocusChanged.connect(root._onSeatFocusChanged);
+        }
         root._wired = true;
         ClipboardPolicy.load();
         Logger.i("ClipboardGate", "wired to qdwin_shell_v1; broker default=deny");
@@ -124,6 +143,16 @@ Singleton {
     // null and the v11 focus-handle path takes over.
     //   { sandboxEngine, appId, instanceId }   (or null)
     property var _pendingSrcIdentity: null
+
+    // focus-aware-clear bookkeeping (clipboard.md §"focus-aware-clear").
+    // The silo that set the active selection, tracked per selection kind
+    // ("0" = regular clipboard, "1" = primary). Recorded on every
+    // _onSelectionSet (regardless of allow/deny verdict — once a source
+    // owns the selection we must clear it the moment focus crosses out of
+    // its silo). null = no tracked selection / source silo unknown, in
+    // which case focus changes are a no-op (nothing trustworthy to clear).
+    //   _selectionSourceSilo[isPrimary] = silo string (or absent)
+    property var _selectionSourceSilo: ({})
 
     // -- handle/silo tracking -------------------------------------------
     function _onToplevelAdded(handle, ownerUid, appId, title, isXwayland) {
@@ -362,6 +391,23 @@ Singleton {
             "mimeCsv": mimeCsv
         };
 
+        // focus-aware-clear (clipboard.md §"focus-aware-clear"): remember
+        // the silo that now owns this selection kind, so a later focus
+        // change out of that silo can clear it. Recorded regardless of the
+        // allow/deny verdict below — a denied set is already cleared, but
+        // recording it keeps the source-silo state truthful and harmless
+        // (the entry simply describes whoever last held the offer). A
+        // resolved "unknown" src silo is dropped: there is nothing
+        // trustworthy to compare against, and tracking it would clear on
+        // every subsequent focus change (default-deny is enforced at
+        // set/receive time instead).
+        const _selKind = isPrimary ? "1" : "0";
+        if (srcSilo !== "unknown") {
+            root._selectionSourceSilo[_selKind] = srcSilo;
+        } else {
+            delete root._selectionSourceSilo[_selKind];
+        }
+
         // If after stripping there are no allowed MIMEs, deny without
         // consulting policy. The Python strip_mimes contract is "deny on
         // empty stripped list" — keep that semantics here.
@@ -411,6 +457,41 @@ Singleton {
             brokerResult.exitCode, brokerResult.stdout || "");
         root._logDecisionAndMaybeClear(decisionEntry, decision.verdict,
                                       decision.reason);
+    }
+
+    // -- focus-aware-clear (qdwin_shell_v1 seat_focus_changed) ----------
+    // Qubes-style mitigation: when keyboard focus crosses out of the silo
+    // that owns the active selection, clear that selection for the newly
+    // focused (destination) silo so a cross-silo paste can't even reach a
+    // stale offer. Same-silo focus changes are a no-op — same-silo paste
+    // must keep working. Fail-closed posture: an unknown source silo is
+    // never tracked (so nothing to clear here), and an unknown destination
+    // silo always differs from any known source silo, so it clears.
+    function _onSeatFocusChanged(seat, handle) {
+        // Pure decision lives in ClipboardFocusClear.js (unit-tested from
+        // Node). It returns the ordered list of selection kinds to clear
+        // because focus crossed OUT of their source silo; same-silo and
+        // untracked kinds are omitted (no clear). We perform the identical
+        // side effects per action: journal the deny, clear the selection,
+        // and forget the now-cleared source so we don't re-clear on the
+        // next focus change.
+        const actions = ClipboardFocusClear.planFocusClear(
+            seat, handle, root._handleToSilo, root._selectionSourceSilo);
+        for (let i = 0; i < actions.length; i++) {
+            const a = actions[i];
+            root._logFocusClear(seat, a.srcSilo, a.dstSilo, a.isPrimary);
+            if (root._binding) {
+                root._binding.clearSelection(seat || "default", a.isPrimary);
+            }
+            delete root._selectionSourceSilo[a.selKind];
+        }
+    }
+
+    // Structured journal verdict for a focus-aware clear. Mirrors the
+    // CLIPBOARD_GATE / CLIPBOARD_RECEIVE_GATE line shape (the qdistro VM
+    // test harness asserts on these — field order is a stable contract).
+    function _logFocusClear(seat, srcSilo, dstSilo, isPrimary) {
+        Logger.i("ClipboardGate", "CLIPBOARD_FOCUS_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "is_primary=" + isPrimary, "verdict=deny", "reason=focus-cross-silo");
     }
 
     // -- receive-time gate (qdwin_shell_v1 v15+) ------------------------

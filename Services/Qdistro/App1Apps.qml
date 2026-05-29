@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "NameOwnerParse.js" as NameOwnerParse
 
 // App1Apps — discover ``org.qdistro.App1`` receivers via the broker.
 //
@@ -17,15 +18,45 @@ import qs.Commons
 // Each row exposed in :prop:`apps`:
 //   { uid, service, name, silo }
 //
-// Refresh strategy: every 5s via busctl, plus an immediate refresh on
-// Launcher open. Silo badge convention follows
-// ``qdistro/doc/ui.md``; the launcher provider renders the silo as a
-// chip in front of the comment so users can tell two instances of
-// the same app in different silos apart.
+// Refresh strategy: event-driven, on two fronts.
+//   1. Broker up/down: a long-running ``gdbus monitor`` subscribes to
+//      ``org.freedesktop.DBus.NameOwnerChanged`` and reacts when the
+//      broker (``org.qdistro.AdminBroker1``) or the session manager
+//      (``org.qdistro.SessionManager1``) gains or loses an owner —
+//      owner-acquired triggers a discovery refresh, owner-lost drops us
+//      to the graceful empty state.
+//   2. Inventory mutation inside a living broker: a second ``gdbus
+//      monitor --dest org.qdistro.AdminBroker1`` watches the broker's
+//      payload-free ``ReceiversChanged`` signal — fired when a receiver
+//      registers/unregisters inside a running silo (relayed up from each
+//      uid's UserRelay) — and re-runs ListReceivers on it. This is what
+//      makes a receiver appearing in an already-running session show up
+//      in the launcher without waiting for the safety-net poll.
+// We also do an immediate probe at startup (and on Launcher open) and
+// keep a long safety-net poll that both reconciles missed transitions
+// and restarts the monitors if they die.
+// Silo badge convention follows ``qdistro/doc/ui.md``; the launcher
+// provider renders the silo as a chip in front of the comment so
+// users can tell two instances of the same app in different silos
+// apart.
 Singleton {
     id: root
 
-    Component.onCompleted: Logger.i("App1Apps", "service started")
+    Component.onCompleted: {
+        Logger.i("App1Apps", "service started");
+        // Initial one-shot probe so the launcher has data before the
+        // first NameOwnerChanged signal ever arrives.
+        root.refreshSilos();
+        root.refresh();
+        _ownerMonitor.running = true;
+        _receiversMonitor.running = true;
+    }
+
+    // The well-known bus names whose presence we track. AdminBroker1
+    // owns ListReceivers (the app inventory); SessionManager1 owns
+    // ListSilos (the silo chips). Both live on the system bus.
+    readonly property string _brokerName: "org.qdistro.AdminBroker1"
+    readonly property string _sessionName: "org.qdistro.SessionManager1"
 
     // Each row: { uid (int), service (str), name (str), silo (str) }
     property ListModel apps: ListModel {}
@@ -151,13 +182,101 @@ Singleton {
         }
     }
 
+    // Event-driven discovery. ``gdbus monitor`` on org.freedesktop.DBus
+    // emits one single line per signal, e.g.:
+    //   /org/freedesktop/DBus: org.freedesktop.DBus.NameOwnerChanged \
+    //       ('org.qdistro.AdminBroker1', '', ':1.42')
+    // (old_owner, new_owner) — new_owner non-empty == acquired,
+    // new_owner empty == lost. We filter to the two names we care
+    // about and react instead of blind polling. Matches the streaming
+    // SplitParser idiom used by PowerService (libinput debug-events)
+    // and PodApps (spawn monitor).
+    Process {
+        id: _ownerMonitor
+        running: false
+        command: ["sh", "-c",
+            "command -v gdbus >/dev/null 2>&1 || exit 1; " +
+            "exec gdbus monitor --system --dest org.freedesktop.DBus"]
+        stdout: SplitParser {
+            onRead: data => {
+                // Parsing/classification lives in the pure NameOwnerParse.js
+                // module (unit-tested under Node). It maps a raw monitor line
+                // to one of: refresh-apps / empty-apps / refresh-silos / ignore.
+                const action = NameOwnerParse.classifyOwnerChange(String(data || ""), root._brokerName, root._sessionName);
+                if (action === "refresh-apps") {
+                    Logger.d("App1Apps", "broker appeared on bus; refreshing");
+                    root.refresh();
+                } else if (action === "empty-apps") {
+                    Logger.d("App1Apps", "broker left bus; empty state");
+                    root.brokerReachable = false;
+                    root.apps.clear();
+                    root.refreshed();
+                } else if (action === "refresh-silos") {
+                    Logger.d("App1Apps", "session manager appeared; refreshing silos");
+                    root.refreshSilos();
+                }
+            }
+        }
+        stderr: StdioCollector {}
+        onExited: function (exitCode) {
+            // gdbus missing or the monitor died. The safety-net timer
+            // below restarts it on its next tick (and reconciles state
+            // via a direct probe in the meantime).
+            Logger.w("App1Apps", "owner monitor exited (" + exitCode
+                                 + "); safety-net poll will restart it");
+        }
+    }
+
+    // Inventory-mutation monitor. ``gdbus monitor --dest
+    // org.qdistro.AdminBroker1`` streams one line per signal the broker
+    // emits; we watch for its payload-free ReceiversChanged, e.g.:
+    //   /org/qdistro/AdminBroker1: org.qdistro.AdminBroker1.ReceiversChanged ()
+    // and re-run ListReceivers. This catches receivers that register or
+    // unregister inside an already-running silo (the broker relays each
+    // uid's UserRelay.LocalReceiversChanged up to this single system-bus
+    // signal) — transitions the broker up/down monitor above never sees.
+    // Same streaming-Process + parser idiom; classification lives in the
+    // unit-tested NameOwnerParse.isReceiversChanged.
+    Process {
+        id: _receiversMonitor
+        running: false
+        command: ["sh", "-c",
+            "command -v gdbus >/dev/null 2>&1 || exit 1; " +
+            "exec gdbus monitor --system --dest org.qdistro.AdminBroker1"]
+        stdout: SplitParser {
+            onRead: data => {
+                if (NameOwnerParse.isReceiversChanged(String(data || ""))) {
+                    Logger.d("App1Apps", "broker ReceiversChanged; refreshing");
+                    root.refresh();
+                }
+            }
+        }
+        stderr: StdioCollector {}
+        onExited: function (exitCode) {
+            // Mirrors _ownerMonitor: the safety-net timer restarts it.
+            Logger.w("App1Apps", "receivers monitor exited (" + exitCode
+                                 + "); safety-net poll will restart it");
+        }
+    }
+
+    // Safety net: a slow reconcile that (a) restarts either monitor if
+    // it died and (b) catches any NameOwnerChanged / ReceiversChanged
+    // transition missed while a monitor was down. Steady-state discovery
+    // is event-driven via _ownerMonitor (broker up/down) and
+    // _receiversMonitor (inventory mutation inside a living broker); this
+    // is deliberately infrequent, a backstop rather than the primary
+    // path.
     Timer {
-        id: refreshTimer
-        interval: 5000
+        id: _safetyNet
+        interval: 60000
         repeat: true
         running: true
-        triggeredOnStart: true
+        triggeredOnStart: false
         onTriggered: {
+            if (!_ownerMonitor.running)
+                _ownerMonitor.running = true;
+            if (!_receiversMonitor.running)
+                _receiversMonitor.running = true;
             root.refreshSilos();
             root.refresh();
         }
