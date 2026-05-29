@@ -650,7 +650,9 @@ QVariantMap QdwinBinding::checkHandoffActivation(
     const QString &sourceAppId,
     const QString &destAppId,
     const QString &sourceSandboxEngine,
-    bool identityVerified) {
+    bool identityVerified,
+    uint sourcePid,
+    qulonglong sourceStarttime) {
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -660,13 +662,15 @@ QVariantMap QdwinBinding::checkHandoffActivation(
         QStringLiteral("/org/qdistro/AdminBroker1"),
         QStringLiteral("org.qdistro.AdminBroker1"),
         QStringLiteral("CheckHandoffActivation"),
-        QStringLiteral("sssssb"),
+        QStringLiteral("sssssbut"),
         sourceSilo,
         destSilo,
         sourceAppId,
         destAppId,
         sourceSandboxEngine,
         identityVerified ? QStringLiteral("true") : QStringLiteral("false"),
+        QString::number(sourcePid),
+        QString::number(sourceStarttime),
     };
 
     QProcess proc;
@@ -709,7 +713,9 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     const QString &sourceAppId,
     const QString &destAppId,
     const QString &sourceSandboxEngine,
-    bool identityVerified) {
+    bool identityVerified,
+    uint sourcePid,
+    qulonglong sourceStarttime) {
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -719,7 +725,7 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
         QStringLiteral("/org/qdistro/AdminBroker1"),
         QStringLiteral("org.qdistro.AdminBroker1"),
         QStringLiteral("CheckClipboardTransfer"),
-        QStringLiteral("ssassssb"),
+        QStringLiteral("ssassssbut"),
         sourceSilo,
         destSilo,
         QString::number(mimeTypes.size()),
@@ -730,6 +736,8 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     args.append(sourceSandboxEngine);
     args.append(identityVerified ? QStringLiteral("true")
                                  : QStringLiteral("false"));
+    args.append(QString::number(sourcePid));
+    args.append(QString::number(sourceStarttime));
 
     QProcess proc;
     proc.setProgram(QStringLiteral("busctl"));
@@ -774,7 +782,9 @@ QVariantMap QdwinBinding::checkClipboardReceive(
     const QString &sourceAppId,
     const QString &destAppId,
     const QString &sourceSandboxEngine,
-    bool identityVerified) {
+    bool identityVerified,
+    uint sourcePid,
+    qulonglong sourceStarttime) {
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -784,7 +794,7 @@ QVariantMap QdwinBinding::checkClipboardReceive(
         QStringLiteral("/org/qdistro/AdminBroker1"),
         QStringLiteral("org.qdistro.AdminBroker1"),
         QStringLiteral("CheckClipboardReceive"),
-        QStringLiteral("ssssssb"),
+        QStringLiteral("ssssssbut"),
         sourceSilo,
         destSilo,
         mimeType,
@@ -793,6 +803,8 @@ QVariantMap QdwinBinding::checkClipboardReceive(
         sourceSandboxEngine,
         identityVerified ? QStringLiteral("true")
                          : QStringLiteral("false"),
+        QString::number(sourcePid),
+        QString::number(sourceStarttime),
     };
 
     QProcess proc;

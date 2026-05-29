@@ -213,9 +213,15 @@ Singleton {
             const srcEngine = sourceRow ? (sourceRow.sandboxEngine || "") : "";
             const identityVerified = root._verifyActivationIdentity(
                 sourceRow, targetRow, sourceSilo, targetSilo);
+            // Relay the source app's authenticated (pid, starttime) so the
+            // broker attests the source silo via its launch-record store
+            // (P1-1). 0/0 when the source row has no peer identity → broker
+            // enforce denies cross-silo rather than trusting the claim.
             const result = qdwinBinding.checkHandoffActivation(
                 sourceSilo, targetSilo, srcApp, dstApp, srcEngine,
-                identityVerified);
+                identityVerified,
+                sourceRow ? (sourceRow.peerPid >>> 0) : 0,
+                sourceRow ? (sourceRow.peerStarttime || 0) : 0);
             decision = BrokerGate.parseStringVerdict(
                 result.exitCode, result.stdout || "", "broker-unavailable");
         }

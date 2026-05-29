@@ -91,13 +91,22 @@ public:
         const QString &sandboxEngine,
         const QString &appId,
         const QString &instanceId);
+    // sourcePid / sourceStarttime: the source app's kernel-authenticated
+    // (pid, starttime) as captured by qdwin via SO_PEERCRED at secctx-bind
+    // and relayed here from the toplevel peer-identity sidecar. The broker
+    // resolves THIS pid (not qdshell's own) against its launch-record store
+    // to attest the source silo for cross-silo lineage (P1-1). 0/0 means
+    // "not available"; under broker enforce that fails closed (cross-silo
+    // deny). Defaulted so older call sites keep compiling.
     Q_INVOKABLE QVariantMap checkHandoffActivation(
         const QString &sourceSilo,
         const QString &destSilo,
         const QString &sourceAppId,
         const QString &destAppId,
         const QString &sourceSandboxEngine,
-        bool identityVerified);
+        bool identityVerified,
+        uint sourcePid = 0,
+        qulonglong sourceStarttime = 0);
     Q_INVOKABLE QVariantMap checkClipboardTransfer(
         const QString &sourceSilo,
         const QString &destSilo,
@@ -105,7 +114,9 @@ public:
         const QString &sourceAppId,
         const QString &destAppId,
         const QString &sourceSandboxEngine,
-        bool identityVerified);
+        bool identityVerified,
+        uint sourcePid = 0,
+        qulonglong sourceStarttime = 0);
     // spec/10 §"receive-time gating" — receive-time twin of
     // checkClipboardTransfer. Consults the broker's
     // CheckClipboardReceive for a SINGLE requested mime (no list/
@@ -117,7 +128,9 @@ public:
         const QString &sourceAppId,
         const QString &destAppId,
         const QString &sourceSandboxEngine,
-        bool identityVerified);
+        bool identityVerified,
+        uint sourcePid = 0,
+        qulonglong sourceStarttime = 0);
 
 signals:
     void boundChanged();

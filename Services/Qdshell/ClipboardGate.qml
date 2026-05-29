@@ -396,9 +396,17 @@ Singleton {
             root._logDecisionAndMaybeClear(decisionEntry, "deny", "broker-unavailable");
             return;
         }
+        // Relay the source app's kernel-authenticated (pid, starttime) so
+        // the broker can attest the source silo via its launch-record store
+        // (P1-1). Only trustworthy when the v23 sidecar source is honoured
+        // (pending === null); otherwise pass 0/0 → broker enforce denies
+        // cross-silo rather than resolving an unrelated handle.
+        const _srcId = (pending === null)
+            ? (root._handleToIdentity[sourceHandle] || {}) : {};
         const brokerResult = root._binding.checkClipboardTransfer(
             srcSilo, dstSilo, mimeList, srcAppId, dstAppId,
-            sourceSandboxEngine, identityVerified);
+            sourceSandboxEngine, identityVerified,
+            (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
         const decision = ClipboardBroker.parseCheckClipboardTransferResult(
             brokerResult.exitCode, brokerResult.stdout || "");
         root._logDecisionAndMaybeClear(decisionEntry, decision.verdict,
@@ -475,9 +483,13 @@ Singleton {
 
         const dstAppId = root._handleToAppId[targetHandle] || "";
         const sourceSandboxEngine = root._handleToSandboxEngine[sourceHandle] || "";
+        // Relay the source app's authenticated (pid, starttime) for
+        // launch-record attestation of the source silo (P1-1).
+        const _srcId = root._handleToIdentity[sourceHandle] || {};
         const brokerResult = root._binding.checkClipboardReceive(
             srcSilo, dstSilo, mime, srcAppId, dstAppId,
-            sourceSandboxEngine, identityVerified);
+            sourceSandboxEngine, identityVerified,
+            (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
         // The broker returns a bare "allow"/"deny" string (busctl prints
         // `s "allow"`). Reuse the set-time parser — same wire format,
         // same fail-closed semantics on nonzero exit/timeout/malformed.
