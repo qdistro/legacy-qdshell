@@ -42,4 +42,5 @@ if node.found()
   test('presentation-policy', node, args: files('tests/test_presentation_policy.js'))
   test('brightness-policy', node, args: files('tests/test_brightness_policy.js'))
   test('system-clock', node, args: files('tests/test_system_clock.js'))
+  test('desktop-icons', node, args: files('tests/test_desktop_icons.js'))
 endif
