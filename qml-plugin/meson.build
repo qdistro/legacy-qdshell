@@ -76,10 +76,12 @@ ext_workspace_protocol_code = custom_target(
 # Output (display) management: wlr-output-management-unstable-v1 (client).
 # qdwin implements the server; the Display layout tab binds it through this
 # plugin. Unlike ext-workspace-v1 this protocol is NOT in wayland-protocols
-# (it is a wlr-protocols extension), so the xml is vendored here (a verbatim
-# copy of qdwin's qdwin/protocols/ vendored xml). See
+# (it is a wlr-protocols extension), so qdwin owns the single vendored copy
+# and installs it via qdistro-protocols — we discover it there, same as
+# qdwin-shell-v1.xml above (no per-consumer copy). See
 # todo/decisions/qdwin-output-management.md.
-wlr_output_mgmt_xml = files('wlr-output-management-unstable-v1.xml')
+wlr_output_mgmt_xml = files(
+  qdistro_protocols_dir / 'wlr-output-management-unstable-v1.xml')
 wlr_output_mgmt_client_header = custom_target(
   'wlr-output-management-v1-client-header',
   input: wlr_output_mgmt_xml,
