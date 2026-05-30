@@ -77,6 +77,15 @@ class QdwinBinding : public QObject {
     // get_idle_notification). PowerService gates its idle wiring on it.
     Q_PROPERTY(bool idleNotifierAvailable READ idleNotifierAvailable
                NOTIFY idleNotifierAvailableChanged)
+    // v28 live input config. Both flip true once the shell binds at >= v28
+    // (set_pointer_config / set_key_repeat). PointerInputService /
+    // KeyboardInputService gate their live-apply path on these (via
+    // CapabilityService.pointerConfig / xkbRepeat); an older compositor
+    // leaves them false and those tabs stay persist-only.
+    Q_PROPERTY(bool pointerConfigAvailable READ pointerConfigAvailable
+               NOTIFY boundChanged)
+    Q_PROPERTY(bool keyRepeatAvailable READ keyRepeatAvailable
+               NOTIFY boundChanged)
 
 public:
     explicit QdwinBinding(QObject *parent = nullptr);
@@ -100,6 +109,12 @@ public:
 
     bool idleNotifierAvailable() const {
         return idleNotifier_ != nullptr && seat_ != nullptr;
+    }
+    bool pointerConfigAvailable() const {
+        return shell_ != nullptr && shellVersion_ >= 28;
+    }
+    bool keyRepeatAvailable() const {
+        return shell_ != nullptr && shellVersion_ >= 28;
     }
 
     Q_INVOKABLE void focusWindow(quint32 handle, const QString &seat = QStringLiteral("default"));
@@ -153,6 +168,21 @@ public:
     // positional default. No-op when the compositor's qdwin_shell_v1 is
     // older than v27 (capability-gated on shellVersion_).
     Q_INVOKABLE void setWorkspaceName(int index, const QString &name);
+
+    // v28 live input config. setPointerConfig pushes the full libinput
+    // pointer/touchpad snapshot (one idempotent set_pointer_config); the
+    // compositor applies it to every device and clamps/normalises out-of-
+    // range fields. accelSpeed is in milli-units (-1000..1000 ⇒ -1.0..1.0);
+    // accelProfile: 0=adaptive, 1=flat; scrollMethod: 0=none, 1=two-finger,
+    // 2=edge, 3=on-button-down. setKeyRepeat pushes the xkb repeat rate (Hz,
+    // 0=off) and initial delay (ms). Both no-op until the shell binds at
+    // >= v28 (capability-gated on shellVersion_).
+    Q_INVOKABLE void setPointerConfig(int accelSpeed, quint32 accelProfile,
+                                      bool naturalScroll, bool tapToClick,
+                                      bool leftHanded, bool middleEmulation,
+                                      bool disableWhileTyping,
+                                      quint32 scrollMethod);
+    Q_INVOKABLE void setKeyRepeat(quint32 rate, quint32 delay);
 
     // Output (display) management. applyLayout builds a configuration
     // against `serial` (pass outputSerial), enabling/disabling + configuring

@@ -53,7 +53,13 @@ namespace {
 // Bump to 26 for set_display_power (idle/DPMS — the Power tab's display-off
 // timer). The idle *trigger* rides the standard ext-idle-notify-v1 client
 // bound below, not this private binding.
-constexpr uint32_t kBindVersion = 27;
+// Bump to 27 for set_workspace_name (ext-workspace-v1 NAME parity — push the
+// user's custom workspace names so qdwin echoes them on the standard
+// ext_workspace_handle_v1.name event to every bar).
+// Bump to 28 for live input config: set_pointer_config (the Mouse tab's
+// libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
+// xkb repeat rate/delay). Before v28 those tabs were persist-only.
+constexpr uint32_t kBindVersion = 28;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -1098,6 +1104,35 @@ void QdwinBinding::setWorkspaceName(int index, const QString &name) {
         return;
     qdwin_shell_v1_set_workspace_name(shell_,
         static_cast<uint32_t>(index), name.toUtf8().constData());
+    if (display_) wl_display_flush(display_);
+}
+
+// ==================== v28 live input config ====================
+
+// Push the full libinput pointer/touchpad snapshot. Capability-gated on a
+// >= v28 bind; a no-op against an older compositor, so the Mouse tab simply
+// stays persist-only. The compositor clamps accelSpeed and normalises the
+// accelProfile / scrollMethod enums server-side, but we forward bools as a
+// clean 0/1 so the wire carries canonical values.
+void QdwinBinding::setPointerConfig(int accelSpeed, quint32 accelProfile,
+                                    bool naturalScroll, bool tapToClick,
+                                    bool leftHanded, bool middleEmulation,
+                                    bool disableWhileTyping,
+                                    quint32 scrollMethod) {
+    if (!shell_ || shellVersion_ < 28)
+        return;
+    qdwin_shell_v1_set_pointer_config(shell_,
+        static_cast<int32_t>(accelSpeed), accelProfile,
+        naturalScroll ? 1u : 0u, tapToClick ? 1u : 0u,
+        leftHanded ? 1u : 0u, middleEmulation ? 1u : 0u,
+        disableWhileTyping ? 1u : 0u, scrollMethod);
+    if (display_) wl_display_flush(display_);
+}
+
+void QdwinBinding::setKeyRepeat(quint32 rate, quint32 delay) {
+    if (!shell_ || shellVersion_ < 28)
+        return;
+    qdwin_shell_v1_set_key_repeat(shell_, rate, delay);
     if (display_) wl_display_flush(display_);
 }
 

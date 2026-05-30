@@ -253,6 +253,25 @@ function xsetRepeatArgv(repeatDelay, repeatRate) {
     return ["xset", "r", "rate", String(d), String(r)];
 }
 
+// ─── qdwin_shell_v1.set_key_repeat (v28) arg building ───────────────
+// Clamp the persisted repeat rate (Hz) and delay (ms) to the protocol's
+// documented ranges before handing them to QdwinBinding.setKeyRepeat /
+// Qdwin.applyKeyRepeat: rate 0..255 (0 = repeat off, per the wl_keyboard
+// repeat_info contract), delay 1..10000 ms. The compositor clamps again
+// server-side; we clamp here so the wire carries canonical values and a
+// non-finite/garbage setting can never reach it. Returns { rate, delay }.
+function repeatToQdwinArgs(repeatRate, repeatDelay) {
+    var r = Math.round(Number(repeatRate));
+    var d = Math.round(Number(repeatDelay));
+    if (!isFinite(r)) r = 25;     // settings default
+    if (!isFinite(d)) d = 500;    // settings default
+    if (r < 0) r = 0;
+    if (r > 255) r = 255;
+    if (d < 1) d = 1;
+    if (d > 10000) d = 10000;
+    return { rate: r, delay: d };
+}
+
 if (typeof module !== "undefined") {
     module.exports = {
         parseXkbList: parseXkbList,
@@ -261,5 +280,6 @@ if (typeof module !== "undefined") {
         shellQuote: shellQuote,
         setxkbmapShellCmd: setxkbmapShellCmd,
         xsetRepeatShellCmd: xsetRepeatShellCmd,
+        repeatToQdwinArgs: repeatToQdwinArgs,
     };
 }

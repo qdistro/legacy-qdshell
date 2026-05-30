@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Services.Qdwin
 import qs.Services.UI
 import "KeyboardXkb.js" as KeyboardXkb
 
@@ -45,14 +46,25 @@ Singleton {
   // is the X server (real X11 / XWayland: setxkbmap/xset/numlockx) — NOT a
   // foreign Wayland compositor, so it is allowed under the qdwin-only rule.
   //
-  // The compositor (qdwin) xkb/repeat capability is tracked centrally in
-  // CapabilityService.xkbRepeat (false until qdwin_shell_v1 gains the request).
-  // It is intentionally NOT OR-ed into canApply yet: this service has no qdwin
-  // apply path, so claiming capability before one exists would hide the
-  // persist-only state while changes silently fail to apply. When a qdwin xkb
-  // request lands, add the apply path below and gate it on that flag.
+  // The compositor (qdwin) key-repeat capability is tracked centrally in
+  // CapabilityService.xkbRepeat (live as of qdwin_shell_v1 v28's
+  // set_key_repeat). canApplyRepeat below ORs it with the X path so the
+  // Keyboard tab is no longer persist-only for repeat once the shell binds at
+  // >= v28: native Wayland clients honour the compositor repeat (qdwin),
+  // XWayland clients honour the X server repeat (xset). The X server path
+  // ALSO carries layout/model/options/numlock, which qdwin_shell_v1 does not
+  // (only repeat), so canApply (the X-only gate) is kept for those.
   readonly property bool canApply: hasXServer && (hasSetxkbmap || hasXset)
-  // Are we limited to persisting (no live apply backend detected)?
+  // Whether key-repeat (rate/delay) can be applied live, via EITHER backend.
+  readonly property bool canApplyRepeat: canApply || CapabilityService.xkbRepeat
+  // Are we limited to persisting (no X apply backend)? This gates the
+  // Keyboard tab's capability note. It stays tied to the X path (canApply):
+  // most of the tab (layout/model/options via setxkbmap, numlock via
+  // numlockx, cursor blink) has ONLY the X backend. Key-repeat additionally
+  // has the qdwin path (canApplyRepeat / applyRepeatToCompositor), but that
+  // one live field does not make the rest of the tab applyable — so we do
+  // NOT clear the note just because qdwin repeat is live, which would
+  // mislead the user about numlock/layout still being persist-only.
   readonly property bool persistOnly: capabilitiesReady && !canApply
 
   // ─── Discovered XKB data (for the UI pickers) ────────────────────
@@ -243,8 +255,15 @@ Singleton {
   function applyAll() {
     if (!capabilitiesReady)
       return;
+    // Live key-repeat via qdwin (native Wayland clients) — independent of the
+    // X server. No-op until CapabilityService.xkbRepeat is live (>= v28 bind);
+    // the compositor clamps rate/delay fail-safe.
+    applyRepeatToCompositor();
     if (!canApply) {
-      Logger.i("KeyboardInput", "No apply backend (persist-only); settings saved for a supporting compositor");
+      if (!canApplyRepeat)
+        Logger.i("KeyboardInput", "No apply backend (persist-only); settings saved for a supporting compositor");
+      // X server is unavailable: the qdwin repeat push above is the only live
+      // apply; the layout block (setxkbmap) + numlock stay persist-only.
       return;
     }
     var parts = [];
@@ -255,6 +274,18 @@ Singleton {
     parts.push(_xsetRepeatCmd());
     parts.push(_numlockCmd());
     _runChain(parts);
+  }
+
+  // Push the key-repeat rate/delay to qdwin (set_key_repeat, v28). No-op
+  // unless CapabilityService.xkbRepeat is live. Reaches native Wayland clients
+  // (the X path only reaches XWayland clients).
+  function applyRepeatToCompositor() {
+    if (!CapabilityService.xkbRepeat)
+      return;
+    var a = KeyboardXkb.repeatToQdwinArgs(repeatRate, repeatDelay);
+    Qdwin.applyKeyRepeat(a.rate, a.delay);
+    Logger.i("KeyboardInput", "applied qdwin key-repeat rate=" + a.rate
+             + " delay=" + a.delay);
   }
 
   function _runChain(parts) {
@@ -279,6 +310,16 @@ Singleton {
   function requestApply() {
     if (capabilitiesReady)
       applyDebounce.restart();
+  }
+
+  // Re-push when the qdwin key-repeat capability flips live (shell (re)bind at
+  // >= v28), so the persisted rate/delay reach a freshly-bound compositor.
+  Connections {
+    target: CapabilityService
+    function onXkbRepeatChanged() {
+      if (CapabilityService.xkbRepeat)
+        root.applyRepeatToCompositor();
+    }
   }
 
   onRepeatDelayChanged: requestApply()

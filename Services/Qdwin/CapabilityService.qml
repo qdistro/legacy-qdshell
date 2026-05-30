@@ -31,14 +31,35 @@ Singleton {
   id: root
 
   // ─── qdwin_shell_v1 live-apply capabilities ──────────────────────
-  // All currently false: qdwin_shell_v1 exposes none of these requests yet.
-  // When qdwin gains one, flip the corresponding flag here (or derive it from
-  // a future qdwin capability advertisement) and every consumer follows.
+  // When qdwin gains a request, flip the corresponding flag here (set from
+  // Qdwin.qml on bind, gated on the negotiated shell version) and every
+  // consumer follows.
 
-  // libinput pointer/touchpad configuration (accel, scroll, tap, …).
-  readonly property bool pointerConfig: false
-  // xkb layout/options/model + key-repeat delay & rate.
-  readonly property bool xkbRepeat: false
+  // libinput pointer/touchpad configuration (accel, scroll, tap, …). Live as
+  // of qdwin_shell_v1 v28 (set_pointer_config). Like wmPolicy this is gated on
+  // the shell actually binding at >= v28 (an older compositor leaves it false
+  // and the Mouse tab stays persist-only). Qdwin.qml calls
+  // setPointerConfig() on bind. Writable to keep the import direction
+  // Qdwin → CapabilityService and avoid a singleton import cycle.
+  property bool pointerConfig: false
+  function setPointerConfig(available) {
+    if (pointerConfig !== available) {
+      pointerConfig = available;
+      Logger.i("CapabilityService", "pointerConfig -> " + available);
+    }
+  }
+  // xkb key-repeat delay & rate. Live as of qdwin_shell_v1 v28
+  // (set_key_repeat). Gated on a >= v28 bind, set from Qdwin.qml. (xkb
+  // layout/model/options still apply via the X server path in
+  // KeyboardInputService; only repeat is carried by this request.) Writable
+  // to keep the Qdwin → CapabilityService import direction.
+  property bool xkbRepeat: false
+  function setXkbRepeat(available) {
+    if (xkbRepeat !== available) {
+      xkbRepeat = available;
+      Logger.i("CapabilityService", "xkbRepeat -> " + available);
+    }
+  }
   // Window-manager policy mutation (focus, placement, snapping). Live as of
   // qdwin_shell_v1 v25 (set_wm_policy). Like outputManagement this is gated on
   // the shell actually binding at >= v25 (an older compositor leaves it false

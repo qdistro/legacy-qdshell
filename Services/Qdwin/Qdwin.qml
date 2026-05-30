@@ -362,6 +362,13 @@ Singleton {
                 // compositor leaves the WindowManager tab persist-only.
                 CapabilityService.setWmPolicy(shellVersion >= 25);
                 CapabilityService.setKeybindRegistration(shellVersion >= 25);
+                // v28: live pointer (set_pointer_config) and key-repeat
+                // (set_key_repeat) config — the Mouse and Keyboard tabs apply
+                // live once the shell binds at >= v28. PointerInputService /
+                // KeyboardInputService route through the binding when these
+                // flip true and fall back to persist-only otherwise.
+                CapabilityService.setPointerConfig(shellVersion >= 28);
+                CapabilityService.setXkbRepeat(shellVersion >= 28);
                 // v26: idle/DPMS needs both the v26 set_display_power request
                 // and the ext-idle-notify client (notifier + seat). The latter
                 // arrives via its own global, so also re-evaluate on
@@ -374,6 +381,8 @@ Singleton {
                 CapabilityService.setWmPolicy(false);
                 CapabilityService.setKeybindRegistration(false);
                 CapabilityService.setIdleDpms(false);
+                CapabilityService.setPointerConfig(false);
+                CapabilityService.setXkbRepeat(false);
                 if (lastError.length > 0)
                     Logger.w("Qdwin", "qdwin_shell_v1 unbound: " + lastError);
             }
@@ -856,6 +865,25 @@ Singleton {
         qdwinBinding.setWmPolicy(focusPolicy, ffmDelayMs, raiseOnClick,
                                  raiseOnHover, placement, snapEnabled,
                                  snapDistance);
+    }
+    // ── v28 live input config ───────────────────────────────────────
+    // Push the libinput pointer/touchpad snapshot. accelSpeed in milli-units
+    // (-1000..1000); accelProfile 0=adaptive/1=flat; scrollMethod 0=none,
+    // 1=two-finger, 2=edge, 3=on-button-down. Called by PointerInputService
+    // when CapabilityService.pointerConfig is live.
+    function applyPointerConfig(accelSpeed, accelProfile, naturalScroll,
+                                tapToClick, leftHanded, middleEmulation,
+                                disableWhileTyping, scrollMethod) {
+      if (!qdwinBinding) return;
+      qdwinBinding.setPointerConfig(accelSpeed, accelProfile, naturalScroll,
+                                    tapToClick, leftHanded, middleEmulation,
+                                    disableWhileTyping, scrollMethod);
+    }
+    // Push the xkb key-repeat rate (Hz, 0=off) and initial delay (ms). Called
+    // by KeyboardInputService when CapabilityService.xkbRepeat is live.
+    function applyKeyRepeat(rate, delay) {
+      if (!qdwinBinding) return;
+      qdwinBinding.setKeyRepeat(rate, delay);
     }
     // WM-shortcut hotkey (de)registration. id is shell-assigned; modifiers is
     // the ctrl=1/alt=2/super=4/shift=8 bitmask; key is a linux input keycode.

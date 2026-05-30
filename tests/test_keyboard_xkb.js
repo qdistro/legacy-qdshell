@@ -189,4 +189,26 @@ assert.strictEqual(K.xsetRepeatShellCmd(300, 25, true), "xset r rate '300' '25'"
 assert.strictEqual(K.xsetRepeatShellCmd(0, 0, true), "xset r rate '1' '1'");
 assert.strictEqual(K.xsetRepeatShellCmd(300, 25, false), "");
 
+// ─── qdwin set_key_repeat (v28) arg clamping ────────────────────────
+// rate in [0, 255] (0 = off), delay in [1, 10000] ms. The compositor clamps
+// again server-side; the shell sends canonical values so the wire is clean.
+assert.deepStrictEqual(K.repeatToQdwinArgs(25, 500), { rate: 25, delay: 500 },
+    "in-range values pass through");
+assert.deepStrictEqual(K.repeatToQdwinArgs(0, 1), { rate: 0, delay: 1 },
+    "min edges (rate 0 = off, delay 1)");
+assert.deepStrictEqual(K.repeatToQdwinArgs(255, 10000), { rate: 255, delay: 10000 },
+    "max edges");
+assert.deepStrictEqual(K.repeatToQdwinArgs(99999, 99999), { rate: 255, delay: 10000 },
+    "above max clamps");
+assert.deepStrictEqual(K.repeatToQdwinArgs(-5, 0), { rate: 0, delay: 1 },
+    "below min clamps (rate→0, delay→1)");
+assert.deepStrictEqual(K.repeatToQdwinArgs(25.7, 500.4), { rate: 26, delay: 500 },
+    "rounded");
+assert.deepStrictEqual(K.repeatToQdwinArgs("30", "600"), { rate: 30, delay: 600 },
+    "numeric strings parsed");
+assert.deepStrictEqual(K.repeatToQdwinArgs("x", undefined), { rate: 25, delay: 500 },
+    "non-finite → settings defaults");
+assert.deepStrictEqual(K.repeatToQdwinArgs(Infinity, NaN), { rate: 25, delay: 500 },
+    "Infinity/NaN → settings defaults");
+
 console.log("keyboard-xkb: all assertions passed");

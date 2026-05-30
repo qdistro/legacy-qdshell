@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Services.Qdwin
 import qs.Services.UI
 import "PointerInputParse.js" as PointerInputParse
+import "PointerInputConfig.js" as PointerCfg
 
 // PointerInputService — enumerates pointer input devices (mice, touchpads,
 // trackpoints) for the Settings > Mouse tab.
@@ -46,9 +47,11 @@ Singleton {
   })
   readonly property bool hasTablet: tabletDevices.length > 0
 
-  // Whether the backend can apply pointer settings live. qdwin_shell_v1 has no
-  // pointer-config request yet, so this is currently false (persist-only);
-  // sourced from the unified CapabilityService, not from probing any compositor.
+  // Whether the backend can apply pointer settings live. Live as of
+  // qdwin_shell_v1 v28 (set_pointer_config); sourced from the unified
+  // CapabilityService (a >= v28 bind), not from probing any compositor. When
+  // false the service is persist-only: values are stored and surfaced behind a
+  // capability note, and apply automatically once this flips true.
   readonly property bool canApply: CapabilityService.pointerConfig
 
   // Which source enumerated the device list (for the "no devices" UI state).
@@ -162,10 +165,59 @@ Singleton {
     Settings.data.pointer.tabletMapping = PointerInputParse.normalizeTabletMapping(raw);
   }
 
+  // ─── Live apply (qdwin_shell_v1.set_pointer_config, v28) ─────────
+  // Push the global pointer policy to the compositor as one idempotent
+  // snapshot. No-op (persist-only) until CapabilityService.pointerConfig is
+  // live (a >= v28 bind); the compositor clamps/normalises out-of-range
+  // values fail-safe. Per-device overrides are persist-only for now — the
+  // request carries a single process-global policy, matching what the
+  // compositor applies to every device.
+  function applyToCompositor() {
+    if (!canApply)
+      return;
+    var a = PointerCfg.toBindingArgs(Settings.data.pointer);
+    Qdwin.applyPointerConfig(a.accelSpeed, a.accelProfile, a.naturalScroll,
+                             a.tapToClick, a.leftHanded, a.middleEmulation,
+                             a.disableWhileTyping, a.scrollMethod);
+    Logger.i("PointerInputService", "applied pointer config accelSpeed="
+             + a.accelSpeed + " profile=" + a.accelProfile + " natural="
+             + a.naturalScroll + " tap=" + a.tapToClick + " scroll="
+             + a.scrollMethod);
+  }
+
+  // Re-apply on any policy edit (debounced so a slider drag doesn't spam the
+  // wire) and on the capability flipping live (shell (re)bind at >= v28).
+  Timer {
+    id: applyDebounce
+    interval: 300
+    repeat: false
+    onTriggered: root.applyToCompositor()
+  }
+  function _requestApply() {
+    if (canApply)
+      applyDebounce.restart();
+  }
+  onAccelProfileChanged: _requestApply()
+  onPointerSpeedChanged: _requestApply()
+  onNaturalScrollChanged: _requestApply()
+  onScrollMethodChanged: _requestApply()
+  onTapToClickChanged: _requestApply()
+  onDisableWhileTypingChanged: _requestApply()
+  onLeftHandedChanged: _requestApply()
+  onMiddleClickEmulationChanged: _requestApply()
+  onCanApplyChanged: {
+    if (canApply)
+      applyToCompositor();
+  }
+
   // ─── Init ────────────────────────────────────────────────────────
   function init() {
-    Logger.i("PointerInputService", "Service started (qdwin: persist-only, pointer config not yet applied by compositor)");
+    Logger.i("PointerInputService", "Service started (qdwin live-apply: "
+             + (canApply ? "active" : "persist-only until shell binds >= v28")
+             + ")");
     refresh();
+    // Push the persisted policy if the shell is already bound at >= v28.
+    applyToCompositor();
   }
 
   // ─── Enumeration ─────────────────────────────────────────────────
