@@ -53,7 +53,7 @@ namespace {
 // Bump to 26 for set_display_power (idle/DPMS — the Power tab's display-off
 // timer). The idle *trigger* rides the standard ext-idle-notify-v1 client
 // bound below, not this private binding.
-constexpr uint32_t kBindVersion = 26;
+constexpr uint32_t kBindVersion = 27;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -1082,6 +1082,22 @@ void QdwinBinding::setDisplayPower(bool on) {
     if (!shell_ || shellVersion_ < 26)
         return;
     qdwin_shell_v1_set_display_power(shell_, on ? 1u : 0u);
+    if (display_) wl_display_flush(display_);
+}
+
+// v27 ext-workspace-v1 NAME parity: forward the user's custom workspace
+// name so qdwin echoes it on the standard ext_workspace_handle_v1.name
+// event to every ext-workspace client. Capability-gated on the negotiated
+// qdwin_shell_v1 version (>= 27); a no-op against an older compositor, so a
+// third-party bar simply falls back to positional names. An empty name
+// reverts that workspace to its positional default.
+void QdwinBinding::setWorkspaceName(int index, const QString &name) {
+    if (!shell_ || shellVersion_ < 27)
+        return;
+    if (index < 0)
+        return;
+    qdwin_shell_v1_set_workspace_name(shell_,
+        static_cast<uint32_t>(index), name.toUtf8().constData());
     if (display_) wl_display_flush(display_);
 }
 
