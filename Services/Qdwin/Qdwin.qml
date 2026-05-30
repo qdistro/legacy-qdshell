@@ -52,8 +52,12 @@ Singleton {
     // the standard ext-workspace-v1 protocol and surfaced by the
     // QdwinBinding plugin (workspaceCount / activeWorkspace). The count is
     // owned by the user (qdshell settings) and reconciled down to the
-    // compositor via setWorkspaceCount; per-workspace names stay a
-    // shell-side display overlay (ext-workspace-v1 has no rename). When
+    // compositor via setWorkspaceCount. v27: per-workspace names are ALSO
+    // pushed down (setWorkspaceName) so qdwin echoes them on the standard
+    // ext_workspace_handle_v1.name event to EVERY ext-workspace client
+    // (waybar etc.), not just qdshell's local overlay — capability-gated on
+    // a >= v27 shell bind (older compositors just show positional names; the
+    // local overlay below still renders the user's names in qdshell). When
     // the binding is not yet bound we fall back to the settings count so
     // the bar still renders cells. Occupancy is derived from the windows
     // model's per-window workspaceId (toplevel_workspace sidecar).
@@ -69,9 +73,35 @@ Singleton {
         // rebuild (the live count refreshes again on workspacesChanged).
         if (qdwinBinding && qdwinBinding.bound)
             qdwinBinding.setWorkspaceCount(_settingsWorkspaceCount);
+        _pushWorkspaceNames();
         _rebuildWorkspaces();
     }
-    on_SettingsWorkspaceNamesChanged: _rebuildWorkspaces()
+    on_SettingsWorkspaceNamesChanged: {
+        // v27: also propagate the user's names to the compositor so every
+        // ext-workspace client (not just qdshell) sees them. No-op against
+        // an older shell (the binding gates on its negotiated version).
+        _pushWorkspaceNames();
+        _rebuildWorkspaces();
+    }
+
+    // v27: push every workspace's custom display name down to the compositor
+    // via qdwin_shell_v1.set_workspace_name, so qdwin re-advertises them on
+    // the standard ext_workspace_handle_v1.name event. An index with no
+    // custom name (or an empty one) is sent as "" — the compositor reverts
+    // that workspace to its positional default. Bounded to the live/settings
+    // count so we never push past the workspaces qdwin actually has.
+    function _pushWorkspaceNames() {
+        if (!qdwinBinding || !qdwinBinding.bound) return;
+        if (qdwinBinding.setWorkspaceName === undefined) return;  // < v27 plugin
+        var names = _settingsWorkspaceNames || [];
+        var bound = qdwinBinding.workspaceCount > 0;
+        var count = bound ? qdwinBinding.workspaceCount
+                          : Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        for (var i = 0; i < count; i++) {
+            var nm = (i < names.length && names[i] !== undefined) ? names[i] : "";
+            qdwinBinding.setWorkspaceName(i, nm);
+        }
+    }
 
     function _rebuildWorkspaces() {
         if (!Settings.isLoaded) return;
@@ -320,6 +350,10 @@ Singleton {
                 // may not have arrived yet at hello time — setWorkspaceCount
                 // would no-op). Re-arm the one-shot on every (re)bind.
                 root._wsCountPushed = false;
+                // v27: (re)assert the user's workspace names on every bind so
+                // a fresh/restarted compositor re-learns them (it only keeps
+                // them for its own lifetime). No-op against a < v27 shell.
+                root._pushWorkspaceNames();
                 root._rebuildWorkspaces();
                 // v25: window-manager policy + WM-shortcut keybinds are live
                 // once the shell binds at >= v25 (set_wm_policy / the wired
@@ -355,6 +389,9 @@ Singleton {
                 root._wsCountPushed = true;
                 if (qdwinBinding.workspaceCount !== root._settingsWorkspaceCount)
                     qdwinBinding.setWorkspaceCount(root._settingsWorkspaceCount);
+                // v27: the handle set is now live — (re)push names so the
+                // newly-created handles carry the user's names too.
+                root._pushWorkspaceNames();
             }
             root._rebuildWorkspaces();
         }
@@ -625,6 +662,7 @@ Singleton {
         function onSettingsLoaded() {
             if (qdwinBinding && qdwinBinding.bound)
                 qdwinBinding.setWorkspaceCount(root._settingsWorkspaceCount);
+            root._pushWorkspaceNames();
             root._rebuildWorkspaces();
         }
     }

@@ -145,6 +145,15 @@ public:
     Q_INVOKABLE void setIdleNotification(quint32 slot, quint32 timeoutMs);
     Q_INVOKABLE void setDisplayPower(bool on);
 
+    // v27 ext-workspace-v1 NAME parity: push the user's custom workspace
+    // display name so qdwin advertises it on the standard
+    // ext_workspace_handle_v1.name event to EVERY ext-workspace client
+    // (waybar etc.), not just qdshell's local overlay. index is the
+    // 0-based positional workspace index; an empty name reverts to the
+    // positional default. No-op when the compositor's qdwin_shell_v1 is
+    // older than v27 (capability-gated on shellVersion_).
+    Q_INVOKABLE void setWorkspaceName(int index, const QString &name);
+
     // Output (display) management. applyLayout builds a configuration
     // against `serial` (pass outputSerial), enabling/disabling + configuring
     // each head per the supplied list, then `apply`s it ATOMICALLY. testLayout
