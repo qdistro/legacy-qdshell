@@ -468,6 +468,10 @@ Singleton {
     // never tracked (so nothing to clear here), and an unknown destination
     // silo always differs from any known source silo, so it clears.
     function _onSeatFocusChanged(seat, handle) {
+        // Unlike the set-time gate (which reads the single cached focused
+        // handle — Phase-1 single-seat), this path is per-seat-safe: it
+        // forwards the event's own `seat` straight through to clearSelection,
+        // so a multi-seat compositor clears only the seat whose focus moved.
         // Pure decision lives in ClipboardFocusClear.js (unit-tested from
         // Node). It returns the ordered list of selection kinds to clear
         // because focus crossed OUT of their source silo; same-silo and
@@ -488,8 +492,14 @@ Singleton {
     }
 
     // Structured journal verdict for a focus-aware clear. Mirrors the
-    // CLIPBOARD_GATE / CLIPBOARD_RECEIVE_GATE line shape (the qdistro VM
-    // test harness asserts on these — field order is a stable contract).
+    // CLIPBOARD_GATE / CLIPBOARD_RECEIVE_GATE line shape — field order is a
+    // stable contract. The set-time CLIPBOARD_GATE / receive-time
+    // CLIPBOARD_RECEIVE_GATE lines are asserted by the qdistro VM harness; the
+    // CLIPBOARD_FOCUS_GATE decision itself is covered by the Node unit test
+    // tests/test_clipboard_focus_clear.js (headless weston can't drive a real
+    // keyboard-focus transition, so there is no VM assertion on this line yet —
+    // it lands once the ctrl-socket inject-focus CLI noted in the VM clipboard
+    // tests exists).
     function _logFocusClear(seat, srcSilo, dstSilo, isPrimary) {
         Logger.i("ClipboardGate", "CLIPBOARD_FOCUS_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "is_primary=" + isPrimary, "verdict=deny", "reason=focus-cross-silo");
     }
