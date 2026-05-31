@@ -52,3 +52,23 @@ def test_plugin_service_no_longer_uses_shell_for_registry_or_install():
     service = (Path(__file__).resolve().parents[1] / "Services" / "Qdshell" / "PluginService.qml").read_text(encoding="utf-8")
     assert 'command: ["sh", "-c"' not in service
     assert "plugin-helper.py" in service
+
+
+def test_install_plugin_preserves_existing_settings(tmp_path, monkeypatch):
+    dest = tmp_path / "plugins" / "safe"
+    dest.mkdir(parents=True)
+    (dest / "settings.json").write_text('{"keep": true}', encoding="utf-8")
+    (dest / "old.txt").write_text("old", encoding="utf-8")
+
+    def fake_clone_sparse(repo_url, plugin_id, temp_dir):
+        src = temp_dir / plugin_id
+        src.mkdir()
+        (src / "manifest.json").write_text('{"id":"safe"}', encoding="utf-8")
+        (src / "old.txt").write_text("new", encoding="utf-8")
+
+    monkeypatch.setattr(plugin_helper, "_clone_sparse", fake_clone_sparse)
+
+    assert plugin_helper.install_plugin("https://example.test/repo.git", "safe", str(dest)) == 0
+    assert (dest / "settings.json").read_text(encoding="utf-8") == '{"keep": true}'
+    assert (dest / "old.txt").read_text(encoding="utf-8") == "new"
+    assert (dest / "manifest.json").is_file()

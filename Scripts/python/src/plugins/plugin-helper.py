@@ -81,13 +81,10 @@ def install_plugin(repo_url: str, plugin_id: str, plugin_dir: str) -> int:
         if not src.is_dir():
             raise FileNotFoundError(plugin_id)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        stage = dest.parent / (dest.name + ".tmp")
-        if stage.exists():
-            shutil.rmtree(stage)
-        shutil.copytree(src, stage, symlinks=False)
         if dest.exists():
-            shutil.rmtree(dest)
-        stage.rename(dest)
+            shutil.copytree(src, dest, symlinks=False, dirs_exist_ok=True)
+        else:
+            shutil.copytree(src, dest, symlinks=False)
     return 0
 
 
