@@ -21,7 +21,10 @@ COMPOSITE_KEY_RE = re.compile(r"^(?:[A-Fa-f0-9]{6}:)?[A-Za-z0-9_.-]+$")
 def _validate_repo_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme in ("http", "https", "ssh", "git", "file"):
-        if parsed.scheme != "file" and not parsed.netloc:
+        if parsed.scheme == "file":
+            if not parsed.path.startswith("/"):
+                raise ValueError("file repository URL must be absolute")
+        elif not parsed.netloc:
             raise ValueError("repository URL is missing a host")
         return
     if re.match(r"^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:.+", url):

@@ -42,10 +42,23 @@ def test_repo_url_accepts_git_urls(url):
     plugin_helper._validate_repo_url(url)
 
 
-@pytest.mark.parametrize("url", ["", "not a url", "javascript:alert(1)", "https:///repo"])
+@pytest.mark.parametrize("url", [
+    "",
+    "not a url",
+    "javascript:alert(1)",
+    "https:///repo",
+    "data:text/plain,repo",
+    "blob:https://example.test/abc",
+])
 def test_repo_url_rejects_unsafe_shapes(url):
     with pytest.raises(ValueError):
         plugin_helper._validate_repo_url(url)
+
+
+def test_file_repo_url_requires_host_or_absolute_path():
+    with pytest.raises(ValueError):
+        plugin_helper._validate_repo_url("file:relative/repo")
+    plugin_helper._validate_repo_url("file:///tmp/repo")
 
 
 def test_plugin_service_no_longer_uses_shell_for_registry_or_install():
