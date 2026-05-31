@@ -200,11 +200,12 @@ assert.strictEqual(P.isDeviceDisabled(["a", "b"], "b"), true);
 assert.strictEqual(P.isDeviceDisabled(["a", "b"], "c"), false);
 assert.strictEqual(P.isDeviceDisabled(null, "a"), false);
 
-// ─── Injection safety: persist-only, NO command builder anywhere ─────
-// qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet,
-// so EVERY pointer/tablet setting is persist-only. There must be no helper that
-// turns a device id into a command/argv. A device id containing shell
-// metacharacters flows through every advanced helper as opaque data only.
+// ─── Injection safety: per-device/tablet persist-only, no commands ───
+// qdshell is qdwin-only. The v28 pointer request carries a global policy only,
+// so per-device overrides, disabled devices and tablet mapping are persist-only.
+// There must be no helper that turns a device id into a command/argv. A device
+// id containing shell metacharacters flows through every advanced helper as
+// opaque data only.
 const evilId = "wacom; rm -rf / #$(touch pwned)`whoami`";
 const evilDevices = [{ id: evilId, name: evilId, type: "tablet" }];
 const evilOverrides = {}; evilOverrides[evilId] = { pointerSpeed: 0.7 };

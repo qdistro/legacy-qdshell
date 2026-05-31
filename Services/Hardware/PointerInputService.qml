@@ -14,10 +14,11 @@ import "PointerInputConfig.js" as PointerCfg
 //
 // Backend model (qdwin-only, mirrors WindowManagerService / PowerService):
 //   * qdshell runs on exactly one compositor — qdwin (via libweston). qdwin
-//     owns libinput configuration and `qdwin_shell_v1` does NOT yet expose a
-//     pointer-config request, so we are PERSIST-ONLY: settings are stored and
-//     the UI shows a capability note. They apply automatically once qdwin
-//     grows the request (CapabilityService.pointerConfig flips true).
+//     owns libinput configuration. qdwin_shell_v1 v28 exposes a global
+//     pointer-config request for the fields in PointerInputConfig.toBindingArgs;
+//     older binds stay persist-only behind CapabilityService.pointerConfig.
+//     Per-device policy, click method, horizontal scroll and tablet mapping are
+//     persisted for future protocol support and never dispatched as commands.
 //   * There is NO probing for or dispatch to any non-qdwin compositor
 //     (swaymsg / hyprctl / …) — qdwin is the only supported compositor.
 //
@@ -50,8 +51,10 @@ Singleton {
   // Whether the backend can apply pointer settings live. Live as of
   // qdwin_shell_v1 v28 (set_pointer_config); sourced from the unified
   // CapabilityService (a >= v28 bind), not from probing any compositor. When
-  // false the service is persist-only: values are stored and surfaced behind a
-  // capability note, and apply automatically once this flips true.
+  // false the global live fields are persist-only: values are stored and
+  // surfaced behind a capability note, and apply automatically once this flips
+  // true. Some advanced fields remain persist-only even when this is true; see
+  // applyToCompositor() / PointerInputConfig.toBindingArgs.
   readonly property bool canApply: CapabilityService.pointerConfig
 
   // Which source enumerated the device list (for the "no devices" UI state).

@@ -30,11 +30,14 @@ What must be visible when this tab is open:
 - The standard left-side Settings tab strip is visible.
 
 Notes:
-- qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet, so
-  ALL pointer/tablet settings are persist-only and capability-gated: the
-  persist-only banner (`panels.mouse.backend-persist-only`) is shown at the top
-  and choices are saved until qdwin gains support. There is NO live dispatch to
-  any compositor (no sway/hyprland/wlr).
+- qdshell is qdwin-only. qdwin_shell_v1 v28 can live-apply only the global
+  pointer fields listed in `panels.mouse.live-fields-note`; older backends show
+  the persist-only banner (`panels.mouse.backend-persist-only`) and save those
+  choices until support is available. There is NO live dispatch to any foreign
+  compositor (no sway/hyprland/wlr).
+- Click method, horizontal-scroll toggle, per-device overrides, device
+  enable/disable, double-click/drag thresholds, and tablet mapping are saved
+  only even when the global pointer backend is live.
 - Per-device overrides are keyed by the (untrusted) enumerated device id, used
   only as an opaque map key — never shell-interpolated. Device names render as
   plain text.

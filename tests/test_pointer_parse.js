@@ -150,12 +150,11 @@ const enumNone = P.parseEnum("@@SRC:proc\nI: Bus=0011\nN: Name=\"AT Translated S
 assert.strictEqual(enumNone.source, "none");
 assert.strictEqual(enumNone.devices.length, 0);
 
-// ─── qdwin-only: no live-apply command builder ──────────────────────
-// qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet,
-// so pointer settings are persist-only. The previous sway `swaymsg input …`
-// command builder was removed with the foreign-compositor dispatch — assert it
-// is gone so it cannot be reintroduced. A device name reaches the module only
-// as opaque parsed data; it is never turned into a command argument.
+// ─── qdwin-only: no foreign-compositor command builder ───────────────
+// qdshell is qdwin-only. Global pointer live apply goes through
+// qdwin_shell_v1.set_pointer_config when v28 is available; this parser module
+// must still never build sway/hyprland/wlr commands. A device name reaches the
+// module only as opaque parsed data; it is never turned into a command argument.
 assert.strictEqual(typeof P.buildSwayInputCommands, "undefined", "sway command builder must be gone");
 assert.strictEqual(typeof P.swayInputArgv, "undefined", "swayInputArgv must be gone");
 const exportedFns = Object.keys(P);

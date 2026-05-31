@@ -119,6 +119,7 @@ ColumnLayout {
 
   // Live, normalized tablet mapping (clamped). UI reads from here.
   readonly property var tabletMapping: PointerInputService ? PointerInputParse.normalizeTabletMapping(Settings.data.pointer.tabletMapping) : null
+  readonly property bool globalPointerLive: PointerInputService.ready && PointerInputService.canApply
 
   // Persist a single field of the tablet area, re-normalizing the whole object.
   function updateTabletArea(field, value) {
@@ -128,7 +129,8 @@ ColumnLayout {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // Backend status banner (capability gating, PowerService-style)
+  // Backend status banners. qdwin v28 can apply the global libinput snapshot;
+  // advanced controls below still say persist-only at their own sections.
   // ═══════════════════════════════════════════════════════════════════
   Rectangle {
     Layout.fillWidth: true
@@ -155,6 +157,38 @@ ColumnLayout {
       NText {
         Layout.fillWidth: true
         text: I18n.tr("panels.mouse.backend-persist-only")
+        color: Color.mOnSurfaceVariant
+        pointSize: Style.fontSizeS
+        wrapMode: Text.WordWrap
+      }
+    }
+  }
+
+  Rectangle {
+    Layout.fillWidth: true
+    visible: root.globalPointerLive
+    radius: Style.iRadiusS
+    color: Color.mSurfaceVariant
+    border.color: Color.mOutline
+    border.width: Style.borderS
+    implicitHeight: liveRow.implicitHeight + Style.marginM * 2
+
+    RowLayout {
+      id: liveRow
+      anchors.fill: parent
+      anchors.margins: Style.marginM
+      spacing: Style.marginM
+
+      NIcon {
+        icon: "info-circle"
+        pointSize: Style.fontSizeXL
+        color: Color.mTertiary
+        Layout.alignment: Qt.AlignTop
+      }
+
+      NText {
+        Layout.fillWidth: true
+        text: I18n.tr("panels.mouse.live-fields-note")
         color: Color.mOnSurfaceVariant
         pointSize: Style.fontSizeS
         wrapMode: Text.WordWrap
@@ -317,6 +351,15 @@ ColumnLayout {
     onSelected: key => Settings.data.pointer.clickMethod = key
   }
 
+  NText {
+    Layout.fillWidth: true
+    visible: root.globalPointerLive
+    text: I18n.tr("panels.mouse.click-method-note")
+    color: Color.mOnSurfaceVariant
+    pointSize: Style.fontSizeXS
+    wrapMode: Text.WordWrap
+  }
+
   NToggle {
     Layout.fillWidth: true
     label: I18n.tr("panels.mouse.middle-click-emulation-label")
@@ -362,7 +405,7 @@ ColumnLayout {
 
   NText {
     Layout.fillWidth: true
-    visible: PointerInputService.canApply
+    visible: root.globalPointerLive
     text: I18n.tr("panels.mouse.horizontal-scroll-note")
     color: Color.mOnSurfaceVariant
     pointSize: Style.fontSizeXS

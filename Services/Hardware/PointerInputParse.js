@@ -20,13 +20,14 @@
 //     mapping object to a safe canonical form.
 //   * filterEnabledDevices(devices, disabledIds) — drop devices the user has
 //     disabled, matching by device id.
-// These are persist-only: NONE of them build or emit a command string. Device
-// ids are opaque data; they are never shell-interpolated anywhere in qdshell.
+// These advanced helpers are persist-only: NONE of them build or emit a command
+// string. Device ids are opaque data; they are never shell-interpolated anywhere
+// in qdshell.
 //
-// qdshell is qdwin-only and qdwin_shell_v1 has no pointer-config request yet,
-// so pointer settings are persist-only — there is no live-apply command
-// builder here (the previous sway `swaymsg input …` builder was removed when
-// the foreign-compositor dispatch was dropped).
+// qdshell is qdwin-only. Global pointer live apply goes through
+// qdwin_shell_v1.set_pointer_config when v28 is available; this parser module
+// must still never build live-apply commands (the previous sway `swaymsg input
+// …` builder was removed when the foreign-compositor dispatch was dropped).
 
 // ─── libinput list-devices parsing ──────────────────────────────────
 // Devices are separated by blank lines; each block has "Device:",
