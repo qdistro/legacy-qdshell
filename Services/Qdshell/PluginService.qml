@@ -44,6 +44,7 @@ Singleton {
 
     // Track currently installing plugins: { pluginId: true }
     property var installingPlugins: ({})
+    readonly property string pluginHelperScript: Quickshell.shellDir + "/Scripts/python/src/plugins/plugin-helper.py"
 
     // Hot reload: file watchers for plugin directories
     property var pluginFileWatchers: ({}) // { pluginId: FileView }
@@ -267,10 +268,7 @@ Singleton {
         var repoUrl = source.url;
         Logger.d("PluginService", "Fetching registry from:", repoUrl);
 
-        // Use git sparse-checkout to fetch only registry.json (--no-cone for single file)
-        // GIT_TERMINAL_PROMPT=0 prevents hanging on private repos that need auth
-        var fetchCmd = "temp_dir=$(mktemp -d) && GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --sparse --depth=1 --quiet '" + repoUrl + "' \"$temp_dir\" 2>/dev/null && cd \"$temp_dir\" && git sparse-checkout set --no-cone /registry.json 2>/dev/null && cat \"$temp_dir/registry.json\"; rm -rf \"$temp_dir\"";
-        var fetchProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process { command: ["sh", "-c", "' + fetchCmd.replace(/"/g, '\\"') + '"]; stdout: StdioCollector {} }', root, "FetchRegistry_" + Date.now());
+        var fetchProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process { command: ["python3", ' + JSON.stringify(root.pluginHelperScript) + ', "fetch-registry", ' + JSON.stringify(repoUrl) + ']; stdout: StdioCollector {} }', root, "FetchRegistry_" + Date.now());
         activeFetches[source.url] = fetchProcess;
         fetchProcess.stdout.onStreamFinished.connect(function () {
                 var response = fetchProcess.stdout.text;
@@ -379,6 +377,13 @@ Singleton {
     function installPlugin(pluginMetadata, skipCollisionCheck, callback) {
         var pluginId = pluginMetadata.id;
         var source = pluginMetadata.source;
+        if (!PluginRegistry.isSafePluginId(pluginId)) {
+            var badIdMsg = "Invalid plugin id";
+            Logger.w("PluginService", badIdMsg, pluginId);
+            if (callback)
+                callback(false, badIdMsg);
+            return;
+        }
 
         // Check for collision first (skip when updating)
         if (!skipCollisionCheck) {
@@ -413,16 +418,11 @@ Singleton {
         var pluginDir = PluginRegistry.getPluginDir(compositeKey);
         var repoUrl = source.url;
 
-        // Use git sparse-checkout to clone only the plugin subfolder
-        // GIT_TERMINAL_PROMPT=0 prevents hanging on private repos that need auth
-        // Note: We download from the original pluginId folder in the repo, but save to compositeKey folder
-        var downloadCmd = "temp_dir=$(mktemp -d) && GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --sparse --depth=1 --quiet '" + repoUrl + "' \"$temp_dir\" 2>/dev/null && cd \"$temp_dir\" && git sparse-checkout set '" + pluginId + "' 2>/dev/null && mkdir -p '" + pluginDir + "' && cp -r \"$temp_dir/" + pluginId + "/.\" '" + pluginDir + "/'; exit_code=$?; rm -rf \"$temp_dir\"; exit $exit_code";
-
         // Mark as installing
         var newInstalling = Object.assign({}, root.installingPlugins);
         newInstalling[pluginId] = true;
         root.installingPlugins = newInstalling;
-        var downloadProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process { command: ["sh", "-c", "' + downloadCmd.replace(/"/g, '\\"') + '"] }', root, "DownloadPlugin_" + pluginId);
+        var downloadProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process { command: ["python3", ' + JSON.stringify(root.pluginHelperScript) + ', "install-plugin", ' + JSON.stringify(repoUrl) + ', ' + JSON.stringify(pluginId) + ', ' + JSON.stringify(pluginDir) + '] }', root, "DownloadPlugin_" + pluginId);
         downloadProcess.exited.connect(function (exitCode) {
                 // Mark as finished (remove from installing)
                 var currentInstalling = Object.assign({}, root.installingPlugins);

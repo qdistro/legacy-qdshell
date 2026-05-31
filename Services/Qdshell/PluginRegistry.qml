@@ -540,6 +540,10 @@ Singleton {
         return root.pluginsDir + "/" + pluginId;
     }
 
+    function isSafePluginId(pluginId) {
+        return /^[A-Za-z0-9_.-]+$/.test(String(pluginId || ""));
+    }
+
     // Get plugin settings file path
     function getPluginSettingsFile(pluginId) {
         return getPluginDir(pluginId) + "/settings.json";
@@ -561,6 +565,12 @@ Singleton {
                     "error": "Missing required field: " + required[i]
                 };
             }
+        }
+        if (!isSafePluginId(manifest.id)) {
+            return {
+                "valid": false,
+                "error": "Invalid plugin id"
+            };
         }
         if (!manifest.entryPoints) {
             return {
