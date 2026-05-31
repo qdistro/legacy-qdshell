@@ -14,8 +14,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
-COMPOSITE_KEY_RE = re.compile(r"^(?:[A-Fa-f0-9]{6}:)?[A-Za-z0-9_.-]+$")
+PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+COMPOSITE_KEY_RE = re.compile(r"^(?:[A-Fa-f0-9]{6}:)?[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 
 
 def _validate_repo_url(url: str) -> None:
@@ -27,18 +27,21 @@ def _validate_repo_url(url: str) -> None:
         elif not parsed.netloc:
             raise ValueError("repository URL is missing a host")
         return
-    if re.match(r"^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:.+", url):
+    if re.fullmatch(r"[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:[^\s]+", url):
         return
     raise ValueError("unsupported repository URL")
 
 
 def _validate_plugin_id(plugin_id: str) -> None:
-    if not PLUGIN_ID_RE.fullmatch(plugin_id):
+    if not PLUGIN_ID_RE.fullmatch(plugin_id) or plugin_id in (".", ".."):
         raise ValueError("invalid plugin id")
 
 
 def _validate_composite_key(composite_key: str) -> None:
     if not COMPOSITE_KEY_RE.fullmatch(composite_key):
+        raise ValueError("invalid plugin install key")
+    suffix = composite_key.rsplit(":", 1)[-1]
+    if suffix in (".", ".."):
         raise ValueError("invalid plugin install key")
 
 
@@ -58,9 +61,9 @@ def _run(argv: list[str], cwd: Path | None = None) -> None:
 def _clone_sparse(repo_url: str, checkout: str, temp_dir: Path) -> None:
     _run([
         "git", "clone", "--filter=blob:none", "--sparse", "--depth=1",
-        "--quiet", repo_url, str(temp_dir),
+        "--quiet", "--", repo_url, str(temp_dir),
     ])
-    _run(["git", "sparse-checkout", "set", "--no-cone", checkout], cwd=temp_dir)
+    _run(["git", "sparse-checkout", "set", "--no-cone", "--", checkout], cwd=temp_dir)
 
 
 def fetch_registry(repo_url: str) -> int:

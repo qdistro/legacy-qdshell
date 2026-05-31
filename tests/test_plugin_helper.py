@@ -27,7 +27,17 @@ def test_plugin_id_accepts_safe_names(plugin_id):
     plugin_helper._validate_plugin_id(plugin_id)
 
 
-@pytest.mark.parametrize("plugin_id", ["../x", "x/y", "x;y", "x y", ""])
+@pytest.mark.parametrize("plugin_id", [
+    "../x",
+    ".",
+    "..",
+    "--stdin",
+    "-rf",
+    "x/y",
+    "x;y",
+    "x y",
+    "",
+])
 def test_plugin_id_rejects_path_and_shell_syntax(plugin_id):
     with pytest.raises(ValueError):
         plugin_helper._validate_plugin_id(plugin_id)
@@ -49,6 +59,7 @@ def test_repo_url_accepts_git_urls(url):
     "https:///repo",
     "data:text/plain,repo",
     "blob:https://example.test/abc",
+    "git@example.test:repo\nx",
 ])
 def test_repo_url_rejects_unsafe_shapes(url):
     with pytest.raises(ValueError):
@@ -85,3 +96,16 @@ def test_install_plugin_preserves_existing_settings(tmp_path, monkeypatch):
     assert (dest / "settings.json").read_text(encoding="utf-8") == '{"keep": true}'
     assert (dest / "old.txt").read_text(encoding="utf-8") == "new"
     assert (dest / "manifest.json").is_file()
+
+
+def test_clone_sparse_uses_end_of_options_separator(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(argv, cwd=None):
+        calls.append((argv, cwd))
+
+    monkeypatch.setattr(plugin_helper, "_run", fake_run)
+    plugin_helper._clone_sparse("https://example.test/repo.git", "safe", tmp_path)
+
+    assert calls[0][0][-3:] == ["--", "https://example.test/repo.git", str(tmp_path)]
+    assert calls[1][0][-2:] == ["--", "safe"]
