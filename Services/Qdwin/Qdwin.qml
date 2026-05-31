@@ -94,9 +94,9 @@ Singleton {
         if (!qdwinBinding || !qdwinBinding.bound) return;
         if (qdwinBinding.setWorkspaceName === undefined) return;  // < v27 plugin
         var names = _settingsWorkspaceNames || [];
-        var bound = qdwinBinding.workspaceCount > 0;
-        var count = bound ? qdwinBinding.workspaceCount
-                          : Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        var desired = Math.max(1, Math.min(_settingsWorkspaceCount, 32));
+        var live = qdwinBinding.workspaceCount > 0 ? qdwinBinding.workspaceCount : 0;
+        var count = Math.max(desired, live);
         for (var i = 0; i < count; i++) {
             var nm = (i < names.length && names[i] !== undefined) ? names[i] : "";
             qdwinBinding.setWorkspaceName(i, nm);
