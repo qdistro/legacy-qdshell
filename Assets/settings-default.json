@@ -469,6 +469,9 @@
     "acBrightnessLevel": 100,
     "batteryBrightnessLevel": 40
   },
+  "display": {
+    "primaryOutput": ""
+  },
   "removableMedia": {
     "enabled": true,
     "notifyOnInsert": true,

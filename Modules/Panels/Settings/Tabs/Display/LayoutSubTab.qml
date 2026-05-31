@@ -41,7 +41,8 @@ ColumnLayout {
   // Rebuild the working copy from the live binding snapshot.
   function reload() {
     working = OutputLayout.withPrimary(
-      OutputLayout.layoutFromSnapshots(Qdwin.outputs));
+      OutputLayout.layoutFromSnapshots(Qdwin.outputs),
+      Settings.data.display.primaryOutput || "");
     baseSerial = Qdwin.outputSerial;
     workingChanged();
   }
@@ -73,6 +74,8 @@ ColumnLayout {
       next.push(copy);
     }
     working = OutputLayout.withPrimary(next);
+    if (settingPrimary)
+      Settings.data.display.primaryOutput = OutputLayout.choosePrimary(working);
     workingChanged();
   }
 

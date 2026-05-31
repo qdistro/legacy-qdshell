@@ -704,6 +704,13 @@ Singleton {
       property int batteryBrightnessLevel: 40
     }
 
+    // display/output preferences that are shell-side rather than protocol
+    // state. qdwin's output-management protocol has no primary flag; this
+    // persisted hint chooses which output qdshell treats as primary.
+    property JsonObject display: JsonObject {
+      property string primaryOutput: ""
+    }
+
     // removable media (USB sticks / SD cards / external disks). All
     // mount/unmount actions are brokered through the qdistro broker via
     // qdistro-media-exec — qdshell never mounts directly. Autorun NEVER

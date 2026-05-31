@@ -159,6 +159,14 @@ assert.strictEqual(OL.choosePrimary([
     { name: "Zeta", enabled: true, x: 100, y: 0 },
     { name: "Alpha", enabled: true, x: 200, y: 0 }
 ]), "Alpha", "no flag, none at origin → stable lowest name");
+assert.strictEqual(OL.choosePrimary([
+    { name: "A", enabled: true, x: 0, y: 0 },
+    { name: "B", enabled: true, x: 1920, y: 0 }
+], "B"), "B", "persisted primary preference honoured");
+assert.strictEqual(OL.choosePrimary([
+    { name: "A", enabled: true, x: 0, y: 0 },
+    { name: "B", enabled: false, x: 1920, y: 0 }
+], "B"), "A", "disabled persisted primary ignored");
 
 var wp = OL.withPrimary([
     { name: "A", enabled: true, x: 0, y: 0 },
@@ -166,6 +174,13 @@ var wp = OL.withPrimary([
 ]);
 assert.strictEqual(wp[0].primary, true, "A at origin is primary");
 assert.strictEqual(wp[1].primary, false);
+var wpPersisted = OL.withPrimary([
+    { name: "A", enabled: true, x: 0, y: 0 },
+    { name: "B", enabled: true, x: 1920, y: 0 }
+], "B");
+assert.strictEqual(wpPersisted[0].primary, false);
+assert.strictEqual(wpPersisted[1].primary, true,
+    "withPrimary applies persisted primary preference");
 
 // ─── nextRevertState (confirm-or-revert state machine) ──────────────
 assert.deepStrictEqual(OL.nextRevertState("idle", "apply"),

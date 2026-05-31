@@ -214,10 +214,14 @@ function normalizePositions(layout) {
 // `primary: true` flag on an enabled output if present; else picks the
 // enabled output at (0,0) if any; else the first enabled output by name.
 // Returns the chosen output's name, or "" if none enabled.
-function choosePrimary(layout) {
+function choosePrimary(layout, preferredName) {
     layout = layout || [];
     var enabled = layout.filter(function (e) { return e.enabled; });
     if (enabled.length === 0) return "";
+    if (preferredName) {
+        for (var p = 0; p < enabled.length; p++)
+            if (enabled[p].name === preferredName) return enabled[p].name;
+    }
     for (var i = 0; i < enabled.length; i++)
         if (enabled[i].primary) return enabled[i].name;
     for (var j = 0; j < enabled.length; j++)
@@ -230,8 +234,8 @@ function choosePrimary(layout) {
 
 // Apply choosePrimary's result back onto the layout (sets primary flags so
 // exactly the chosen output is primary). Returns a new array.
-function withPrimary(layout) {
-    var chosen = choosePrimary(layout);
+function withPrimary(layout, preferredName) {
+    var chosen = choosePrimary(layout, preferredName);
     return (layout || []).map(function (e) {
         var copy = {};
         for (var k in e) copy[k] = e[k];
