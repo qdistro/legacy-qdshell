@@ -9,7 +9,7 @@ Item {
   // Provider metadata
   property string name: I18n.tr("launcher.providers.clipboard")
   property var launcher: null
-  property string iconMode: Settings.data.appLauncher.iconMode
+  property string iconMode: LauncherSettings.iconMode
   property string supportedLayouts: "list" // List view for clipboard content
   property bool wrapNavigation: false // Don't wrap at end of list
 
@@ -17,7 +17,7 @@ Item {
   property bool handleSearch: false // Don't handle regular search
 
   // Preview support
-  property bool hasPreview: Settings.data.appLauncher.enableClipPreview
+  property bool hasPreview: LauncherSettings.enableClipPreview
   property string previewComponentPath: "./ClipboardPreview.qml"
 
   // Image handling - expose revision for reactive updates in delegates
@@ -218,7 +218,7 @@ Item {
 
       // Add activation handler
       entry.onActivate = function () {
-        if (Settings.data.appLauncher.autoPasteClipboard) {
+        if (LauncherSettings.autoPasteClipboard) {
           launcher.closeImmediately();
           Qt.callLater(() => {
                          ClipboardService.pasteFromClipboard(item.id, item.mime);
@@ -318,12 +318,12 @@ Item {
     var actions = [];
 
     // Annotation tool for images
-    if (item.isImage && Settings.data.appLauncher.screenshotAnnotationTool !== "") {
+    if (item.isImage && LauncherSettings.screenshotAnnotationTool !== "") {
       actions.push({
                      "icon": "pencil",
                      "tooltip": I18n.tr("tooltips.open-annotation-tool"),
                      "action": function () {
-                       var tool = Settings.data.appLauncher.screenshotAnnotationTool;
+                       var tool = LauncherSettings.screenshotAnnotationTool;
                        Quickshell.execDetached(["sh", "-c", "cliphist decode " + item.clipboardId + " | " + tool]);
                        if (launcher)
                          launcher.close();

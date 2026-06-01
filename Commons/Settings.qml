@@ -16,6 +16,8 @@ Singleton {
   property bool isLoaded: false
   property bool reloadSettings: false
   property bool directoriesCreated: false
+  property bool repairReloadPending: false
+  property bool settingsAdapterAttached: false
   // Setup wizard stripped in qdshell — kept as inert false so any
   // residual references short-circuit harmlessly.
   readonly property bool shouldOpenSetupWizard: false
@@ -53,7 +55,7 @@ Singleton {
     Quickshell.execDetached(["mkdir", "-p", configDir]);
     Quickshell.execDetached(["mkdir", "-p", cacheDir]);
 
-    // Mark directories as created and trigger file loading
+    // Mark directories as created and make the raw FileView path available.
     directoriesCreated = true;
 
     // This should only be activated once when the settings structure has changed
@@ -70,8 +72,13 @@ Singleton {
     adapter.ui.fontDefault = Qt.application.font.family;
     adapter.ui.fontFixed = "monospace";
 
-    // Set the adapter to the settingsFileView to trigger the real settings load
-    settingsFileView.adapter = adapter;
+    // Repair the raw JSON before attaching JsonAdapter. The adapter can crash
+    // if a persisted file contains null for a JsonObject section.
+    if (repairSettingsFileIfNeeded()) {
+      return;
+    }
+
+    attachSettingsAdapter();
   }
 
   // Don't write settings to disk immediately
@@ -87,7 +94,7 @@ Singleton {
 
   FileView {
     id: settingsFileView
-    path: directoriesCreated ? settingsFile : undefined
+    path: settingsAdapterAttached ? settingsFile : undefined
     printErrors: false
     watchChanges: true
     onAdapterUpdated: saveTimer.start()
@@ -104,7 +111,14 @@ Singleton {
       }
     }
     onLoaded: function () {
+      if (!settingsAdapterAttached) {
+        return;
+      }
       if (!isLoaded) {
+        if (repairSettingsFileIfNeeded()) {
+          return;
+        }
+
         Logger.i("Settings", "Settings loaded");
 
         // qdshell: migrations stripped (fresh schema v1). Just stamp
@@ -138,11 +152,80 @@ Singleton {
     id: defaultSettingsFileView
     path: Quickshell.shellDir + "/Assets/settings-default.json"
     printErrors: false
+    blockLoading: true
     watchChanges: false
+  }
+
+  FileView {
+    id: rawSettingsFileView
+    path: directoriesCreated ? settingsFile : undefined
+    printErrors: false
+    blockLoading: true
+    blockWrites: true
+    watchChanges: false
+    onSaved: function () {
+      if (repairReloadPending) {
+        repairReloadPending = false;
+        if (!settingsAdapterAttached) {
+          attachSettingsAdapter();
+        } else {
+          settingsFileView.reload();
+        }
+      }
+    }
   }
 
   // Cached default settings object
   property var _defaultSettings: null
+
+  function attachSettingsAdapter() {
+    if (settingsAdapterAttached) {
+      return;
+    }
+
+    settingsAdapterAttached = true;
+    settingsFileView.adapter = adapter;
+  }
+
+  function ensureDefaultSettingsLoaded() {
+    if (root._defaultSettings) {
+      return true;
+    }
+
+    try {
+      var text = defaultSettingsFileView.text();
+      if (text && text.trim() !== "") {
+        root._defaultSettings = JSON.parse(text);
+        return true;
+      }
+    } catch (e) {
+      Logger.w("Settings", "Failed to parse default settings file: " + e);
+    }
+
+    return false;
+  }
+
+  function repairSettingsFileIfNeeded() {
+    if (!ensureDefaultSettingsLoaded()) {
+      Logger.w("Settings", "Default settings unavailable; cannot repair settings file");
+      return false;
+    }
+
+    var currentText = rawSettingsFileView.text();
+    var current = SettingsRecovery.parseConfig(currentText);
+    var recovered = SettingsRecovery.recoverConfig(currentText, root._defaultSettings);
+    var currentJson = current === null ? "" : JSON.stringify(current);
+    var recoveredJson = JSON.stringify(recovered.data);
+
+    if (currentJson === recoveredJson) {
+      return false;
+    }
+
+    Logger.w("Settings", "Repairing malformed or incomplete settings file");
+    repairReloadPending = true;
+    rawSettingsFileView.setText(JSON.stringify(recovered.data, null, 2) + "\n");
+    return true;
+  }
 
   // Load default settings when file is loaded
   Connections {
@@ -794,6 +877,26 @@ Singleton {
       property string imageViewer: ""
       property string audioPlayer: ""
       property string videoPlayer: ""
+    }
+
+    // power
+    property JsonObject power: JsonObject {
+      property string powerButtonAction: "ask"
+      property string sleepButtonAction: "suspend"
+      property string lidCloseOnBattery: "suspend"
+      property string lidCloseOnAC: "nothing"
+      property bool lidIgnoreExternalDisplay: true
+      property int inactivityTimeoutBattery: 15
+      property int inactivityTimeoutAC: 30
+      property string inactivityAction: "suspend"
+      property int criticalBatteryLevel: 5
+      property string criticalBatteryAction: "hibernate"
+      property int displayOffBattery: 5
+      property int displayOffAC: 15
+      property bool presentationMode: false
+      property int presentationAutoDisableMinutes: 0
+      property bool inhibitWhenFullscreen: false
+      property bool disableNotificationsWhileInhibited: false
     }
 
     // appearance

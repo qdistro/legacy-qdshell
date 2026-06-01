@@ -5,7 +5,7 @@ import qs.Commons
 Item {
   property var launcher: null
   property string name: I18n.tr("common.command")
-  property string iconMode: Settings.data.appLauncher.iconMode
+  property string iconMode: LauncherSettings.iconMode
 
   function handleCommand(query) {
     return query.startsWith(">cmd");

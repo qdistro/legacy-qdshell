@@ -304,7 +304,7 @@ Singleton {
                                                 // In another mode -> switch to app mode
                                                 PanelService.setLauncherSearchText(screen, "");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
     function clipboard() {
       root.screenDetector.withCurrentScreen(screen => {
@@ -320,7 +320,7 @@ Singleton {
                                                 // In another mode -> switch to clipboard mode
                                                 PanelService.setLauncherSearchText(screen, ">clip ");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
     function command() {
       root.screenDetector.withCurrentScreen(screen => {
@@ -333,7 +333,7 @@ Singleton {
                                               } else {
                                                 PanelService.setLauncherSearchText(screen, ">cmd ");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
     function emoji() {
       root.screenDetector.withCurrentScreen(screen => {
@@ -349,7 +349,7 @@ Singleton {
                                                 // In another mode -> switch to emoji mode
                                                 PanelService.setLauncherSearchText(screen, ">emoji ");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
     function windows() {
       root.screenDetector.withCurrentScreen(screen => {
@@ -362,7 +362,7 @@ Singleton {
                                               } else {
                                                 PanelService.setLauncherSearchText(screen, ">win ");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
     function settings() {
       root.screenDetector.withCurrentScreen(screen => {
@@ -375,7 +375,7 @@ Singleton {
                                               } else {
                                                 PanelService.setLauncherSearchText(screen, ">settings ");
                                               }
-                                            }, Settings.data.appLauncher.overviewLayer);
+                                            }, PanelService.launcherOverviewLayer());
     }
   }
 

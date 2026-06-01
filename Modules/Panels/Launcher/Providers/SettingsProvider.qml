@@ -10,9 +10,9 @@ Item {
   // Provider metadata
   property string name: I18n.tr("common.settings")
   property var launcher: null
-  property bool handleSearch: Settings.data.appLauncher.enableSettingsSearch
+  property bool handleSearch: LauncherSettings.enableSettingsSearch
   property string supportedLayouts: "list"
-  property string iconMode: Settings.data.appLauncher.iconMode
+  property string iconMode: LauncherSettings.iconMode
 
   property var searchIndex: []
 

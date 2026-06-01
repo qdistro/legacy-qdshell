@@ -188,7 +188,7 @@ Item {
   function isAppPinned(app) {
     if (!app)
       return false;
-    const pinnedApps = Settings.data.appLauncher.pinnedApps || [];
+    const pinnedApps = LauncherSettings.pinnedApps || [];
     const appId = getAppKey(app);
     const normalizedId = normalizeAppId(appId);
     return pinnedApps.some(pinnedId => normalizeAppId(pinnedId) === normalizedId);
@@ -243,7 +243,7 @@ Item {
     let hasPinned = false;
 
     // Check if there are any pinned apps
-    const pinnedApps = Settings.data.appLauncher.pinnedApps || [];
+    const pinnedApps = LauncherSettings.pinnedApps || [];
     if (pinnedApps.length > 0) {
       // Verify that at least one pinned app exists in entries
       for (let app of entries) {
@@ -423,7 +423,7 @@ Item {
     if (!query || query.trim() === "") {
       // Return filtered apps, optionally sorted by usage
       let sorted;
-      if (Settings.data.appLauncher.sortByMostUsed) {
+      if (LauncherSettings.sortByMostUsed) {
         sorted = filteredEntries.slice().sort((a, b) => {
                                                 // Pinned first
                                                 const aPinned = isAppPinned(a);
@@ -514,7 +514,7 @@ Item {
       "_score": (score !== undefined ? score : 0),
       "provider": root,
       "onActivate": function () {
-        if (Settings.data.appLauncher.sortByMostUsed) {
+        if (LauncherSettings.sortByMostUsed) {
           root.recordUsage(app);
         }
 
@@ -545,13 +545,13 @@ Item {
                          return;
                        }
 
-                       if (Settings.data.appLauncher.customLaunchPrefixEnabled && Settings.data.appLauncher.customLaunchPrefix) {
+                       if (LauncherSettings.customLaunchPrefixEnabled && LauncherSettings.customLaunchPrefix) {
                          // Use custom launch prefix
-                         const prefix = Settings.data.appLauncher.customLaunchPrefix.split(" ");
-                         Logger.d("ApplicationsProvider", `Using custom launch prefix: ${Settings.data.appLauncher.customLaunchPrefix}`);
+                         const prefix = LauncherSettings.customLaunchPrefix.split(" ");
+                         Logger.d("ApplicationsProvider", `Using custom launch prefix: ${LauncherSettings.customLaunchPrefix}`);
 
                          if (app.runInTerminal) {
-                           const terminal = Settings.data.appLauncher.terminalCommand.split(" ");
+                           const terminal = LauncherSettings.terminalCommand.split(" ");
                            const command = prefix.concat(terminal.concat(app.command));
                            Logger.d("ApplicationsProvider", `Executing command (with prefix and terminal): ${command.join(" ")}`);
                            Quickshell.execDetached(command);
@@ -560,7 +560,7 @@ Item {
                            Logger.d("ApplicationsProvider", `Executing command (with prefix): ${command.join(" ")}`);
                            Quickshell.execDetached(command);
                          }
-                       } else if (Settings.data.appLauncher.useApp2Unit && ProgramCheckerService.app2unitAvailable && app.id) {
+                       } else if (LauncherSettings.useApp2Unit && ProgramCheckerService.app2unitAvailable && app.id) {
                          Logger.d("ApplicationsProvider", `Using app2unit for: ${app.id}`);
                          if (app.runInTerminal)
                          Quickshell.execDetached(["app2unit", "--", app.id + ".desktop"]);
@@ -570,7 +570,7 @@ Item {
                          // Fallback logic when app2unit is not used
                          if (app.runInTerminal) {
                            Logger.d("ApplicationsProvider", "Executing terminal app manually: " + app.name);
-                           const terminal = Settings.data.appLauncher.terminalCommand.split(" ");
+                           const terminal = LauncherSettings.terminalCommand.split(" ");
                            const command = terminal.concat(app.command);
                            Logger.d("ApplicationsProvider", "Executing command (manual terminal): " + command.join(" "));
                            Qdwin.spawn(command);
@@ -613,13 +613,13 @@ Item {
     if (!appId)
       return;
     const normalizedId = normalizeAppId(appId);
-    let arr = (Settings.data.appLauncher.pinnedApps || []).slice();
+    let arr = (LauncherSettings.pinnedApps || []).slice();
     const idx = arr.findIndex(pinnedId => normalizeAppId(pinnedId) === normalizedId);
     if (idx >= 0)
       arr.splice(idx, 1);
     else
       arr.push(appId);
-    Settings.data.appLauncher.pinnedApps = arr;
+    LauncherSettings.setPinnedApps(arr);
   }
 
   // -------------------------

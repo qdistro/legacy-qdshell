@@ -53,6 +53,22 @@ const R = require("../Services/Qdshell/SettingsRecovery.js");
   const out2 = R.mergeDefaults({ list: [1, 2, 3] }, { list: [9] });
   assert.deepStrictEqual(out2.list, [9]);
 
+  // A persisted null for an object section is corruption, not a user override.
+  // This is the exact shape that broke launcher clicks: appLauncher was null,
+  // so Settings.data.appLauncher.overviewLayer threw before the panel opened.
+  const repairedSections = R.mergeDefaults({
+    appLauncher: { overviewLayer: false, position: "center" },
+    audio: { volumeStep: 5 },
+    widgets: [{ id: "Launcher" }],
+  }, {
+    appLauncher: null,
+    audio: null,
+    widgets: null,
+  });
+  assert.deepStrictEqual(repairedSections.appLauncher, { overviewLayer: false, position: "center" });
+  assert.deepStrictEqual(repairedSections.audio, { volumeStep: 5 });
+  assert.deepStrictEqual(repairedSections.widgets, [{ id: "Launcher" }]);
+
   // missing-object inherit is a CLONE (mutating result must not poison defaults)
   out.ui.fontDefault = "Mono";
   assert.strictEqual(defaults.ui.fontDefault, "Inter", "merge result is decoupled from defaults");

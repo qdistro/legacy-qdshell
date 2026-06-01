@@ -160,12 +160,12 @@ Item {
         id: clipboardScrollView
         Layout.fillWidth: true
         Layout.fillHeight: true
-        horizontalPolicy: Settings.data.appLauncher.clipboardWrapText ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
+        horizontalPolicy: LauncherSettings.clipboardWrapText ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
 
         NText {
           text: fullContent
-          width: Settings.data.appLauncher.clipboardWrapText ? clipboardScrollView.availableWidth : implicitWidth
-          wrapMode: Settings.data.appLauncher.clipboardWrapText ? Text.Wrap : Text.NoWrap
+          width: LauncherSettings.clipboardWrapText ? clipboardScrollView.availableWidth : implicitWidth
+          wrapMode: LauncherSettings.clipboardWrapText ? Text.Wrap : Text.NoWrap
           textFormat: Text.PlainText
           font.pointSize: Style.fontSizeM
           font.family: Settings.data.ui.fontFixed

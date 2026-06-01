@@ -11,7 +11,7 @@ Item {
   // Provider metadata
   property string name: I18n.tr("launcher.providers.calculator")
   property var launcher: null
-  property string iconMode: Settings.data.appLauncher.iconMode
+  property string iconMode: LauncherSettings.iconMode
   property bool handleSearch: true // Contribute to regular search
   property string supportedLayouts: "list"
 

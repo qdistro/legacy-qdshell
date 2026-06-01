@@ -59,7 +59,7 @@ Rectangle {
   readonly property var defaultProvider: appsProvider
   readonly property var currentProvider: activeProvider || defaultProvider
 
-  readonly property string launcherDensity: (currentProvider && currentProvider.ignoreDensity === false) ? (Settings.data.appLauncher.density || "default") : "comfortable"
+  readonly property string launcherDensity: (currentProvider && currentProvider.ignoreDensity === false) ? (LauncherSettings.density || "default") : "comfortable"
   readonly property int effectiveIconSize: launcherDensity === "comfortable" ? 48 : (launcherDensity === "default" ? 36 : 24)
   readonly property int badgeSize: Math.round(effectiveIconSize * Style.uiScaleRatio)
   readonly property int entryHeight: Math.round(badgeSize + (launcherDensity === "compact" ? (Style.marginL + Style.marginXXS) : (Style.marginXL + Style.marginS)))
@@ -77,7 +77,7 @@ Rectangle {
     if (!providerShowsCategories || providerCategories.length === 0)
       return false;
     if (currentProvider === defaultProvider)
-      return Settings.data.appLauncher.showCategories;
+      return LauncherSettings.showCategories;
     return true;
   }
 
@@ -106,7 +106,7 @@ Rectangle {
       return "single";
     if (providerHasDisplayString)
       return "grid";
-    return Settings.data.appLauncher.viewMode;
+    return LauncherSettings.viewMode;
   }
 
   readonly property bool isGridView: layoutMode === "grid"
@@ -383,7 +383,7 @@ Rectangle {
       const provider = item.provider || currentProvider;
 
       // Check if auto-paste is enabled and provider/item supports it
-      if (Settings.data.appLauncher.autoPasteClipboard && provider && provider.supportsAutoPaste && item.autoPasteText) {
+      if (LauncherSettings.autoPasteClipboard && provider && provider.supportsAutoPaste && item.autoPasteText) {
         if (item.onAutoPaste)
           item.onAutoPaste();
         closeImmediately();
@@ -536,7 +536,7 @@ Rectangle {
   ClipboardProvider {
     id: clipProvider
     Component.onCompleted: {
-      if (Settings.data.appLauncher.enableClipboardHistory) {
+      if (LauncherSettings.enableClipboardHistory) {
         registerProvider(this);
         Logger.d("Launcher", "Registered: ClipboardProvider");
       }
@@ -604,7 +604,7 @@ Rectangle {
 
   HoverHandler {
     id: globalHoverHandler
-    enabled: !Settings.data.appLauncher.ignoreMouseInput
+    enabled: !LauncherSettings.ignoreMouseInput
 
     onPointChanged: {
       if (!root.mouseTrackingReady) {
@@ -661,12 +661,12 @@ Rectangle {
 
       NIconButton {
         visible: root.showLayoutToggle
-        icon: Settings.data.appLauncher.viewMode === "grid" ? "layout-list" : "layout-grid"
-        tooltipText: Settings.data.appLauncher.viewMode === "grid" ? I18n.tr("tooltips.list-view") : I18n.tr("tooltips.grid-view")
+        icon: LauncherSettings.viewMode === "grid" ? "layout-list" : "layout-grid"
+        tooltipText: LauncherSettings.viewMode === "grid" ? I18n.tr("tooltips.list-view") : I18n.tr("tooltips.grid-view")
         customRadius: Style.iRadiusM
         Layout.preferredWidth: searchInput.height
         Layout.preferredHeight: searchInput.height
-        onClicked: Settings.data.appLauncher.viewMode = Settings.data.appLauncher.viewMode === "grid" ? "list" : "grid"
+        onClicked: LauncherSettings.toggleViewMode()
       }
     }
 
@@ -727,7 +727,7 @@ Rectangle {
         model: root.results
         currentIndex: root.selectedIndex
         cacheBuffer: resultsList.height * 2
-        interactive: !Settings.data.appLauncher.ignoreMouseInput
+        interactive: !LauncherSettings.ignoreMouseInput
         onCurrentIndexChanged: {
           cancelFlick();
           if (currentIndex >= 0) {
@@ -783,7 +783,7 @@ Rectangle {
                   anchors.fill: parent
                   radius: Style.radiusXS
                   color: Color.mSurfaceVariant
-                  visible: Settings.data.appLauncher.showIconBackground && !modelData.isImage
+                  visible: LauncherSettings.showIconBackground && !modelData.isImage
                 }
 
                 // Image preview - uses provider's getImageUrl if available
@@ -841,7 +841,7 @@ Rectangle {
                   sourceComponent: Component {
                     Loader {
                       anchors.fill: parent
-                      sourceComponent: Settings.data.appLauncher.iconMode === "tabler" && modelData.isTablerIcon ? tablerIconComponent : systemIconComponent
+                      sourceComponent: LauncherSettings.iconMode === "tabler" && modelData.isTablerIcon ? tablerIconComponent : systemIconComponent
                     }
                   }
 
@@ -851,7 +851,7 @@ Rectangle {
                       icon: modelData.icon
                       pointSize: Style.fontSizeXXXL
                       visible: modelData.icon && !modelData.displayString
-                      color: (entry.isSelected && !Settings.data.appLauncher.showIconBackground) ? Color.mOnHover : Color.mOnSurface
+                      color: (entry.isSelected && !LauncherSettings.showIconBackground) ? Color.mOnHover : Color.mOnSurface
                     }
                   }
 
@@ -989,7 +989,7 @@ Rectangle {
             z: -1
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            enabled: !Settings.data.appLauncher.ignoreMouseInput
+            enabled: !LauncherSettings.ignoreMouseInput
             onEntered: {
               if (!root.ignoreMouseHover) {
                 root.selectedIndex = index;
@@ -1098,7 +1098,7 @@ Rectangle {
         cacheBuffer: resultsGrid.height * 2
         keyNavigationEnabled: false
         focus: false
-        interactive: !Settings.data.appLauncher.ignoreMouseInput
+        interactive: !LauncherSettings.ignoreMouseInput
 
         // Completely disable GridView key handling
         Keys.enabled: false
@@ -1171,7 +1171,7 @@ Rectangle {
                   anchors.fill: parent
                   radius: Style.radiusM
                   color: Color.mSurfaceVariant
-                  visible: Settings.data.appLauncher.showIconBackground && !modelData.isImage
+                  visible: LauncherSettings.showIconBackground && !modelData.isImage
                 }
 
                 // Image preview - uses provider's getImageUrl if available
@@ -1223,7 +1223,7 @@ Rectangle {
                   visible: (!modelData.isImage && !modelData.displayString) || (!!modelData.isImage && gridImagePreview.status === Image.Error)
                   active: visible
 
-                  sourceComponent: Settings.data.appLauncher.iconMode === "tabler" && modelData.isTablerIcon ? gridTablerIconComponent : gridSystemIconComponent
+                  sourceComponent: LauncherSettings.iconMode === "tabler" && modelData.isTablerIcon ? gridTablerIconComponent : gridSystemIconComponent
 
                   Component {
                     id: gridTablerIconComponent
@@ -1231,7 +1231,7 @@ Rectangle {
                       icon: modelData.icon
                       pointSize: Style.fontSizeXXXL
                       visible: modelData.icon && !modelData.displayString
-                      color: (gridEntryContainer.isSelected && !Settings.data.appLauncher.showIconBackground) ? Color.mOnHover : Color.mOnSurface
+                      color: (gridEntryContainer.isSelected && !LauncherSettings.showIconBackground) ? Color.mOnHover : Color.mOnSurface
                     }
                   }
 
@@ -1364,7 +1364,7 @@ Rectangle {
             z: -1
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            enabled: !Settings.data.appLauncher.ignoreMouseInput
+            enabled: !LauncherSettings.ignoreMouseInput
 
             onEntered: {
               if (!root.ignoreMouseHover) {

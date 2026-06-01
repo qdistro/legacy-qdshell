@@ -222,6 +222,10 @@ Singleton {
     return null;
   }
 
+  function launcherOverviewLayer() {
+    return LauncherSettings.overviewLayer === true;
+  }
+
   // Helper to keep only one panel open at any time
   function willOpenPanel(panel) {
     // Close overlay launcher if open
@@ -247,7 +251,7 @@ Singleton {
 
   // Open launcher panel (handles both normal and overlay mode)
   function openLauncher(screen) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       // Close any regular panel first
       if (openedPanel) {
         closingPanel = openedPanel;
@@ -269,7 +273,7 @@ Singleton {
 
   // Toggle launcher panel
   function toggleLauncher(screen) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       if (overlayLauncherOpen && overlayLauncherScreen === screen) {
         closeOverlayLauncher();
       } else {
@@ -305,7 +309,7 @@ Singleton {
   // These methods work for both normal (SmartPanel) and overlay modes
 
   function isLauncherOpen(screen) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       return overlayLauncherOpen && overlayLauncherScreen === screen;
     } else {
       var panel = getPanel("launcherPanel", screen);
@@ -314,7 +318,7 @@ Singleton {
   }
 
   function getLauncherSearchText(screen) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       return overlayLauncherCore ? overlayLauncherCore.searchText : "";
     } else {
       var panel = getPanel("launcherPanel", screen);
@@ -323,7 +327,7 @@ Singleton {
   }
 
   function setLauncherSearchText(screen, text) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       if (overlayLauncherCore)
         overlayLauncherCore.setSearchText(text);
     } else {
@@ -334,7 +338,7 @@ Singleton {
   }
 
   function openLauncherWithSearch(screen, searchText) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       openLauncher(screen);
       // Set search text after core is ready
       Qt.callLater(() => {
@@ -351,7 +355,7 @@ Singleton {
   }
 
   function closeLauncher(screen) {
-    if (Settings.data.appLauncher.overviewLayer) {
+    if (launcherOverviewLayer()) {
       closeOverlayLauncher();
     } else {
       var panel = getPanel("launcherPanel", screen);

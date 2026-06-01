@@ -73,10 +73,17 @@ function mergeDefaults(defaults, user) {
     if (!Object.prototype.hasOwnProperty.call(defaults, k))
       continue;
     if (Object.prototype.hasOwnProperty.call(user, k)) {
-      if (_isPlainObject(defaults[k]) && _isPlainObject(user[k]))
-        out[k] = mergeDefaults(defaults[k], user[k]);
-      else
+      if (_isPlainObject(defaults[k])) {
+        out[k] = _isPlainObject(user[k])
+          ? mergeDefaults(defaults[k], user[k])
+          : JSON.parse(JSON.stringify(defaults[k]));
+      } else if (Array.isArray(defaults[k])) {
+        out[k] = Array.isArray(user[k])
+          ? user[k]
+          : JSON.parse(JSON.stringify(defaults[k]));
+      } else {
         out[k] = user[k];
+      }
     } else {
       // missing in user -> take default (clone objects/arrays defensively)
       out[k] = _isPlainObject(defaults[k]) || Array.isArray(defaults[k])
