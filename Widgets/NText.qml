@@ -8,11 +8,15 @@ Text {
 
   property bool richTextEnabled: false
   property bool markdownTextEnabled: false
-  property string family: Settings.data.ui.fontDefault
+  readonly property var uiSettings: Settings.data.ui || ({})
+  property string family: uiSettings.fontDefault || Qt.application.font.family
   property real pointSize: Style.fontSizeM
   property bool applyUiScale: true
   property real fontScale: {
-    const fontScale = (root.family === Settings.data.ui.fontDefault ? Settings.data.ui.fontDefaultScale : Settings.data.ui.fontFixedScale);
+    const defaultFont = uiSettings.fontDefault || Qt.application.font.family;
+    const defaultScale = uiSettings.fontDefaultScale || 1.0;
+    const fixedScale = uiSettings.fontFixedScale || 1.0;
+    const fontScale = (root.family === defaultFont ? defaultScale : fixedScale);
     if (applyUiScale) {
       return fontScale * Style.uiScaleRatio;
     }

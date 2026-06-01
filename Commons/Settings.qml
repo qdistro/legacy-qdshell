@@ -22,13 +22,17 @@ Singleton {
   // residual references short-circuit harmlessly.
   readonly property bool shouldOpenSetupWizard: false
   property bool isFreshInstall: false
+  property bool loadingSettingsData: false
 
   /*
   Shell directories.
   - Default config directory: ~/.config/qdshell
   - Default cache directory: ~/.cache/qdshell
   */
-  readonly property alias data: adapter  // Used to access via Settings.data.xxx.yyy
+  // Used to access via Settings.data.xxx.yyy. Keep this as a recovered plain
+  // object because JsonAdapter can expose nested JsonObject sections as null
+  // after loading, which breaks consumers before recovery can run.
+  property var data: ({})
   // qdshell ships fresh schema v1 — pre-fork Noctalia v27..v53 migration
   // chain dropped (Commons/Migrations/ removed). qdshell uses its own
   // ~/.config/qdshell/ dir so there's no upgrade path from Noctalia.
@@ -66,18 +70,13 @@ Singleton {
       generateWidgetDefaultSettings();
     }
 
-    // Patch-in the local default, resolved to user's home
-    adapter.general.avatarImage = defaultAvatar;
-    adapter.wallpaper.directory = defaultWallpapersDirectory;
-    adapter.ui.fontDefault = Qt.application.font.family;
-    adapter.ui.fontFixed = "monospace";
-
     // Repair the raw JSON before attaching JsonAdapter. The adapter can crash
     // if a persisted file contains null for a JsonObject section.
     if (repairSettingsFileIfNeeded()) {
       return;
     }
 
+    loadRuntimeSettings();
     attachSettingsAdapter();
   }
 
@@ -119,11 +118,12 @@ Singleton {
           return;
         }
 
+        loadRuntimeSettings();
         Logger.i("Settings", "Settings loaded");
 
         // qdshell: migrations stripped (fresh schema v1). Just stamp
         // the version so any future migration framework has a baseline.
-        adapter.settingsVersion = settingsVersion;
+        data.settingsVersion = settingsVersion;
 
         // Emit the signal
         root.isLoaded = true;
@@ -140,7 +140,8 @@ Singleton {
       if (error.toString().includes("No such file") || error === 2) {
         // File doesn't exist, create it with default values
         root.isFreshInstall = true;
-        writeAdapter();
+        loadRuntimeSettings();
+        root.saveImmediate();
 
         // qdshell: setup wizard stripped, no-op on fresh install.
       }
@@ -166,6 +167,7 @@ Singleton {
     onSaved: function () {
       if (repairReloadPending) {
         repairReloadPending = false;
+        loadRuntimeSettings();
         if (!settingsAdapterAttached) {
           attachSettingsAdapter();
         } else {
@@ -184,7 +186,7 @@ Singleton {
     }
 
     settingsAdapterAttached = true;
-    settingsFileView.adapter = adapter;
+    Qt.callLater(settingsFileView.reload);
   }
 
   function ensureDefaultSettingsLoaded() {
@@ -203,6 +205,92 @@ Singleton {
     }
 
     return false;
+  }
+
+  function defineObservableSettingProperty(target, key, initialValue) {
+    var stored = makeObservableSettings(initialValue);
+    Object.defineProperty(target, key, {
+      enumerable: true,
+      configurable: true,
+      get: function () {
+        return stored;
+      },
+      set: function (newValue) {
+        stored = makeObservableSettings(newValue);
+        root.queueSettingsSave();
+      }
+    });
+  }
+
+  function isPlainObject(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function applyLocalRuntimeDefaults(target) {
+    if (!isPlainObject(target.general)) {
+      target.general = {};
+    }
+    if (!isPlainObject(target.wallpaper)) {
+      target.wallpaper = {};
+    }
+    if (!isPlainObject(target.ui)) {
+      target.ui = {};
+    }
+
+    target.general.avatarImage = defaultAvatar;
+    target.wallpaper.directory = defaultWallpapersDirectory;
+    target.ui.fontDefault = Qt.application.font.family;
+    target.ui.fontFixed = "monospace";
+  }
+
+  function queueSettingsSave() {
+    if (loadingSettingsData || !isLoaded) {
+      return;
+    }
+    saveTimer.start();
+  }
+
+  function makeObservableSettings(value) {
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) {
+        value[i] = makeObservableSettings(value[i]);
+      }
+      return value;
+    }
+
+    if (!isPlainObject(value)) {
+      return value;
+    }
+
+    if (value.__qdshellObservable === true) {
+      return value;
+    }
+
+    var keys = Object.keys(value);
+    for (var k = 0; k < keys.length; k++) {
+      defineObservableSettingProperty(value, keys[k], value[keys[k]]);
+    }
+
+    Object.defineProperty(value, "__qdshellObservable", {
+      value: true,
+      enumerable: false,
+      configurable: false
+    });
+
+    return value;
+  }
+
+  function loadRuntimeSettings() {
+    if (!ensureDefaultSettingsLoaded()) {
+      data = {};
+      return;
+    }
+
+    var recovered = SettingsRecovery.recoverConfig(rawSettingsFileView.text(), root._defaultSettings);
+    applyLocalRuntimeDefaults(recovered.data);
+    loadingSettingsData = true;
+    data = makeObservableSettings(recovered.data);
+    loadingSettingsData = false;
   }
 
   function repairSettingsFileIfNeeded() {
@@ -246,7 +334,8 @@ Singleton {
     property int settingsVersion: 0
 
     // bar
-    property JsonObject bar: JsonObject {
+    property JsonObject bar
+    bar: JsonObject {
       property string barType: "simple" // "simple", "floating", "framed"
       property string position: "top" // "top", "bottom", "left", or "right"
       property list<string> monitors: [] // holds bar visibility per monitor
@@ -346,7 +435,8 @@ Singleton {
     }
 
     // general
-    property JsonObject general: JsonObject {
+    property JsonObject general
+    general: JsonObject {
       property string avatarImage: ""
       property real dimmerOpacity: 0.2
       property bool showScreenCorners: false
@@ -380,7 +470,8 @@ Singleton {
       property list<string> lockScreenMonitors: [] // holds lock screen visibility per monitor
       property real lockScreenBlur: 0.0
       property real lockScreenTint: 0.0
-      property JsonObject keybinds: JsonObject {
+      property JsonObject keybinds
+      keybinds: JsonObject {
         property list<string> keyUp: ["Up"]
         property list<string> keyDown: ["Down"]
         property list<string> keyLeft: ["Left"]
@@ -400,7 +491,8 @@ Singleton {
     }
 
     // ui
-    property JsonObject ui: JsonObject {
+    property JsonObject ui
+    ui: JsonObject {
       property string fontDefault: ""
       property string fontFixed: ""
       property real fontDefaultScale: 1.0
@@ -420,7 +512,8 @@ Singleton {
     }
 
     // location
-    property JsonObject location: JsonObject {
+    property JsonObject location
+    location: JsonObject {
       property string name: defaultLocation
       property bool weatherEnabled: true
       property bool weatherShowEffects: true
@@ -436,7 +529,8 @@ Singleton {
     }
 
     // calendar
-    property JsonObject calendar: JsonObject {
+    property JsonObject calendar
+    calendar: JsonObject {
       property list<var> cards: [
         {
           "id": "calendar-header-card",
@@ -454,7 +548,8 @@ Singleton {
     }
 
     // wallpaper
-    property JsonObject wallpaper: JsonObject {
+    property JsonObject wallpaper
+    wallpaper: JsonObject {
       property bool enabled: true
       property string directory: ""
       property list<var> monitorDirectories: []
@@ -494,7 +589,8 @@ Singleton {
     }
 
     // applauncher
-    property JsonObject appLauncher: JsonObject {
+    property JsonObject appLauncher
+    appLauncher: JsonObject {
       property bool enableClipboardHistory: false
       property bool autoPasteClipboard: false
       property bool enableClipPreview: true
@@ -548,7 +644,8 @@ Singleton {
     }
 
     // control center
-    property JsonObject controlCenter: JsonObject {
+    property JsonObject controlCenter
+    controlCenter: JsonObject {
       // Position: close_to_bar_button, center, top_left, top_right, bottom_left, bottom_right, bottom_center, top_center
       property string position: "close_to_bar_button"
       property string diskPath: "/"
@@ -612,7 +709,8 @@ Singleton {
     }
 
     // system monitor
-    property JsonObject systemMonitor: JsonObject {
+    property JsonObject systemMonitor
+    systemMonitor: JsonObject {
       property int cpuWarningThreshold: 80
       property int cpuCriticalThreshold: 90
       property int tempWarningThreshold: 80
@@ -637,7 +735,8 @@ Singleton {
     }
 
     // dock
-    property JsonObject dock: JsonObject {
+    property JsonObject dock
+    dock: JsonObject {
       property bool enabled: true
       property string position: "bottom" // "top", "bottom", "left", "right"
       property string displayMode: "auto_hide" // "always_visible", "auto_hide", "exclusive"
@@ -659,7 +758,8 @@ Singleton {
     }
 
     // network
-    property JsonObject network: JsonObject {
+    property JsonObject network
+    network: JsonObject {
       property bool wifiEnabled: true
       property bool airplaneModeEnabled: false
       property bool bluetoothRssiPollingEnabled: false  // Opt-in Bluetooth RSSI polling (uses bluetoothctl)
@@ -671,7 +771,8 @@ Singleton {
     }
 
     // session menu
-    property JsonObject sessionMenu: JsonObject {
+    property JsonObject sessionMenu
+    sessionMenu: JsonObject {
       property bool enableCountdown: true
       property int countdownDuration: 10000
       property string position: "center"
@@ -714,7 +815,8 @@ Singleton {
     }
 
     // notifications
-    property JsonObject notifications: JsonObject {
+    property JsonObject notifications
+    notifications: JsonObject {
       property bool enabled: true
       property bool enableMarkdown: false
       property string density: "default" // "default", "compact"
@@ -727,12 +829,14 @@ Singleton {
       property int normalUrgencyDuration: 8
       property int criticalUrgencyDuration: 15
       property bool clearDismissed: true
-      property JsonObject saveToHistory: JsonObject {
+      property JsonObject saveToHistory
+      saveToHistory: JsonObject {
         property bool low: true
         property bool normal: true
         property bool critical: true
       }
-      property JsonObject sounds: JsonObject {
+      property JsonObject sounds
+      sounds: JsonObject {
         property bool enabled: false
         property real volume: 0.5
         property bool separateSounds: false
@@ -753,7 +857,8 @@ Singleton {
     }
 
     // on-screen display
-    property JsonObject osd: JsonObject {
+    property JsonObject osd
+    osd: JsonObject {
       property bool enabled: true
       property string location: "top_right"
       property int autoHideMs: 2000
@@ -764,7 +869,8 @@ Singleton {
     }
 
     // audio
-    property JsonObject audio: JsonObject {
+    property JsonObject audio
+    audio: JsonObject {
       property int volumeStep: 5
       property bool volumeOverdrive: false
       property int cavaFrameRate: 30
@@ -775,7 +881,8 @@ Singleton {
     }
 
     // brightness
-    property JsonObject brightness: JsonObject {
+    property JsonObject brightness
+    brightness: JsonObject {
       property int brightnessStep: 5
       property bool enforceMinimum: true
       property bool enableDdcSupport: false
@@ -790,7 +897,8 @@ Singleton {
     // display/output preferences that are shell-side rather than protocol
     // state. qdwin's output-management protocol has no primary flag; this
     // persisted hint chooses which output qdshell treats as primary.
-    property JsonObject display: JsonObject {
+    property JsonObject display
+    display: JsonObject {
       property string primaryOutput: ""
     }
 
@@ -800,7 +908,8 @@ Singleton {
     // executes anything off the device; the strongest auto-action is
     // opening a file manager at the mountpoint, and defaults are
     // prompt/ignore. See qdistro/doc/removable-media-design.md.
-    property JsonObject removableMedia: JsonObject {
+    property JsonObject removableMedia
+    removableMedia: JsonObject {
       property bool enabled: true
       // notify on insert/remove
       property bool notifyOnInsert: true
@@ -814,7 +923,9 @@ Singleton {
       property string autorunPolicy: "prompt"
     }
 
-    property JsonObject colorSchemes: JsonObject {
+    property JsonObject colorSchemes
+
+    colorSchemes: JsonObject {
       property bool useWallpaperColors: false
       property string predefinedScheme: "Qdshell (default)"
       property bool darkMode: true
@@ -826,14 +937,16 @@ Singleton {
     }
 
     // templates toggles
-    property JsonObject templates: JsonObject {
+    property JsonObject templates
+    templates: JsonObject {
       property list<var> activeTemplates: []
       // Format: [{ "id": "gtk", "enabled": true }, { "id": "qt", "enabled": true }, ...]
       property bool enableUserTheming: false
     }
 
     // night light
-    property JsonObject nightLight: JsonObject {
+    property JsonObject nightLight
+    nightLight: JsonObject {
       property bool enabled: false
       property bool forced: false
       property bool autoSchedule: true
@@ -844,7 +957,8 @@ Singleton {
     }
 
     // hooks
-    property JsonObject hooks: JsonObject {
+    property JsonObject hooks
+    hooks: JsonObject {
       property bool enabled: false
       property string wallpaperChange: ""
       property string darkModeChange: ""
@@ -857,18 +971,21 @@ Singleton {
     }
 
     // plugins
-    property JsonObject plugins: JsonObject {
+    property JsonObject plugins
+    plugins: JsonObject {
       property bool autoUpdate: false
     }
 
     // workspaces
-    property JsonObject workspaces: JsonObject {
+    property JsonObject workspaces
+    workspaces: JsonObject {
       property int count: 4
       property list<string> names: ["1", "2", "3", "4"]
     }
 
     // default applications
-    property JsonObject defaultApps: JsonObject {
+    property JsonObject defaultApps
+    defaultApps: JsonObject {
       property string browser: ""
       property string mail: ""
       property string fileManager: ""
@@ -880,7 +997,8 @@ Singleton {
     }
 
     // power
-    property JsonObject power: JsonObject {
+    property JsonObject power
+    power: JsonObject {
       property string powerButtonAction: "ask"
       property string sleepButtonAction: "suspend"
       property string lidCloseOnBattery: "suspend"
@@ -900,7 +1018,8 @@ Singleton {
     }
 
     // appearance
-    property JsonObject appearance: JsonObject {
+    property JsonObject appearance
+    appearance: JsonObject {
       property string iconTheme: ""
       property string cursorTheme: ""
       property int cursorSize: 24
@@ -912,7 +1031,8 @@ Singleton {
     }
 
     // font rendering (GTK xft + fontconfig)
-    property JsonObject fontRendering: JsonObject {
+    property JsonObject fontRendering
+    fontRendering: JsonObject {
       property int dpi: 0 // 0 = auto / system default
       property bool antialias: true
       property bool hinting: true
@@ -921,7 +1041,8 @@ Singleton {
     }
 
     // desktop widgets
-    property JsonObject desktopWidgets: JsonObject {
+    property JsonObject desktopWidgets
+    desktopWidgets: JsonObject {
       property bool enabled: false
       property bool gridSnap: false
       property list<var> monitorWidgets: []
@@ -932,7 +1053,8 @@ Singleton {
     // A self-contained layer that renders icons for the user's Desktop dir.
     // When `enabled` is false this module renders nothing and the desktop
     // behaves exactly as before (no regression to DesktopWidgets/Background).
-    property JsonObject desktopIcons: JsonObject {
+    property JsonObject desktopIcons
+    desktopIcons: JsonObject {
       property bool enabled: false
       // false = double-click to activate (default), true = single-click.
       property bool singleClick: false
@@ -948,7 +1070,8 @@ Singleton {
     }
 
     // session / autostart + save/restore (xfce4-session parity)
-    property JsonObject session: JsonObject {
+    property JsonObject session
+    session: JsonObject {
       property bool showSystemAutostart: true
       // Save the running app set automatically on logout.
       property bool saveOnLogout: false
@@ -959,7 +1082,8 @@ Singleton {
     }
 
     // accessibility
-    property JsonObject accessibility: JsonObject {
+    property JsonObject accessibility
+    accessibility: JsonObject {
       // Find-cursor pointer highlight (implemented fully as a shell overlay)
       property bool findCursorEnabled: true
       property string findCursorShortcut: "Super+Ctrl+C"
@@ -981,7 +1105,8 @@ Singleton {
     }
 
     // keyboard input (repeat, blink, layouts, NumLock, XKB)
-    property JsonObject keyboard: JsonObject {
+    property JsonObject keyboard
+    keyboard: JsonObject {
       // Key repeat: delay before repeat (ms) and repeats per second (Hz).
       property int repeatDelay: 500
       property int repeatRate: 25
@@ -1006,7 +1131,8 @@ Singleton {
     }
 
     // pointer / mouse & touchpad (libinput-style pointer settings)
-    property JsonObject pointer: JsonObject {
+    property JsonObject pointer
+    pointer: JsonObject {
       property string accelProfile: "adaptive"   // "adaptive" | "flat"
       property real pointerSpeed: 0.5             // 0.0 .. 1.0 (mapped to libinput -1..1)
       property bool naturalScroll: false
@@ -1054,7 +1180,8 @@ Singleton {
     // qdwin v25 (WindowManagerService.canApplyWmPolicy gated on the bind
     // version). Decoration theme + titlebar double-click remain persist-only.
     // qdwin-only — no sway/labwc dispatch.
-    property JsonObject windowManager: JsonObject {
+    property JsonObject windowManager
+    windowManager: JsonObject {
       // "click" (click-to-focus) | "follow-mouse" (focus-follows-mouse)
       property string focusPolicy: "click"
       // Delay (ms) before focus follows the pointer (focus-follows-mouse).
@@ -1343,7 +1470,7 @@ Singleton {
   // -----------------------------------------------------
   // Public function to trigger immediate settings saving
   function saveImmediate() {
-    settingsFileView.writeAdapter();
+    rawSettingsFileView.setText(JSON.stringify(data, null, 2) + "\n");
     root.settingsSaved(); // Emit signal after saving
   }
 
@@ -1420,7 +1547,7 @@ Singleton {
     var removedWidget = false;
     for (var s = 0; s < sections.length; s++) {
       const sectionName = sections[s];
-      const widgets = adapter.bar.widgets[sectionName];
+      const widgets = data.bar.widgets[sectionName];
       // Iterate backward through the widgets array, so it does not break when removing a widget
       for (var i = widgets.length - 1; i >= 0; i--) {
         var widget = widgets[i];
@@ -1437,7 +1564,7 @@ Singleton {
     const ccSections = ["left", "right"];
     for (var s = 0; s < ccSections.length; s++) {
       const sectionName = ccSections[s];
-      const shortcuts = adapter.controlCenter.shortcuts[sectionName];
+      const shortcuts = data.controlCenter.shortcuts[sectionName];
       for (var i = shortcuts.length - 1; i >= 0; i--) {
         var shortcut = shortcuts[i];
         if (!ControlCenterWidgetRegistry.hasWidget(shortcut.id)) {
@@ -1450,7 +1577,7 @@ Singleton {
 
     // -----------------
     // 3. remove any non existing desktop widget type
-    const monitorWidgets = adapter.desktopWidgets.monitorWidgets;
+    const monitorWidgets = data.desktopWidgets.monitorWidgets;
     for (var m = 0; m < monitorWidgets.length; m++) {
       const monitor = monitorWidgets[m];
       if (!monitor.widgets)
@@ -1467,10 +1594,11 @@ Singleton {
 
     // -----------------
     // 4. upgrade user widget settings
+    var upgradedWidget = false;
     for (var s = 0; s < sections.length; s++) {
       const sectionName = sections[s];
-      for (var i = 0; i < adapter.bar.widgets[sectionName].length; i++) {
-        var widget = adapter.bar.widgets[sectionName][i];
+      for (var i = 0; i < data.bar.widgets[sectionName].length; i++) {
+        var widget = data.bar.widgets[sectionName][i];
 
         // Check if widget registry supports user settings, if it does not, then there is nothing to do
         if (BarWidgetRegistry.widgetMetadata[widget.id] === undefined) {
@@ -1479,8 +1607,13 @@ Singleton {
 
         if (upgradeWidget(widget)) {
           Logger.d("Settings", `Upgraded ${widget.id} widget:`, JSON.stringify(widget));
+          upgradedWidget = true;
         }
       }
+    }
+
+    if (removedWidget || upgradedWidget) {
+      root.saveImmediate();
     }
   }
 
