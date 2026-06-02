@@ -1,8 +1,19 @@
 # qdshell
 
 A Wayland desktop shell for [qdistro](https://codeberg.org/qdistro/qdistro)
-— bar, panels, launcher, lock screen, notifications, OSD — running on
+— bar, panels, launcher, notifications, OSD, and settings — running on
 top of the [qdwin](https://codeberg.org/qdistro/qdwin) compositor.
+
+## Role in qdistro
+
+qdshell is the trusted desktop shell for the admin session. It renders the bar,
+panels, launcher, notification surfaces, OSD, settings, and qdistro-specific
+controls that let the owner see and operate silos. It is not the compositor and
+not the security broker; those live in [qdwin](../qdwin) and
+[qdistro](../qdistro) respectively.
+
+The runtime lock surface has moved out to [qdlocker](../qdlocker), so qdshell
+can crash or restart without owning the unlock decision.
 
 qdshell is a hard fork of [Noctalia](https://github.com/noctalia-dev/noctalia-shell)
 v4.5.0. The upstream history is preserved in this repository (reachable
@@ -16,8 +27,8 @@ published. See [CREDITS.md](CREDITS.md).
   `CompositorService` abstraction was dropped — qdshell binds Qdwin
   APIs directly.
 - Broker integration: every hook script and notification is mediated
-  by the qdistro broker. The user lock screen is wired to the
-  `qdistro-pwd` vault API.
+  by the qdistro broker. Runtime locking is delegated to qdlocker over
+  its control socket.
 - Strip pass: telemetry, the update channel, supporter banner, setup
   wizard, changelog, about box, wallhaven, and GitHub release plumbing
   were removed. The upstream migration chain was reset to schema v1.
