@@ -1004,13 +1004,13 @@ Singleton {
       property string lidCloseOnBattery: "suspend"
       property string lidCloseOnAC: "nothing"
       property bool lidIgnoreExternalDisplay: true
-      property int inactivityTimeoutBattery: 15
-      property int inactivityTimeoutAC: 30
-      property string inactivityAction: "suspend"
+      property int inactivityTimeoutBattery: 0
+      property int inactivityTimeoutAC: 0
+      property string inactivityAction: "nothing"
       property int criticalBatteryLevel: 5
       property string criticalBatteryAction: "hibernate"
-      property int displayOffBattery: 5
-      property int displayOffAC: 15
+      property int displayOffBattery: 0
+      property int displayOffAC: 0
       property bool presentationMode: false
       property int presentationAutoDisableMinutes: 0
       property bool inhibitWhenFullscreen: false
