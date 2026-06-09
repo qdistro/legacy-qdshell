@@ -132,9 +132,10 @@ Item {
         required property var modelData
         icon: root.resolveItemIcon(modelData.icon)
         // Untrusted item name — shown only as a tooltip label, never execed.
-        // The bar tooltip renders RichText, so HTML-escape the name to keep
-        // markup-looking names inert.
-        tooltipText: LauncherItems.escapeLabel(modelData.name)
+        // Pass it RAW: the bar tooltip renders RichText but HTML-escapes its
+        // content centrally (Services/UI/TooltipText.js), so escaping here too
+        // would double-escape ("AT&T" -> "AT&amp;T" on screen).
+        tooltipText: modelData.name
         tooltipDirection: BarService.getTooltipDirection(root.screenName)
         baseSize: Style.getCapsuleHeightForScreen(root.screenName)
         applyUiScale: false

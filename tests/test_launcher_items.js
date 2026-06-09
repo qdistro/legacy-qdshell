@@ -163,8 +163,8 @@ const LI = require("../Services/UI/LauncherItems.js");
   assert.strictEqual(n.name, evilName, "name preserved verbatim as an inert label");
   assert.strictEqual(n.command, "thunar");
 
-  // The name is HTML-escaped before going into the RichText tooltip, so a
-  // markup-looking name is rendered inert (not interpreted as markup).
+  // escapeLabel renders a markup-looking name inert in a RichText context
+  // (the tooltip now escapes centrally, but the utility's contract is unchanged).
   const esc = LI.escapeLabel('<b>Files</b> & "x" <br>');
   assert.ok(esc.indexOf("<") === -1 && esc.indexOf(">") === -1, "angle brackets escaped");
   assert.strictEqual(esc, "&lt;b&gt;Files&lt;/b&gt; &amp; &quot;x&quot; &lt;br&gt;");

@@ -69,11 +69,15 @@ function sanitizeName(name) {
   return asString(name).replace(/[\r\n\t]+/g, " ").trim();
 }
 
-// HTML-escape a label for safe use in a RichText context (the bar tooltip
-// renders its text as RichText, so a name like "<b>x" or "a<br>b" would
-// otherwise be interpreted as markup). Use this at the tooltip use-site; the
+// HTML-escape a label for safe use in a RichText context, so a name like
+// "<b>x" or "a<br>b" is rendered literally rather than parsed as markup. The
 // stored name itself stays verbatim (the settings editor shows it as a plain
 // text field). NEVER throws.
+//
+// NOTE: the bar tooltip no longer needs this at its use-site — it HTML-escapes
+// content centrally (Services/UI/TooltipText.js), so the launcher passes the
+// raw name through and the tooltip escapes once. Kept as a general utility for
+// any code that builds a RichText string itself.
 function escapeLabel(name) {
   return asString(name)
     .replace(/&/g, "&amp;")

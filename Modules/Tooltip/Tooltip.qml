@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import qs.Commons
 import qs.Widgets
+import "../../Services/UI/TooltipText.js" as TooltipText
 
 PopupWindow {
   id: root
@@ -156,9 +157,9 @@ PopupWindow {
       rows = content;
       text = "";
     } else {
-      // Convert \n to <br> for RichText format
-      const processedText = content.replace(/\n/g, '<br>');
-      text = processedText;
+      // Escape untrusted content (text renders as RichText), then convert
+      // \n to <br>. See Services/UI/TooltipText.js.
+      text = TooltipText.processTooltipText(content);
       rows = null;
     }
 
@@ -488,9 +489,9 @@ PopupWindow {
         rows = newContent;
         text = "";
       } else {
-        // Convert \n to <br> for RichText format
-        const processedText = newContent.replace(/\n/g, '<br>');
-        text = processedText;
+        // Escape untrusted content (text renders as RichText), then convert
+        // \n to <br>. See Services/UI/TooltipText.js.
+        text = TooltipText.processTooltipText(newContent);
         rows = null;
       }
 
