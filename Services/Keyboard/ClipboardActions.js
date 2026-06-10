@@ -18,6 +18,19 @@
 // capping the subject bounds the worst case.
 var REGEX_SUBJECT_CAP = 16384;
 
+// A cliphist entry id is always a bare non-negative integer. Every code path
+// that interpolates an id into an `sh -c` string (copy/paste/decode/delete)
+// MUST gate on this first, so a non-numeric id can never inject shell syntax.
+// Ids currently originate from cliphist's own `list` output (parsed with a
+// `^(\d+)` regex), so this is defence-in-depth rather than a live hole — but
+// the guard makes that property local to each call site instead of relying on
+// a far-away parser invariant. Returns the canonical trimmed id string when
+// valid, or null when the input is not a bare integer.
+function validId(id) {
+    var s = String(id === undefined || id === null ? "" : id).trim();
+    return /^\d+$/.test(s) ? s : null;
+}
+
 // Cap untrusted text before it is used as a RegExp subject.
 function regexSubject(text, cap) {
     var limit = (cap === undefined || cap === null) ? REGEX_SUBJECT_CAP : cap;
@@ -265,6 +278,7 @@ function buildActionExecution(rule, text, group1) {
 if (typeof module !== "undefined") {
     module.exports = {
         REGEX_SUBJECT_CAP: REGEX_SUBJECT_CAP,
+        validId: validId,
         regexSubject: regexSubject,
         compileRegex: compileRegex,
         ignoreMatches: ignoreMatches,

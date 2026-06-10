@@ -633,8 +633,8 @@ Singleton {
         cb("");
       return;
     }
-    const idStr = String(id).trim();
-    if (!/^\d+$/.test(idStr)) {
+    const idStr = ClipboardActions.validId(id);
+    if (idStr === null) {
       if (cb)
         cb("");
       return;
@@ -697,10 +697,20 @@ Singleton {
     if (root._b64Queue.length === 0 || !root.cliphistAvailable)
       return;
     const job = root._b64Queue.shift();
+    // Defence-in-depth: never interpolate a non-numeric id into `sh -c`. A bad
+    // id fails the job (empty result) and we advance to the next one.
+    const safeId = ClipboardActions.validId(job.id);
+    if (safeId === null) {
+      Logger.w("ClipboardService", "rejecting non-numeric cliphist id in decodeToDataUrl");
+      if (job.cb)
+        job.cb("");
+      Qt.callLater(() => _startNextB64());
+      return;
+    }
     root._b64CurrentCb = job.cb;
     root._b64CurrentMime = job.mime;
     root._b64CurrentId = job.id;
-    decodeB64Proc.command = ["sh", "-c", `cliphist decode ${job.id} | base64 -w 0`];
+    decodeB64Proc.command = ["sh", "-c", `cliphist decode ${safeId} | base64 -w 0`];
     decodeB64Proc.running = true;
   }
 
@@ -708,8 +718,13 @@ Singleton {
     if (!root.cliphistAvailable) {
       return;
     }
-    root.bumpUsage(id);
-    copyProc.command = ["sh", "-c", `cliphist decode ${id} | wl-copy`];
+    const safeId = ClipboardActions.validId(id);
+    if (safeId === null) {
+      Logger.w("ClipboardService", "copyToClipboard: rejecting non-numeric cliphist id");
+      return;
+    }
+    root.bumpUsage(safeId);
+    copyProc.command = ["sh", "-c", `cliphist decode ${safeId} | wl-copy`];
     copyProc.running = true;
   }
 
@@ -717,11 +732,16 @@ Singleton {
     if (!root.cliphistAvailable) {
       return;
     }
-    root.bumpUsage(id);
+    const safeId = ClipboardActions.validId(id);
+    if (safeId === null) {
+      Logger.w("ClipboardService", "pasteFromClipboard: rejecting non-numeric cliphist id");
+      return;
+    }
+    root.bumpUsage(safeId);
     const isImage = mime && mime.startsWith("image/");
     const typeArg = isImage ? ` --type ${mime}` : "";
     const pasteKeys = isImage ? "wtype -M ctrl -k v" : "wtype -M ctrl -M shift v";
-    const cmd = `cliphist decode ${id} | wl-copy${typeArg} && ${pasteKeys}`;
+    const cmd = `cliphist decode ${safeId} | wl-copy${typeArg} && ${pasteKeys}`;
     pasteProc.command = ["sh", "-c", cmd];
     pasteProc.running = true;
   }
@@ -742,7 +762,11 @@ Singleton {
     if (deleteProc.running) {
       return;
     }
-    const idStr = String(id).trim();
+    const idStr = ClipboardActions.validId(id);
+    if (idStr === null) {
+      Logger.w("ClipboardService", "deleteById: rejecting non-numeric cliphist id");
+      return;
+    }
     // Remove from cache
     delete root.contentCache[idStr];
     deleteProc.command = ["sh", "-c", `echo ${idStr} | cliphist delete`];
@@ -794,8 +818,8 @@ Singleton {
   function _purgeId(id) {
     if (!root.cliphistAvailable)
       return;
-    const idStr = String(id).trim();
-    if (!/^\d+$/.test(idStr))
+    const idStr = ClipboardActions.validId(id);
+    if (idStr === null)
       return;
     delete root.contentCache[idStr];
     delete root.firstSeenById[idStr];

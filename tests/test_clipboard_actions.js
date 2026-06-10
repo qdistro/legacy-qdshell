@@ -246,4 +246,42 @@ function entry(id, preview, isImage) {
     assert.ok(exec.argv[2].indexOf("A".repeat(100)) === -1);
 }
 
+// ---------------------------------------------------------------------------
+// Numeric-id guard: validId gates every id that is interpolated into an
+// `sh -c` cliphist command (copy/paste/decode/delete). Only a bare
+// non-negative integer is accepted (surrounding whitespace is trimmed off);
+// anything carrying shell metacharacters, interior whitespace, signs, or
+// non-digits is rejected (-> null).
+// ---------------------------------------------------------------------------
+{
+    // Valid: bare integers (and surrounding whitespace is trimmed off).
+    assert.strictEqual(ClipboardActions.validId("0"), "0");
+    assert.strictEqual(ClipboardActions.validId("42"), "42");
+    assert.strictEqual(ClipboardActions.validId(42), "42"); // number coerces
+    assert.strictEqual(ClipboardActions.validId("  7 "), "7"); // trimmed
+    assert.strictEqual(ClipboardActions.validId("007"), "007"); // leading zeros ok
+
+    // Invalid: every form that could carry shell syntax or is non-numeric.
+    const bad = [
+        "", "   ", "1a", "a1", "-1", "+1", "1.0", "1 2", "1;rm -rf ~",
+        "1 | wl-copy", "$(id)", "`id`", "1\n2", "1\t2", "0x10", "1e3",
+        "  ", "abc", null, undefined, {}, [], "12 34",
+        "1; touch /tmp/pwn", "1 && reboot"
+    ];
+    bad.forEach(function (v) {
+        assert.strictEqual(
+            ClipboardActions.validId(v), null,
+            "validId must reject non-numeric/unsafe id: " + JSON.stringify(v));
+    });
+
+    // The accepted value contains ONLY digits, so nothing it returns can ever
+    // introduce a shell metacharacter when interpolated into `cliphist decode
+    // <id>` / `echo <id> | cliphist delete`.
+    ["0", "1", "999999999"].forEach(function (v) {
+        const out = ClipboardActions.validId(v);
+        assert.ok(out !== null && /^\d+$/.test(out),
+            "accepted id must be pure digits: " + v);
+    });
+}
+
 console.log("clipboard-actions: all assertions passed");
