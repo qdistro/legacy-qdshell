@@ -246,4 +246,80 @@ function noDuplicateIds(entries) {
   assert.strictEqual(TaskbarLogic.normalizeAppId("  Firefox  "), "firefox");
 })();
 
+// ── qdistro isolation menu (D16 v1) ──
+(function testSiloTierLabel() {
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("qdistro.disp.deadbeef", "qdistro.tier2"),
+    "disposable (tier 2)");
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("qdistro.tier5.work-vm", ""), "tier 5 (VM)");
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("qdistro.tier4.work-vm", ""), "tier 4 (VM)");
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("qdistro.tier3.dev", ""), "tier 3 (VM app)");
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("c1/weston-terminal", "qdistro.tier2"),
+    "tier 2 (container)");
+  assert.strictEqual(TaskbarLogic.siloTierLabel("", ""), "native (tier 0/1)");
+  // disposable wins over the tier2 engine it rides on
+  assert.strictEqual(
+    TaskbarLogic.siloTierLabel("qdistro.disp.abc", "qdistro.tier2"),
+    "disposable (tier 2)");
+})();
+
+(function testIsDisposableWindow() {
+  // The authoritative signal is the secctx app_id, not the silo name.
+  assert.strictEqual(
+    TaskbarLogic.isDisposableWindow({ secctxAppId: "qdistro.disp.abc123" }), true);
+  assert.strictEqual(
+    TaskbarLogic.isDisposableWindow({ secctxAppId: "qdistro.tier2", silo: "work" }), false);
+  // A persistent silo merely NAMED disp-... is NOT disposable (no false
+  // positive off the silo name).
+  assert.strictEqual(
+    TaskbarLogic.isDisposableWindow({ secctxAppId: "qdistro.tier2", silo: "disp-trap" }), false);
+  assert.strictEqual(TaskbarLogic.isDisposableWindow(null), false);
+  assert.strictEqual(TaskbarLogic.isDisposableWindow({}), false);
+})();
+
+(function testBuildIsolationMenu_native_empty() {
+  // A native window (no secctx identity) gets NO qdistro section.
+  assert.deepStrictEqual(TaskbarLogic.buildIsolationMenuItems({}), []);
+  assert.deepStrictEqual(
+    TaskbarLogic.buildIsolationMenuItems({ secctxAppId: "", sandboxEngine: "", silo: "" }), []);
+})();
+
+(function testBuildIsolationMenu_tier2_noDispose() {
+  const items = TaskbarLogic.buildIsolationMenuItems({
+    secctxAppId: "c1/weston-terminal", sandboxEngine: "qdistro.tier2", silo: "dev"
+  });
+  const actions = items.map(function (i) { return i.action; });
+  // identity rows + snapshot + permissions, but NO dispose for a persistent silo
+  assert.ok(actions.indexOf("qd-snapshot") !== -1);
+  assert.ok(actions.indexOf("qd-permissions") !== -1);
+  assert.strictEqual(actions.indexOf("qd-dispose"), -1);
+  // identity rows are disabled + carry the tier + silo
+  const tierRow = items.find(function (i) { return i.action === "qd-id-tier"; });
+  assert.strictEqual(tierRow.enabled, false);
+  assert.ok(tierRow.label.indexOf("tier 2") !== -1);
+  const siloRow = items.find(function (i) { return i.action === "qd-id-silo"; });
+  assert.ok(siloRow.label.indexOf("dev") !== -1);
+  // every row is tagged so the QML/menu can distinguish the qdistro section
+  items.forEach(function (i) { assert.strictEqual(i.isQdistro, true); });
+})();
+
+(function testBuildIsolationMenu_disposable_hasDispose() {
+  const items = TaskbarLogic.buildIsolationMenuItems({
+    secctxAppId: "qdistro.disp.deadbeef", sandboxEngine: "qdistro.tier2",
+    silo: "disp-pdf-20260612-151828"
+  });
+  const actions = items.map(function (i) { return i.action; });
+  assert.ok(actions.indexOf("qd-dispose") !== -1);   // dispose IS shown
+  assert.ok(actions.indexOf("qd-snapshot") !== -1);
+  const tierRow = items.find(function (i) { return i.action === "qd-id-tier"; });
+  assert.ok(tierRow.label.indexOf("disposable") !== -1);
+  // the secctx context row is present and shows the app_id
+  const ctxRow = items.find(function (i) { return i.action === "qd-id-secctx"; });
+  assert.ok(ctxRow.label.indexOf("qdistro.disp.deadbeef") !== -1);
+})();
+
 console.log("taskbar-logic: all assertions passed");

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
@@ -633,6 +634,24 @@ Item {
           });
         }
       }
+
+      // qdistro isolation section (D16 v1): per-window silo identity rows +
+      // snapshot / dispose / permissions actions, built from the already-
+      // available secctx identity chain. Returns [] for native windows, so
+      // the menu is unchanged for non-silo apps. Shown only for a SINGLE
+      // selected window — a multi-window group can mix silos/identities, so
+      // a per-window isolation view (and especially its dispose action)
+      // would be ambiguous and could act on the wrong window.
+      const _qdWin = root.getSelectedWindow();
+      if (_qdWin && (!isGroup || wins.length <= 1)) {
+        const _qdItems = TaskbarLogic.buildIsolationMenuItems({
+                                                                "secctxAppId": _qdWin.secctxAppId,
+                                                                "sandboxEngine": _qdWin.sandboxEngine,
+                                                                "silo": root.qdSiloForWindow(_qdWin, entry)
+                                                              });
+        for (var _qi = 0; _qi < _qdItems.length; _qi++)
+          items.push(_qdItems[_qi]);
+      }
     }
     items.push({
                  "label": I18n.tr("actions.widget-settings"),
@@ -640,6 +659,72 @@ Item {
                  "icon": "settings"
                });
     return items;
+  }
+
+  // Derive the silo identity for a window the same way the rest of the
+  // shell does (Qdwin._siloForWindow -> ClipboardSilo.fromSecctx): Qdwin
+  // window rows carry secctx fields but NO `silo` role, so we cannot read it
+  // off the row directly. entry.silo (set for cold-start placeholders) is a
+  // fallback. Returns "" when nothing usable is derivable.
+  function qdSiloForWindow(win, entry) {
+    if (entry && entry.silo)
+      return entry.silo;
+    if (win && typeof Qdwin._siloForWindow === "function") {
+      const s = Qdwin._siloForWindow(win);
+      // _siloForWindow returns "unknown" when it cannot derive one.
+      return (s && s !== "unknown") ? s : "";
+    }
+    return "";
+  }
+
+  function qdSiloForSelected() {
+    return root.qdSiloForWindow(root.getSelectedWindow(), root.getSelectedEntry());
+  }
+
+  // Snapshot-now (D16): ask the broker to take a Snapper snapshot via its
+  // existing SnapshotBefore method (broker -> Snapper; no new protocol). The
+  // result is captured and toasted honestly — a wrong/unknown config surfaces
+  // the broker's real error rather than a false "done". The silo->Snapper-
+  // config mapping is best-effort for v1 (passes the derived silo as config);
+  // a dedicated per-silo config is a follow-up.
+  Process {
+    id: qdSnapshotProc
+    property string siloName: ""
+    stdout: StdioCollector {
+      id: qdSnapshotOut
+    }
+    stderr: StdioCollector {
+      id: qdSnapshotErr
+    }
+    onExited: (code, status) => {
+      if (code === 0) {
+        ToastService.showNotice(qsTr("Snapshot"), qsTr("Snapshot taken for %1").arg(qdSnapshotProc.siloName), "camera", 3000);
+      } else {
+        const msg = (qdSnapshotErr.text || "").trim() || qsTr("broker error");
+        ToastService.showError(qsTr("Snapshot failed"), msg, 6000);
+      }
+    }
+  }
+
+  function qdSnapshotNow(silo) {
+    if (!silo) {
+      ToastService.showWarning(qsTr("Snapshot"), qsTr("This window has no silo to snapshot."), 4000);
+      return;
+    }
+    // Guard the gdbus method arg: a value starting with '-' would be parsed
+    // as a gdbus option, not the config string. Not reachable from host-
+    // assigned secctx identities, but keep the invariant local.
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/:-]*$/.test(silo)) {
+      ToastService.showWarning(qsTr("Snapshot"), qsTr("Refusing to snapshot a silo with an unexpected name."), 4000);
+      return;
+    }
+    qdSnapshotProc.siloName = silo;
+    qdSnapshotProc.command = ["gdbus", "call", "--system",
+                              "--dest", "org.qdistro.AdminBroker1",
+                              "--object-path", "/org/qdistro/AdminBroker1",
+                              "--method", "org.qdistro.AdminBroker1.SnapshotBefore",
+                              silo, "qdistro: manual snapshot from taskbar"];
+    qdSnapshotProc.running = true;
   }
 
   NPopupContextMenu {
@@ -671,6 +756,25 @@ Item {
                      root.closeWindows(selectedWindows);
                    } else if (action === "widget-settings") {
                      BarService.openWidgetSettings(root.screen, root.section, root.sectionWidgetIndex, root.widgetId, root.widgetSettings);
+                   } else if (action === "qd-snapshot") {
+                     root.qdSnapshotNow(root.qdSiloForSelected());
+                   } else if (action === "qd-dispose") {
+                     // Dispose a tier-2 disposable: closing the window exits
+                     // the app, and the container is `podman run --rm`, so
+                     // that tears the disposable down (M3's teardown path);
+                     // the session-manager reaper sweeps any crash orphan.
+                     // Defence in depth: close ONLY windows that are actually
+                     // disposable, never a co-grouped persistent/native one
+                     // (the section is already gated to single windows).
+                     const _disp = selectedWindows.filter(function (w) {
+                                                            return w && TaskbarLogic.isDisposableWindow({ "secctxAppId": w.secctxAppId });
+                                                          });
+                     if (_disp.length > 0) {
+                       root.closeWindows(_disp);
+                       ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(root.qdSiloForSelected() || qsTr("silo")), "trash-2", 3000);
+                     }
+                   } else if (action === "qd-permissions") {
+                     ToastService.showNotice(qsTr("Permissions"), qsTr("Per-silo permissions view is coming soon."), "lock", 3000);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
                      if (item.desktopAction.command && item.desktopAction.command.length > 0) {
                        Quickshell.execDetached(item.desktopAction.command);

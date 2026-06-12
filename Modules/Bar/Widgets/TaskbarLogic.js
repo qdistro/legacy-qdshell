@@ -155,6 +155,87 @@ function applySortMode(entries, sortMode) {
   return entries;
 }
 
+// --- qdistro isolation menu (D16 v1) -------------------------------------
+// A per-window "qdistro" section for the taskbar context menu: shows the
+// window's silo identity (silo, isolation tier, secctx) and offers
+// snapshot / dispose / permissions actions. Pure: identity in, menu-model
+// rows out — the QML side reads Qdwin window fields and passes the
+// primitives, and dispatches the returned actions.
+
+// Human-readable isolation tier from the secctx identity. The app_id /
+// sandbox_engine prefix encodes the tier (see doc/isolation-tiers.md and the
+// secctx contract): qdistro.disp.<token> = a tier-2 disposable;
+// qdistro.tier4.<vm> = per-app VM; qdistro.tier3.<silo> = waypipe VM app;
+// qdistro.tier2 = rootless container. An empty identity is a native window.
+function siloTierLabel(secctxAppId, sandboxEngine) {
+  var id = (secctxAppId || "") + "";
+  var eng = (sandboxEngine || "") + "";
+  if (id.indexOf("qdistro.disp.") === 0)
+    return "disposable (tier 2)";
+  if (id.indexOf("qdistro.tier5.") === 0 || eng.indexOf("qdistro.tier5") === 0)
+    return "tier 5 (VM)";
+  if (id.indexOf("qdistro.tier4.") === 0 || eng.indexOf("qdistro.tier4") === 0)
+    return "tier 4 (VM)";
+  if (id.indexOf("qdistro.tier3.") === 0 || eng.indexOf("qdistro.tier3") === 0)
+    return "tier 3 (VM app)";
+  if (eng.indexOf("qdistro.tier2") === 0 || id.indexOf("qdistro.tier2") === 0)
+    return "tier 2 (container)";
+  if (!id && !eng)
+    return "native (tier 0/1)";
+  return "sandboxed";
+}
+
+// A window is a disposable iff its secctx app_id is qdistro.disp.<token>.
+// That is the authoritative, host-assigned signal (the same one the broker
+// gates on). We deliberately do NOT also match on a "disp-" silo name: the
+// derived silo for a disposable is "tier2/qdistro.disp.<token>", never a bare
+// "disp-…", so a silo-name check would be dead code AND could false-positive
+// on a persistent silo that merely happens to be named "disp-something".
+function isDisposableWindow(identity) {
+  if (!identity)
+    return false;
+  var id = (identity.secctxAppId || "") + "";
+  return id.indexOf("qdistro.disp.") === 0;
+}
+
+// Build the qdistro section of the taskbar context menu for one window's
+// identity. Returns [] for a native window (no secctx identity at all) so
+// the menu is UNCHANGED for non-silo apps. Identity rows are disabled
+// (informational, "show identity"); snapshot / dispose / permissions are
+// live actions the QML onTriggered handler dispatches. `dispose` only
+// appears for disposable windows.
+function buildIsolationMenuItems(identity) {
+  identity = identity || {};
+  var secctx = (identity.secctxAppId || "") + "";
+  var engine = (identity.sandboxEngine || "") + "";
+  var silo = (identity.silo || "") + "";
+  // Native window: no isolation identity -> no qdistro section.
+  if (!secctx && !engine && !silo)
+    return [];
+  var tier = siloTierLabel(secctx, engine);
+  var disposable = isDisposableWindow(identity);
+  var items = [];
+  // Identity (disabled, informational rows).
+  items.push({ "label": "qdistro silo", "action": "qd-header",
+               "icon": "shield", "enabled": false, "isQdistro": true });
+  items.push({ "label": "Silo: " + (silo || "(unnamed)"),
+               "action": "qd-id-silo", "enabled": false, "isQdistro": true });
+  items.push({ "label": "Isolation: " + tier,
+               "action": "qd-id-tier", "enabled": false, "isQdistro": true });
+  if (secctx)
+    items.push({ "label": "Context: " + secctx, "action": "qd-id-secctx",
+                 "enabled": false, "isQdistro": true });
+  // Actions.
+  items.push({ "label": "Snapshot now", "action": "qd-snapshot",
+               "icon": "camera", "isQdistro": true });
+  if (disposable)
+    items.push({ "label": "Dispose", "action": "qd-dispose",
+                 "icon": "trash-2", "isQdistro": true });
+  items.push({ "label": "Permissions…", "action": "qd-permissions",
+               "icon": "lock", "isQdistro": true });
+  return items;
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     normalizeAppId: normalizeAppId,
@@ -162,5 +243,8 @@ if (typeof module !== "undefined") {
     isRunningWindowEntry: isRunningWindowEntry,
     groupApps: groupApps,
     applySortMode: applySortMode,
+    siloTierLabel: siloTierLabel,
+    isDisposableWindow: isDisposableWindow,
+    buildIsolationMenuItems: buildIsolationMenuItems,
   };
 }
