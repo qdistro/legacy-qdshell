@@ -281,6 +281,37 @@ function noDuplicateIds(entries) {
   assert.strictEqual(TaskbarLogic.isDisposableWindow({}), false);
 })();
 
+(function testDisposeWindowPlan() {
+  // Disposable + well-formed launch token in instanceId -> tear down by token.
+  const tok = "0123456789abcdef0123456789abcdef";
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.disp.SECRET", instanceId: tok }),
+    { dispose: true, byToken: true, token: tok });
+  // Disposable but NO instanceId on the wire (untagged spawn) -> window-close
+  // fallback, never a token call.
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.disp.SECRET", instanceId: "" }),
+    { dispose: true, byToken: false, token: "" });
+  // Malformed/injection-ish instanceId -> NOT used as a token (fallback).
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.disp.x", instanceId: "-rm; reboot" }),
+    { dispose: true, byToken: false, token: "" });
+  // Uppercase hex is rejected (the session manager's _TOKEN_RE is lowercase).
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.disp.x", instanceId: "ABCDEF0123456789" }),
+    { dispose: true, byToken: false, token: "" });
+  // The token comes from instanceId, NOT the (independent) secctx app_id hex.
+  const plan = TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.disp.deadbeefcafe", instanceId: tok });
+  assert.strictEqual(plan.token, tok);
+  // A non-disposable window is never disposed.
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan({ secctxAppId: "qdistro.tier2", instanceId: tok }),
+    { dispose: false, byToken: false, token: "" });
+  assert.deepStrictEqual(
+    TaskbarLogic.disposeWindowPlan(null),
+    { dispose: false, byToken: false, token: "" });
+})();
+
 (function testBuildIsolationMenu_native_empty() {
   // A native window (no secctx identity) gets NO qdistro section.
   assert.deepStrictEqual(TaskbarLogic.buildIsolationMenuItems({}), []);

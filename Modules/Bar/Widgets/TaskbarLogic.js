@@ -236,6 +236,28 @@ function buildIsolationMenuItems(identity) {
   return items;
 }
 
+// Decide HOW the taskbar should dispose a window when the user picks
+// "Dispose". A disposable window whose `instanceId` carries a well-formed
+// launch token (== the container's `qdistro_tier2_token` label, the spawn-time
+// LAUNCH_TOKEN — NOT the independent random hex inside the secctx app_id) is
+// torn down by token: qdshell asks the session manager to resolve the token to
+// its container and remove it (an explicit, admin-gated, audited lease
+// teardown). A disposable window with no usable token on the wire (e.g. an
+// untagged admin-driven spawn) falls back to window-close, which exits the app
+// and lets `--rm` / the startup reaper tear the container down. A
+// non-disposable window is never disposed (`dispose: false`). The token regex
+// mirrors the session manager's _TOKEN_RE and doubles as an injection guard
+// (no leading '-', hex only) before the value reaches the gdbus argv.
+function disposeWindowPlan(identity) {
+  identity = identity || {};
+  if (!isDisposableWindow(identity))
+    return { "dispose": false, "byToken": false, "token": "" };
+  var token = (identity.instanceId || "") + "";
+  if (/^[0-9a-f]{8,64}$/.test(token))
+    return { "dispose": true, "byToken": true, "token": token };
+  return { "dispose": true, "byToken": false, "token": "" };
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     normalizeAppId: normalizeAppId,
@@ -246,5 +268,6 @@ if (typeof module !== "undefined") {
     siloTierLabel: siloTierLabel,
     isDisposableWindow: isDisposableWindow,
     buildIsolationMenuItems: buildIsolationMenuItems,
+    disposeWindowPlan: disposeWindowPlan,
   };
 }

@@ -727,6 +727,72 @@ Item {
     qdSnapshotProc.running = true;
   }
 
+  // Dispose (D16/P2b): tear the disposable's CONTAINER down explicitly via the
+  // session manager's DisposeByToken, rather than relying on window-close +
+  // --rm alone. The window exposes its launch token as `instanceId` (== the
+  // container's qdistro_tier2_token label); the session manager resolves that
+  // to the container and removes it (admin-gated, name-revalidated, audited,
+  // fail-closed). The result is toasted HONESTLY: `gdbus call` exits 0 even
+  // when DisposeByToken returns false (e.g. `podman rm` failed), so success
+  // requires BOTH exit 0 AND a `(true,)` return — a `(false,)` is a failure.
+  // We do NOT eagerly close the window on the token path: a successful teardown
+  // removes the container, which makes qdwin drop the window on its own, so a
+  // FAILED teardown leaves the window visible (an honest, recoverable handle)
+  // instead of being masked by --rm.
+  Process {
+    id: qdDisposeProc
+    property string siloLabel: ""
+    stdout: StdioCollector {
+      id: qdDisposeOut
+    }
+    stderr: StdioCollector {
+      id: qdDisposeErr
+    }
+    onExited: (code, status) => {
+      if (code === 0 && /\(\s*true\s*,/.test(qdDisposeOut.text || "")) {
+        ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(qdDisposeProc.siloLabel || qsTr("silo")), "trash-2", 3000);
+      } else {
+        const msg = (qdDisposeErr.text || "").trim()
+                  || (code === 0 ? qsTr("teardown did not complete") : qsTr("session manager error"));
+        ToastService.showError(qsTr("Dispose failed"), msg, 6000);
+      }
+    }
+  }
+
+  function qdDisposeSelected() {
+    if (qdDisposeProc.running) {
+      // Single non-reentrant Process; a destructive op must not be silently
+      // dropped (which would also mislabel the in-flight toast).
+      ToastService.showNotice(qsTr("Dispose"), qsTr("A dispose is already in progress."), "trash-2", 2000);
+      return;
+    }
+    const win = root.getSelectedWindow();
+    if (!win)
+      return;
+    const plan = TaskbarLogic.disposeWindowPlan({
+                                                  "secctxAppId": win.secctxAppId,
+                                                  "instanceId": win.instanceId
+                                                });
+    if (!plan.dispose)
+      return;
+    const label = root.qdSiloForSelected();
+    if (!plan.byToken) {
+      // No launch token on the wire (untagged spawn): close the window, which
+      // exits the app so --rm / the startup reaper tears the container down.
+      // This is the only teardown mechanism available without a token.
+      root.closeWindows([win]);
+      ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(label || qsTr("silo")), "trash-2", 3000);
+      return;
+    }
+    qdDisposeProc.siloLabel = label;
+    qdDisposeProc.command = ["gdbus", "call", "--system",
+                             "--dest", "org.qdistro.SessionManager1",
+                             "--object-path", "/org/qdistro/SessionManager1",
+                             "--method", "org.qdistro.SessionManager1.DisposeByToken",
+                             plan.token];
+    qdDisposeProc.running = true;
+  }
+
   NPopupContextMenu {
     id: contextMenu
     model: {
@@ -759,20 +825,13 @@ Item {
                    } else if (action === "qd-snapshot") {
                      root.qdSnapshotNow(root.qdSiloForSelected());
                    } else if (action === "qd-dispose") {
-                     // Dispose a tier-2 disposable: closing the window exits
-                     // the app, and the container is `podman run --rm`, so
-                     // that tears the disposable down (M3's teardown path);
-                     // the session-manager reaper sweeps any crash orphan.
-                     // Defence in depth: close ONLY windows that are actually
-                     // disposable, never a co-grouped persistent/native one
-                     // (the section is already gated to single windows).
-                     const _disp = selectedWindows.filter(function (w) {
-                                                            return w && TaskbarLogic.isDisposableWindow({ "secctxAppId": w.secctxAppId });
-                                                          });
-                     if (_disp.length > 0) {
-                       root.closeWindows(_disp);
-                       ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(root.qdSiloForSelected() || qsTr("silo")), "trash-2", 3000);
-                     }
+                     // Explicit lease teardown of a tier-2 disposable: ask the
+                     // session manager to remove the CONTAINER by its launch
+                     // token (window.instanceId), not just close the window.
+                     // The isolation section is single-window gated, so this
+                     // acts on the one selected disposable window; a no-token
+                     // window falls back to window-close inside the helper.
+                     root.qdDisposeSelected();
                    } else if (action === "qd-permissions") {
                      ToastService.showNotice(qsTr("Permissions"), qsTr("Per-silo permissions view is coming soon."), "lock", 3000);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
