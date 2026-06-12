@@ -8,6 +8,7 @@ import qs.Services.Hardware
 import qs.Services.Keyboard
 import qs.Services.Location
 import qs.Services.Media
+import qs.Services.Qdistro
 import qs.Widgets
 import qs.Widgets.AudioSpectrum
 
@@ -115,11 +116,14 @@ Item {
     width: {
       var hasBattery = batteryIndicator.isReady;
       var hasKeyboard = keyboardLayout.currentLayout !== "Unknown";
+      var hasEgress = SiloEgressService.active;
 
-      if (hasBattery && hasKeyboard) {
-        return 200;
-      } else if (hasBattery || hasKeyboard) {
-        return 120;
+      if (hasBattery && hasKeyboard && hasEgress) {
+        return 360;
+      } else if ((hasBattery && hasKeyboard) || (hasBattery && hasEgress) || (hasKeyboard && hasEgress)) {
+        return 260;
+      } else if (hasBattery || hasKeyboard || hasEgress) {
+        return 150;
       } else {
         return 0;
       }
@@ -131,7 +135,7 @@ Item {
     topLeftRadius: Style.radiusL
     topRightRadius: Style.radiusL
     color: Color.mSurface
-    visible: Settings.data.general.compactLockScreen && ((batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown")
+    visible: Settings.data.general.compactLockScreen && ((batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown" || SiloEgressService.active)
 
     RowLayout {
       anchors.centerIn: parent
@@ -168,6 +172,25 @@ Item {
 
         NText {
           text: keyboardLayout.currentLayout
+          color: Color.mOnSurfaceVariant
+          pointSize: Style.fontSizeM
+          elide: Text.ElideRight
+        }
+      }
+
+      // Network egress indicator
+      RowLayout {
+        spacing: 6
+        visible: SiloEgressService.active
+
+        NIcon {
+          icon: "network"
+          pointSize: Style.fontSizeM
+          color: Color.mPrimary
+        }
+
+        NText {
+          text: SiloEgressService.activeCount + " net"
           color: Color.mOnSurfaceVariant
           pointSize: Style.fontSizeM
           elide: Text.ElideRight
@@ -496,6 +519,26 @@ Item {
               color: Color.mOnSurfaceVariant
               pointSize: Style.fontSizeM
               elide: Text.ElideRight
+            }
+          }
+
+          // Active silo network egress
+          RowLayout {
+            spacing: Style.marginXS
+            visible: SiloEgressService.active
+
+            NIcon {
+              icon: "network"
+              pointSize: Style.fontSizeM
+              color: Color.mPrimary
+            }
+
+            NText {
+              text: SiloEgressService.label
+              color: Color.mOnSurfaceVariant
+              pointSize: Style.fontSizeM
+              elide: Text.ElideRight
+              Layout.maximumWidth: 220
             }
           }
         }
