@@ -29,6 +29,89 @@ function read(rel) {
     return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
+// ─── helper: mask comments + string/template literals (offset-preserving) ────
+// Replaces the CONTENT of //-lines, block comments, and '...' / "..." / `...`
+// literals with spaces, keeping every character offset (and newlines) identical
+// to the original. Used so the function scanner below cannot match `function
+// name(` inside a comment or string, and so brace/paren balancing never counts
+// a brace that lives inside a string or comment.
+function maskCommentsAndStrings(src) {
+    var out = src.split("");
+    var i = 0, n = src.length;
+    var inLine = false, inBlock = false, inStr = false, q = "";
+    while (i < n) {
+        var c = src[i], c2 = i + 1 < n ? src[i + 1] : "";
+        if (inLine) {
+            if (c === "\n") inLine = false; else out[i] = " ";
+            i++; continue;
+        }
+        if (inBlock) {
+            if (c === "*" && c2 === "/") { out[i] = " "; out[i + 1] = " "; i += 2; inBlock = false; continue; }
+            if (c !== "\n") out[i] = " ";
+            i++; continue;
+        }
+        if (inStr) {
+            if (c === "\\") { out[i] = " "; if (i + 1 < n && src[i + 1] !== "\n") out[i + 1] = " "; i += 2; continue; }
+            if (c === q) { inStr = false; out[i] = " "; i++; continue; }
+            if (c !== "\n") out[i] = " ";
+            i++; continue;
+        }
+        if (c === "/" && c2 === "/") { inLine = true; out[i] = " "; i++; continue; }
+        if (c === "/" && c2 === "*") { inBlock = true; out[i] = " "; out[i + 1] = " "; i += 2; continue; }
+        if (c === '"' || c === "'" || c === "`") { inStr = true; q = c; out[i] = " "; i++; continue; }
+        i++;
+    }
+    return out.join("");
+}
+
+// ─── helper: extract a whole `function name(...) { ... }` (brace-balanced) ────
+// QML function bodies are plain ECMAScript, so the extracted text is directly
+// compilable under Node. Lexically robust: it scans a comment/string-MASKED
+// copy (so a commented-out or quoted `function name(` cannot be matched, and
+// braces inside strings/comments are never counted) and asserts there is
+// EXACTLY ONE real declaration, then slices the executable text from the
+// original source. Returns the source slice, or null if not found.
+// Caveat: the masker is a pragmatic scanner, not a full JS lexer — it does NOT
+// model regex literals or `${...}` template interpolation. The five targeted
+// functions use only plain strings + comments; if a future target uses those
+// constructs, extend maskCommentsAndStrings first.
+function extractFunction(source, name) {
+    var masked = maskCommentsAndStrings(source);
+    var re = new RegExp("function\\s+" + name + "\\s*\\(", "g");
+    var starts = [], m;
+    while ((m = re.exec(masked)) !== null) starts.push(m.index);
+    assert.strictEqual(starts.length, 1,
+        "expected exactly one real declaration of function " + name +
+        " in source; found " + starts.length +
+        " (a stale/duplicate copy would let the guard execute the wrong body)");
+    var start = starts[0];
+    var paren = masked.indexOf("(", start);
+    var depth = 0, i, close = -1;
+    for (i = paren; i < masked.length; i++) {
+        if (masked[i] === "(") depth++;
+        else if (masked[i] === ")") { depth--; if (depth === 0) { close = i; break; } }
+    }
+    if (close === -1) return null;
+    var brace = masked.indexOf("{", close);
+    if (brace === -1) return null;
+    depth = 0;
+    for (i = brace; i < masked.length; i++) {
+        if (masked[i] === "{") depth++;
+        else if (masked[i] === "}") { depth--; if (depth === 0) return source.slice(start, i + 1); }
+    }
+    return null;
+}
+
+// Compile a QML function into a callable, injecting a `root` object to satisfy
+// its `root.<prop>` member references (siloPalette / tierNPrefix). This lets
+// the guard execute the ACTUAL QML logic, not a re-typed copy — so a drift in
+// the algorithm (hash, slice offset, packing), not just the constants, fails.
+function compileQmlFunction(source, name, root) {
+    var text = extractFunction(source, name);
+    assert.ok(text, "QML function " + name + " not found in source");
+    return new Function("root", "return (" + text + ");")(root);
+}
+
 // ─── helper: extract a quoted string value ───────────────────────────────────
 // Finds `propertyName: "value"` or `property string foo: "value"` and returns
 // the value.
@@ -304,6 +387,82 @@ function extractPalette(source, propertyName) {
     assert.ok(!assignMinus2,
         "NKeybindRecorder.qml must NOT assign recordingIndex = -2 " +
         "(the -2 sentinel exists only in a comment; real code uses -1 and >=0)");
+})();
+
+// ─── 7. SiloChrome: BEHAVIOURAL equivalence (QML logic executed) ─────────────
+// Sections 1–2 pin the palette + prefix CONSTANTS. But the security-relevant
+// ALGORITHMS were unguarded: siloFromSecctx (the only trusted silo-identity
+// derivation — spec/02), the colourForSilo hash, isTier3/4, and _hexToRgba.
+// A divergence in any of these (a changed slice offset, a different hash mix,
+// a wrong packing) would leave the JS unit tests green (they test the mirror)
+// while production QML behaves differently. This section executes the ACTUAL
+// QML function bodies and asserts byte-equal outputs against the mirror across
+// an input battery that hits every branch + the identity edge cases. Catches
+// algorithm drift, not just constant drift (04/F6, maturity-review #5).
+
+(function testSiloChromeBehaviouralDrift() {
+    var tier3Src = read("Services/Qdistro/Tier3Apps.qml");
+    var tier4Src = read("Services/Qdistro/Tier4Apps.qml");
+    var SC = require("../Services/Qdistro/SiloChrome.js");
+
+    // `root` stand-ins providing exactly the members each function reads. We
+    // feed the MIRROR's constants in; sections 1–2 already proved those equal
+    // the QML constants, so any failure here is a genuine ALGORITHM drift.
+    var root3 = { siloPalette: SC.SILO_PALETTE, tier3Prefix: SC.TIER3_PREFIX };
+    var root4 = { siloPalette: SC.SILO_PALETTE, tier4Prefix: SC.TIER4_PREFIX };
+
+    var qml3Colour = compileQmlFunction(tier3Src, "colourForSilo", root3);
+    var qml3Silo   = compileQmlFunction(tier3Src, "siloFromSecctx", root3);
+    var qml3IsT3   = compileQmlFunction(tier3Src, "isTier3", root3);
+    var qml4Colour = compileQmlFunction(tier4Src, "colourForSilo", root4);
+    var qml4Silo   = compileQmlFunction(tier4Src, "siloFromSecctx", root4);
+    var qml4IsT4   = compileQmlFunction(tier4Src, "isTier4", root4);
+    var qml4Hex    = compileQmlFunction(tier4Src, "_hexToRgba", root4);
+
+    var siloNames = ["", "user1", "user2", "user10", "a", "ab", "abc",
+                     "vm-work", "vm_work", "USER1", "user-1.evil", "Bsafe",
+                     "0", "9", "silo with space", "..", "tier3", "tier4"];
+    // secctx app-ids spanning: matching prefix, wrong tier prefix, exact prefix
+    // with empty tag, prefix-not-at-start, case variants, multi-dot tails.
+    var secctxIds = [
+        null, "", "qdistro.tier3.user1", "qdistro.tier4.vm1",
+        "qdistro.tier3.", "qdistro.tier4.", "qdistro.tier3", "qdistro.tier4",
+        "qdistro.tier3.user1.evil", "qdistro.tier4.a.b.c",
+        "x.qdistro.tier3.user1", "x.qdistro.tier4.vm1",
+        "QDISTRO.TIER3.user1", "QDISTRO.TIER4.vm1",
+        "qdistro.tier30.user1", "qdistro.tier3.user1 ",
+    ];
+    var hexes = ["#4caf50", "#FFFFFF", "#000000", "#ffb300", "#80deea",
+                 null, "", "#fff", "#4caf5", "#4caf500", "4caf50",
+                 "#gggggg", "#12345g", "#ABCDEF", "##abcde", " #4caf50"];
+
+    function eq(label, qmlFn, jsFn, inputs) {
+        inputs.forEach(function(inp) {
+            var q = qmlFn(inp);
+            var j = jsFn(inp);
+            assert.deepStrictEqual(j, q,
+                "BEHAVIOURAL DRIFT in " + label + "(" + JSON.stringify(inp) +
+                "): QML returns " + JSON.stringify(q) +
+                " but SiloChrome.js mirror returns " + JSON.stringify(j));
+        });
+    }
+
+    eq("Tier3.colourForSilo",  qml3Colour, SC.colourForSilo,        siloNames);
+    eq("Tier4.colourForSilo",  qml4Colour, SC.colourForSilo,        siloNames);
+    eq("Tier3.siloFromSecctx", qml3Silo,   SC.siloFromSecctxTier3,  secctxIds);
+    eq("Tier4.siloFromSecctx", qml4Silo,   SC.siloFromSecctxTier4,  secctxIds);
+    eq("Tier3.isTier3",        qml3IsT3,   SC.isTier3,              secctxIds);
+    eq("Tier4.isTier4",        qml4IsT4,   SC.isTier4,              secctxIds);
+    eq("Tier4._hexToRgba",     qml4Hex,    SC.hexToRgba,            hexes);
+
+    // Cross-tier: both QML colour hashes share the palette + algorithm, so a
+    // silo must get the SAME border colour regardless of tier (the bats
+    // journal-grep contract depends on this determinism).
+    siloNames.forEach(function(s) {
+        assert.strictEqual(qml4Colour(s), qml3Colour(s),
+            "Tier3 and Tier4 colourForSilo disagree for silo " +
+            JSON.stringify(s));
+    });
 })();
 
 console.log("drift-guard: all assertions passed");

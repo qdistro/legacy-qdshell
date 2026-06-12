@@ -51,4 +51,23 @@ if node.found()
   test('removable-media', node, args: files('tests/test_removable_media.js'))
   test('output-layout', node, args: files('tests/test_output_layout.js'))
   test('qdwin-only-guard', node, args: files('tests/test_qdwin_only_guard.js'))
+  # Mirror/logic + misc tests that existed on disk but were never wired into
+  # `meson test` (they passed locally but never ran in CI). The drift guard is
+  # the load-bearing protection for the security-relevant QML/JS mirrors
+  # (silo identity, tier classification) — it MUST run in CI (04/F6,
+  # maturity-review #5).
+  test('drift-guard', node, args: files('tests/test_drift_guard.js'))
+  test('silo-chrome', node, args: files('tests/test_silo_chrome.js'))
+  test('colorkeys', node, args: files('tests/test_colorkeys.js'))
+  test('fuzzysort', node, args: files('tests/test_fuzzysort.js'))
+  test('timeformat', node, args: files('tests/test_timeformat.js'))
+  test('widget-helpers', node, args: files('tests/test_widget_helpers.js'))
+  test('app1apps-nameowner', node, args: files('tests/test_app1apps_nameowner.js'))
+  test('clipboard-focus-clear', node, args: files('tests/test_clipboard_focus_clear.js'))
+  test('display-primary', node, args: files('tests/test_display_primary.js'))
+  test('idle-policy', node, args: files('tests/test_idle_policy.js'))
+  test('pointer-live-scope', node, args: files('tests/test_pointer_live_scope.js'))
+  test('tooltip-text', node, args: files('tests/test_tooltip_text.js'))
+  test('wm-accel', node, args: files('tests/test_wm_accel.js'))
+  test('workspace-names', node, args: files('tests/test_workspace_names.js'))
 endif
