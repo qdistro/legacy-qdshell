@@ -495,11 +495,16 @@ Singleton {
     // CLIPBOARD_GATE / CLIPBOARD_RECEIVE_GATE line shape — field order is a
     // stable contract. The set-time CLIPBOARD_GATE / receive-time
     // CLIPBOARD_RECEIVE_GATE lines are asserted by the qdistro VM harness; the
-    // CLIPBOARD_FOCUS_GATE decision itself is covered by the Node unit test
-    // tests/test_clipboard_focus_clear.js (headless weston can't drive a real
-    // keyboard-focus transition, so there is no VM assertion on this line yet —
-    // it lands once the ctrl-socket inject-focus CLI noted in the VM clipboard
-    // tests exists).
+    // pure decision is also covered headlessly by the Node unit test
+    // tests/test_clipboard_focus_clear.js. This line IS now asserted in the VM
+    // too: the inject-focus CLI exists (Tier3FocusIPC `injectFocus` →
+    // Qdwin.injectFocus → qdwin_shell_v1), so the qdistro probe
+    // s49-clipboard-focus-gate-journal.sh (wrapped by tiered-isolation.bats
+    // `phase7-clipboard-focus-gate-journal`) drives a real cross-silo focus
+    // transition and greps for this exact line —
+    //   CLIPBOARD_FOCUS_GATE ... src_silo=... dst_silo=... verdict=deny reason=focus-cross-silo
+    // — so the field names/order below are a load-bearing contract with that
+    // probe; changing them requires updating s49 in lockstep.
     function _logFocusClear(seat, srcSilo, dstSilo, isPrimary) {
         Logger.i("ClipboardGate", "CLIPBOARD_FOCUS_GATE", "seat=" + (seat || "default"), "src_silo=" + srcSilo, "dst_silo=" + dstSilo, "is_primary=" + isPrimary, "verdict=deny", "reason=focus-cross-silo");
     }
