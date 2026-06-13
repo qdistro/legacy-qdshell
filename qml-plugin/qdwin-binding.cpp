@@ -296,12 +296,15 @@ struct QdwinBindingDispatch {
     static void hotkey_pressed(void *d, qdwin_shell_v1 *, uint32_t id) {
         emit static_cast<QdwinBinding *>(d)->hotkeyPressed(id);
     }
+    // v29 appended a `serial` (last uint32_t) carrying the button's input
+    // event serial, for a future show_popup() context-menu caller. Not yet
+    // consumed here, but the dispatch signature must match the listener.
     static void chrome_button(void *, qdwin_shell_v1 *,
                               uint32_t, uint32_t, wl_fixed_t, wl_fixed_t,
-                              uint32_t, uint32_t) {}
+                              uint32_t, uint32_t, uint32_t) {}
     static void popup_button(void *, qdwin_shell_v1 *,
                              uint32_t, wl_fixed_t, wl_fixed_t,
-                             uint32_t, uint32_t) {}
+                             uint32_t, uint32_t, uint32_t) {}
     // v24 sidecar — which workspace a toplevel is on.
     static void toplevel_workspace(void *d, qdwin_shell_v1 *,
                                    uint32_t handle, uint32_t index) {
