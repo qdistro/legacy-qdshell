@@ -46,10 +46,15 @@ import qs.Services.Qdshell
 //   current src_silo / dst_silo from ClipboardGate's last gate
 //   event. Bats greps the journal for the snapshot.
 //
-// All operations are admin-only by virtue of running through
-// qdshell, which itself runs as admin. There's no auth boundary
-// inside the IPC because there's no cross-user trust boundary
-// inside qdshell.
+// F8: SECURITY ASSUMPTION — this IPC socket MUST be reachable only from the
+// admin uid that runs qdshell. injectFocus drives cross-silo keyboard focus and
+// clearSelection clears the seat selection; under the v14 focus-aware-clear
+// contract a same-uid caller that could reach this socket would gain a
+// focus-confusion / clipboard-gate-bypass primitive. There is deliberately no
+// auth boundary INSIDE the IPC (no cross-user trust boundary inside qdshell) —
+// the boundary is the socket's uid reachability. Do NOT expose this socket to
+// silo uids; if that ever becomes possible, injectFocus/clearSelection must be
+// moved behind the broker gate.
 Singleton {
     id: root
 

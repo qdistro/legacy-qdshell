@@ -111,8 +111,12 @@ SmartPanel {
     // Clear any stale pluginInstance before loading new content
     root.pluginInstance = null;
 
-    var pluginDir = PluginRegistry.getPluginDir(pluginId);
-    var panelPath = pluginDir + "/" + plugin.manifest.entryPoints.panel;
+    // N2: confine the manifest entry point beneath the plugin dir.
+    var panelPath = PluginRegistry.resolvePluginEntryPoint(pluginId, plugin.manifest.entryPoints.panel);
+    if (!panelPath) {
+      Logger.w("PluginPanelSlot", "Rejected unsafe panel entry point for plugin:", pluginId);
+      return false;
+    }
 
     Logger.i("PluginPanelSlot", "Loading panel for plugin:", pluginId, "in slot", root.slotNumber);
 

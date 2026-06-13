@@ -71,7 +71,13 @@ async def apply_gtk4_colors(config_dir: Path):
         print(f"Error: GTK4 qdshell.css not found at {colors_file}", file=sys.stderr)
         return False
 
-    gtk_css.write_text(gtk4_import)
+    # F3: a pre-planted symlink at gtk.css would otherwise redirect this write
+    # (e.g. to a shell rc file). Drop any symlink and open with O_NOFOLLOW.
+    if gtk_css.is_symlink():
+        gtk_css.unlink()
+    fd = os.open(str(gtk_css), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "w") as f:
+        f.write(gtk4_import)
     print("Updated GTK4 CSS import")
     return True
 

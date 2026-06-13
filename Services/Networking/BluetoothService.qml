@@ -510,8 +510,10 @@ Singleton {
       return;
     }
     var addr = BluetoothUtils.macFromDevice(device);
-    if (!addr || addr.length < 7) {
-      Logger.w("Bluetooth", "pairWithBluetoothctl: no valid address for device");
+    // F10: require a canonical MAC before it reaches the bluetooth-pair helper
+    // (which feeds it to interactive bluetoothctl commands).
+    if (!BluetoothUtils.isValidMac(addr)) {
+      Logger.w("Bluetooth", "pairWithBluetoothctl: no valid MAC address for device");
       return;
     }
 

@@ -541,7 +541,55 @@ Singleton {
     }
 
     function isSafePluginId(pluginId) {
-        return /^[A-Za-z0-9_.-]+$/.test(String(pluginId || ""));
+        var s = String(pluginId || "");
+        // F6: the charset alone admits ".", ".." and "..."; those flow into
+        // plugin dir joins (getPluginDir) and rm -rf, so reject any all-dot id
+        // and any id containing a ".." traversal segment.
+        if (!/^[A-Za-z0-9_.-]+$/.test(s))
+            return false;
+        if (/^\.+$/.test(s))
+            return false;
+        if (s.indexOf("..") !== -1)
+            return false;
+        return true;
+    }
+
+    // N2: resolve a manifest entryPoints.* fragment to a filesystem path that is
+    // confined beneath the plugin's own directory. The fragment comes from an
+    // untrusted plugin manifest, so it must be a normalized *relative* path: no
+    // absolute/`file:` prefix, no backslash, no control chars, and no ".", ".."
+    // or empty path segments. Returns the confined absolute path (no "file://"
+    // prefix) or null if the id or fragment is unsafe. Callers add "file://".
+    function resolvePluginEntryPoint(pluginId, relPath) {
+        if (!isSafePluginId(pluginId))
+            return null;
+        var s = String(relPath || "");
+        if (s.length === 0)
+            return null;
+        // No absolute paths, scheme prefixes, backslashes, or control chars.
+        if (s.charAt(0) === "/" || s.indexOf("\\") !== -1)
+            return null;
+        if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(s)) // e.g. "file:", "http:"
+            return null;
+        for (var ci = 0; ci < s.length; ci++) {
+            var code = s.charCodeAt(ci);
+            if (code < 0x20 || code === 0x7F)
+                return null;
+        }
+        var segs = s.split("/");
+        var clean = [];
+        for (var i = 0; i < segs.length; i++) {
+            var seg = segs[i];
+            if (seg === "" || seg === "." || seg === "..")
+                return null;
+            clean.push(seg);
+        }
+        var dir = getPluginDir(pluginId);
+        var path = dir + "/" + clean.join("/");
+        // Defense-in-depth: the resulting path must stay under the plugin dir.
+        if (path.indexOf(dir + "/") !== 0)
+            return null;
+        return path;
     }
 
     // Get plugin settings file path

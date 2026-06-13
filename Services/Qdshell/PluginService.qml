@@ -753,8 +753,11 @@ Singleton {
                 root.clearPluginError(pluginId);
 
                 // Load Main.qml entry point if it exists
-                if (manifest.entryPoints && manifest.entryPoints.main) {
-                    var mainPath = pluginDir + "/" + manifest.entryPoints.main;
+                var mainPath = (manifest.entryPoints && manifest.entryPoints.main)
+                    ? PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.main) : null;
+                if (manifest.entryPoints && manifest.entryPoints.main && !mainPath)
+                    root.recordPluginError(pluginId, "main", "Rejected unsafe entry point path");
+                if (mainPath) {
                     var loadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
                     var mainComponent = Qt.createComponent("file://" + mainPath + "?v=" + loadVersion);
                     if (mainComponent.status === Component.Ready) {
@@ -781,8 +784,11 @@ Singleton {
                 }
 
                 // Load bar widget component if provided (don't instantiate - BarWidgetRegistry will do that)
-                if (manifest.entryPoints && manifest.entryPoints.barWidget) {
-                    var widgetPath = pluginDir + "/" + manifest.entryPoints.barWidget;
+                var widgetPath = (manifest.entryPoints && manifest.entryPoints.barWidget)
+                    ? PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.barWidget) : null;
+                if (manifest.entryPoints && manifest.entryPoints.barWidget && !widgetPath)
+                    root.recordPluginError(pluginId, "barWidget", "Rejected unsafe entry point path");
+                if (widgetPath) {
                     var widgetLoadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
                     var widgetComponent = Qt.createComponent("file://" + widgetPath + "?v=" + widgetLoadVersion);
                     if (widgetComponent.status === Component.Ready) {
@@ -801,8 +807,11 @@ Singleton {
                 }
 
                 // Load desktop widget component if provided (don't instantiate - DesktopWidgetRegistry will do that)
-                if (manifest.entryPoints && manifest.entryPoints.desktopWidget) {
-                    var desktopWidgetPath = pluginDir + "/" + manifest.entryPoints.desktopWidget;
+                var desktopWidgetPath = (manifest.entryPoints && manifest.entryPoints.desktopWidget)
+                    ? PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.desktopWidget) : null;
+                if (manifest.entryPoints && manifest.entryPoints.desktopWidget && !desktopWidgetPath)
+                    root.recordPluginError(pluginId, "desktopWidget", "Rejected unsafe entry point path");
+                if (desktopWidgetPath) {
                     var desktopWidgetLoadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
                     var desktopWidgetComponent = Qt.createComponent("file://" + desktopWidgetPath + "?v=" + desktopWidgetLoadVersion);
                     if (desktopWidgetComponent.status === Component.Ready) {
@@ -818,8 +827,11 @@ Singleton {
                 }
 
                 // Load launcher provider component if provided (don't instantiate - Launcher will do that)
-                if (manifest.entryPoints && manifest.entryPoints.launcherProvider) {
-                    var launcherProviderPath = pluginDir + "/" + manifest.entryPoints.launcherProvider;
+                var launcherProviderPath = (manifest.entryPoints && manifest.entryPoints.launcherProvider)
+                    ? PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.launcherProvider) : null;
+                if (manifest.entryPoints && manifest.entryPoints.launcherProvider && !launcherProviderPath)
+                    root.recordPluginError(pluginId, "launcherProvider", "Rejected unsafe entry point path");
+                if (launcherProviderPath) {
                     var launcherProviderLoadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
                     var launcherProviderComponent = Qt.createComponent("file://" + launcherProviderPath + "?v=" + launcherProviderLoadVersion);
                     if (launcherProviderComponent.status === Component.Ready) {
@@ -835,8 +847,11 @@ Singleton {
                 }
 
                 // Load control center widget component if provided
-                if (manifest.entryPoints && manifest.entryPoints.controlCenterWidget) {
-                    var ccWidgetPath = pluginDir + "/" + manifest.entryPoints.controlCenterWidget;
+                var ccWidgetPath = (manifest.entryPoints && manifest.entryPoints.controlCenterWidget)
+                    ? PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.controlCenterWidget) : null;
+                if (manifest.entryPoints && manifest.entryPoints.controlCenterWidget && !ccWidgetPath)
+                    root.recordPluginError(pluginId, "controlCenterWidget", "Rejected unsafe entry point path");
+                if (ccWidgetPath) {
                     var ccWidgetLoadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
                     var ccWidgetComponent = Qt.createComponent("file://" + ccWidgetPath + "?v=" + ccWidgetLoadVersion);
                     if (ccWidgetComponent.status === Component.Ready) {

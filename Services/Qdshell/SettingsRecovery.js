@@ -93,6 +93,11 @@ function mergeDefaults(defaults, user) {
   }
   // preserve user-only keys
   for (k in user) {
+    // F12: never copy prototype-mutating keys. JSON.parse exposes __proto__ as
+    // an own property; out["__proto__"] = ... would invoke the prototype setter
+    // and reparent `out`. constructor/prototype are excluded for the same class.
+    if (k === "__proto__" || k === "constructor" || k === "prototype")
+      continue;
     if (Object.prototype.hasOwnProperty.call(user, k) &&
         !Object.prototype.hasOwnProperty.call(out, k))
       out[k] = user[k];

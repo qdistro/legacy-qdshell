@@ -20,6 +20,7 @@ from .theme import generate_theme
 from .renderer import TemplateRenderer
 from .scheme import expand_predefined_scheme
 from .terminal import TerminalColors, TerminalGenerator
+from .safe_write import OutputConfinementError, safe_write_text, confine_output_path
 
 __all__ = [
     # Color

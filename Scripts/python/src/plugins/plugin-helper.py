@@ -19,21 +19,32 @@ COMPOSITE_KEY_RE = re.compile(r"^(?:[A-Fa-f0-9]{6}:)?[A-Za-z0-9_][A-Za-z0-9_.-]*
 
 
 def _validate_repo_url(url: str) -> None:
+    # F9: a plugin source is a full code-trust decision (the cloned tree is loaded
+    # as live QML). Restrict to remote, host-bearing transports only — https and
+    # ssh. Drop file:/git:/http: and scp-style "user@host:path" shorthand:
+    #   - file:  lets `git clone` a local path (cross-silo info disclosure / a way
+    #            to stage attacker-controlled content from another silo's dir);
+    #   - git:/http: are unauthenticated/cleartext;
+    #   - scp-style shorthand is harder to validate and widens the surface
+    #     (use the explicit ssh:// form instead).
+    # urlparse is not a security boundary; reject control chars outright.
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in url):
+        raise ValueError("repository URL contains control characters")
     parsed = urlparse(url)
-    if parsed.scheme in ("http", "https", "ssh", "git", "file"):
-        if parsed.scheme == "file":
-            if not parsed.path.startswith("/"):
-                raise ValueError("file repository URL must be absolute")
-        elif not parsed.netloc:
-            raise ValueError("repository URL is missing a host")
-        return
-    if re.fullmatch(r"[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:[^\s]+", url):
-        return
-    raise ValueError("unsupported repository URL")
+    if parsed.scheme not in ("https", "ssh"):
+        raise ValueError("unsupported repository URL scheme (only https/ssh)")
+    if not parsed.netloc:
+        raise ValueError("repository URL is missing a host")
 
 
 def _validate_plugin_id(plugin_id: str) -> None:
-    if not PLUGIN_ID_RE.fullmatch(plugin_id) or plugin_id in (".", ".."):
+    # F6 (QML/Python parity): the charset regex alone admits "safe..x"; reject any
+    # ".." traversal segment and all-dot ids, matching PluginRegistry.isSafePluginId.
+    if (
+        not PLUGIN_ID_RE.fullmatch(plugin_id)
+        or ".." in plugin_id
+        or set(plugin_id) == {"."}
+    ):
         raise ValueError("invalid plugin id")
 
 
@@ -41,7 +52,7 @@ def _validate_composite_key(composite_key: str) -> None:
     if not COMPOSITE_KEY_RE.fullmatch(composite_key):
         raise ValueError("invalid plugin install key")
     suffix = composite_key.rsplit(":", 1)[-1]
-    if suffix in (".", ".."):
+    if ".." in suffix or set(suffix) == {"."}:
         raise ValueError("invalid plugin install key")
 
 

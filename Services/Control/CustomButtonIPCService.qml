@@ -49,80 +49,10 @@ Singleton {
     return customButtonRegistry[identifier] || null;
   }
 
-  // Find button config from Settings for when the live widget is not loaded
-  function findButtonConfig(identifier) {
-    var screens = Quickshell.screens;
-    for (var i = 0; i < screens.length; i++) {
-      var widgets = Settings.getBarWidgetsForScreen(screens[i].name);
-      var config = _searchWidgetsForIdentifier(widgets, identifier);
-      if (config)
-        return config;
-    }
-    // Also check global widgets as a final fallback
-    var globalConfig = _searchWidgetsForIdentifier(Settings.data.bar.widgets, identifier);
-    if (globalConfig)
-      return globalConfig;
-    return null;
-  }
-
-  function _searchWidgetsForIdentifier(widgets, identifier) {
-    var sections = ["left", "center", "right"];
-    for (var s = 0; s < sections.length; s++) {
-      var list = widgets[sections[s]];
-      if (!list)
-        continue;
-      for (var j = 0; j < list.length; j++) {
-        var w = list[j];
-        if (w.id === "CustomButton" && w.ipcIdentifier === identifier) {
-          return w;
-        }
-      }
-    }
-    return null;
-  }
-
-  // Resolve a command property from config with fallback to widgetMetadata defaults
-  function resolveCommand(config, prop) {
-    if (config[prop])
-      return config[prop];
-    var meta = BarWidgetRegistry.widgetMetadata["CustomButton"];
-    return meta ? (meta[prop] || "") : "";
-  }
-
-  // Substitute $delta expressions in a command string
-  function substituteWheelDelta(command, delta) {
-    var normalizedDelta = delta > 0 ? 1 : -1;
-    return command.replace(/\$delta([+\-*/]\d+)?/g, function (match, operation) {
-      if (operation) {
-        try {
-          var operator = operation.charAt(0);
-          var operand = parseInt(operation.substring(1));
-          var result;
-          switch (operator) {
-          case '+':
-            result = normalizedDelta + operand;
-            break;
-          case '-':
-            result = normalizedDelta - operand;
-            break;
-          case '*':
-            result = normalizedDelta * operand;
-            break;
-          case '/':
-            result = Math.floor(normalizedDelta / operand);
-            break;
-          default:
-            result = normalizedDelta;
-          }
-          return result.toString();
-        } catch (e) {
-          return normalizedDelta.toString();
-        }
-      } else {
-        return normalizedDelta.toString();
-      }
-    });
-  }
+  // F4: the settings-fallback helpers (findButtonConfig / resolveCommand /
+  // substituteWheelDelta) were removed. IPC click/wheel handlers no longer read a
+  // command out of Settings and run it; they require a live widget instance, so a
+  // same-uid process can't plant an exec string in settings and trigger it.
 
   // IpcHandler for custom button commands using short alias 'cb'
   IpcHandler {
@@ -141,19 +71,10 @@ Singleton {
         return;
       }
 
-      // Fallback: read from Settings
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const cmd = resolveCommand(config, "leftClickExec");
-      if (cmd) {
-        Quickshell.execDetached(["sh", "-lc", cmd]);
-        Logger.i("CustomButtonIPCService", `Triggered left click on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no left click action configured`);
-      }
+      // F4: no settings fallback. IPC-triggered exec requires a live widget
+      // instance (like refresh()); otherwise any same-uid process could plant a
+      // leftClickExec in settings and fire it as a "run this string" gadget.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle right click: cb right "identifier"
@@ -169,18 +90,8 @@ Singleton {
         return;
       }
 
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const cmd = resolveCommand(config, "rightClickExec");
-      if (cmd) {
-        Quickshell.execDetached(["sh", "-lc", cmd]);
-        Logger.i("CustomButtonIPCService", `Triggered right click on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no right click action configured`);
-      }
+      // F4: no settings fallback — IPC exec requires a live widget instance.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle middle click: cb middle "identifier"
@@ -196,18 +107,8 @@ Singleton {
         return;
       }
 
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const cmd = resolveCommand(config, "middleClickExec");
-      if (cmd) {
-        Quickshell.execDetached(["sh", "-lc", cmd]);
-        Logger.i("CustomButtonIPCService", `Triggered middle click on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no middle click action configured`);
-      }
+      // F4: no settings fallback — IPC exec requires a live widget instance.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle wheel up: cb up "identifier"
@@ -223,20 +124,8 @@ Singleton {
         return;
       }
 
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const mode = config.wheelMode || BarWidgetRegistry.widgetMetadata["CustomButton"].wheelMode;
-      const cmd = resolveCommand(config, "wheelUpExec");
-      if (mode === "separate" && cmd) {
-        const resolved = substituteWheelDelta(cmd, 1);
-        Quickshell.execDetached(["sh", "-lc", resolved]);
-        Logger.i("CustomButtonIPCService", `Triggered wheel up on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no separate wheel up action configured or is not in separate mode`);
-      }
+      // F4: no settings fallback — IPC exec requires a live widget instance.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle wheel down: cb down "identifier"
@@ -252,20 +141,8 @@ Singleton {
         return;
       }
 
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const mode = config.wheelMode || BarWidgetRegistry.widgetMetadata["CustomButton"].wheelMode;
-      const cmd = resolveCommand(config, "wheelDownExec");
-      if (mode === "separate" && cmd) {
-        const resolved = substituteWheelDelta(cmd, -1);
-        Quickshell.execDetached(["sh", "-lc", resolved]);
-        Logger.i("CustomButtonIPCService", `Triggered wheel down on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no separate wheel down action configured or is not in separate mode`);
-      }
+      // F4: no settings fallback — IPC exec requires a live widget instance.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle wheel action: cb wheel "identifier"
@@ -281,20 +158,8 @@ Singleton {
         return;
       }
 
-      const config = findButtonConfig(identifier);
-      if (!config) {
-        Logger.w("CustomButtonIPCService", `Button with identifier '${identifier}' not found`);
-        return;
-      }
-      const mode = config.wheelMode || BarWidgetRegistry.widgetMetadata["CustomButton"].wheelMode;
-      const cmd = resolveCommand(config, "wheelExec");
-      if (mode === "unified" && cmd) {
-        const resolved = substituteWheelDelta(cmd, 1);
-        Quickshell.execDetached(["sh", "-lc", resolved]);
-        Logger.i("CustomButtonIPCService", `Triggered wheel action on button '${identifier}' (from settings)`);
-      } else {
-        Logger.w("CustomButtonIPCService", `Button '${identifier}' has no unified wheel action configured or is not in unified mode`);
-      }
+      // F4: no settings fallback — IPC exec requires a live widget instance.
+      Logger.w("CustomButtonIPCService", `Button '${identifier}' is not currently loaded — IPC trigger requires a live widget instance`);
     }
 
     // Handle refresh: cb refresh "identifier"

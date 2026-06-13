@@ -2,12 +2,19 @@
 import errno
 import os
 import pty
+import re
 import select
 import subprocess
 import sys
 import time
 # flake8: noqa: E501 # Line too long
 version = "0.0.2-1"
+
+# Canonical Bluetooth MAC (F10). The address is fed verbatim into interactive
+# bluetoothctl commands over a PTY ("pair {addr}", "connect {addr}", ...), so a
+# non-canonical value (e.g. one containing a newline) could smuggle extra
+# commands. Validate before any use.
+MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
 def log(msg) -> None:
@@ -30,8 +37,9 @@ def pair_fast():
     attempts = int(sys.argv[3])
     interval_sec = float(sys.argv[4])
 
-    if not addr or len(addr) < 17:
-        # Basic MAC address length check
+    if not addr or not MAC_RE.fullmatch(addr):
+        # Strict canonical-MAC check (F10). fullmatch (not match) is required so a
+        # single trailing newline cannot slip past the `$` anchor.
         log(f"Invalid Bluetooth address: '{addr}'")
         sys.exit(2)
 

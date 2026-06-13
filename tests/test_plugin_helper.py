@@ -37,18 +37,30 @@ def test_plugin_id_accepts_safe_names(plugin_id):
     "x;y",
     "x y",
     "",
+    # F6: the charset regex alone admits these — a ".." traversal segment
+    # embedded in an otherwise-valid id, and all-dot ids — so they must be
+    # rejected to match PluginRegistry.isSafePluginId in QML.
+    "safe..x",
+    "a..b",
+    "...",
 ])
 def test_plugin_id_rejects_path_and_shell_syntax(plugin_id):
     with pytest.raises(ValueError):
         plugin_helper._validate_plugin_id(plugin_id)
 
 
+@pytest.mark.parametrize("key", ["abc123:safe..x", "ab..cd", "..", "abcdef:..."])
+def test_composite_key_rejects_embedded_traversal(key):
+    # F6: composite key suffix must also reject embedded ".." / all-dot.
+    with pytest.raises(ValueError):
+        plugin_helper._validate_composite_key(key)
+
+
 @pytest.mark.parametrize("url", [
     "https://example.test/repo.git",
     "ssh://git@example.test/repo.git",
-    "git@example.test:repo.git",
 ])
-def test_repo_url_accepts_git_urls(url):
+def test_repo_url_accepts_https_and_ssh(url):
     plugin_helper._validate_repo_url(url)
 
 
@@ -60,16 +72,16 @@ def test_repo_url_accepts_git_urls(url):
     "data:text/plain,repo",
     "blob:https://example.test/abc",
     "git@example.test:repo\nx",
+    # F9: these transports are no longer accepted (only https/ssh).
+    "git@example.test:repo.git",       # scp-style shorthand
+    "http://example.test/repo.git",    # cleartext
+    "git://example.test/repo.git",     # unauthenticated
+    "file:///tmp/repo",                # local path → cross-silo staging
+    "file:relative/repo",
 ])
 def test_repo_url_rejects_unsafe_shapes(url):
     with pytest.raises(ValueError):
         plugin_helper._validate_repo_url(url)
-
-
-def test_file_repo_url_requires_host_or_absolute_path():
-    with pytest.raises(ValueError):
-        plugin_helper._validate_repo_url("file:relative/repo")
-    plugin_helper._validate_repo_url("file:///tmp/repo")
 
 
 def test_plugin_service_no_longer_uses_shell_for_registry_or_install():

@@ -1,5 +1,11 @@
 .pragma library
 
+// Canonical Bluetooth MAC (F10/N3). Device addresses are attacker-adjacent
+// (a scanned/hostile BLE peer); never interpolate one into a bluetoothctl
+// command without confirming it is a canonical MAC first.
+var MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+var isValidMac = (addr) => typeof addr === "string" && MAC_RE.test(addr);
+
 // Address helpers
 var macFromDevice = (dev) => {
   if (!dev) return "";

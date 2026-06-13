@@ -54,7 +54,8 @@ from lib import (
     read_image, ImageReadError, extract_palette, generate_theme,
     TemplateRenderer, expand_predefined_scheme,
     extract_source_color, source_color_to_rgb, Color,
-    TerminalColors, TerminalGenerator
+    TerminalColors, TerminalGenerator,
+    OutputConfinementError, safe_write_text
 )
 
 
@@ -378,9 +379,10 @@ def main() -> int:
             for terminal_id, output_path in terminal_outputs.items():
                 try:
                     content = generator.generate(terminal_id)
-                    output_file = Path(output_path).expanduser()
-                    output_file.parent.mkdir(parents=True, exist_ok=True)
-                    output_file.write_text(content)
+                    # F3: confine the output and write with O_NOFOLLOW.
+                    safe_write_text(output_path, content)
+                except OutputConfinementError as e:
+                    print(f"Refused unsafe terminal output: {e}", file=sys.stderr)
                 except ValueError as e:
                     print(f"Error generating {terminal_id}: {e}", file=sys.stderr)
                 except IOError as e:

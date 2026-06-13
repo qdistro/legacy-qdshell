@@ -795,8 +795,20 @@ Singleton {
   IpcHandler {
     target: "state"
 
-    // Returns all settings and shell state as JSON
+    // Returns all settings and shell state as JSON.
+    //
+    // N1: this dumps the entire Settings.data plus wallpapers, display state,
+    // notifications, color schemes, pinned apps, hooks and plugin state to ANY
+    // same-uid caller — a broad config/paths/automation disclosure (and a
+    // forward-looking secret-exposure risk as settings grow). It is a diagnostic
+    // only, gated OFF by default; set QDSHELL_ENABLE_STATE_IPC=1 in the shell's
+    // environment to enable it for debugging.
     function all(): string {
+      if ((Quickshell.env("QDSHELL_ENABLE_STATE_IPC") || "") !== "1") {
+        return JSON.stringify({
+                                "error": "state IPC is disabled; set QDSHELL_ENABLE_STATE_IPC=1 to enable (diagnostic only)"
+                              }, null, 2);
+      }
       try {
         var snapshot = ShellState.buildStateSnapshot();
         if (!snapshot) {

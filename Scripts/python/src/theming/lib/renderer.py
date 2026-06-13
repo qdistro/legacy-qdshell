@@ -19,6 +19,7 @@ Supports:
 """
 
 import re
+import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,7 @@ except ImportError:
 
 from .color import Color, find_closest_color
 from .hct import Hct
+from .safe_write import OutputConfinementError, safe_write_text
 
 
 # --- Node Types for the template AST ---
@@ -153,6 +155,12 @@ class TemplateRenderer:
         self._current_file: Optional[str] = None
         self._error_count = 0
         self._colors_map: Optional[dict[str, dict[str, str]]] = None
+        # F2: when True, every substituted expression value (image path, colors,
+        # closest_color, filter output) is shell-quoted before insertion. Only
+        # set via render_hook() for pre/post hook command strings run with
+        # shell=True; normal file rendering must NOT quote (it would corrupt the
+        # JSON/CSS/TOML it emits).
+        self._quote_values = False
 
     def _log_error(self, message: str, line_hint: str = ""):
         """Log an error to stderr."""
@@ -494,7 +502,9 @@ class TemplateRenderer:
         """Resolve all {{ expr }} tags in a text segment."""
         def replace(match):
             expr = match.group(1).strip()
-            return str(self._resolve_expression(expr, scope))
+            val = str(self._resolve_expression(expr, scope))
+            # F2: shell-quote substituted values in hook mode.
+            return shlex.quote(val) if self._quote_values else val
 
         return self._EXPR_RE.sub(replace, text)
 
@@ -961,6 +971,19 @@ class TemplateRenderer:
 
         return result
 
+    def render_hook(self, template_text: str) -> str:
+        """Render a pre/post hook command string with every substituted value
+        shell-quoted (F2). The hook is run via ``shell=True``; without quoting an
+        attacker-influenced value (the wallpaper/image path, a color from a
+        downloaded scheme, or string-filter output) could inject shell syntax.
+        Only the substituted values are quoted — the user's literal hook text is
+        left intact."""
+        self._quote_values = True
+        try:
+            return self.render(template_text)
+        finally:
+            self._quote_values = False
+
     def render_file(self, input_path: Path, output_path: Path) -> bool:
         """Render a template file to an output path.
 
@@ -975,9 +998,11 @@ class TemplateRenderer:
             if self._error_count > 0:
                 print(f"Skipping {output_path}: template has {self._error_count} error(s)", file=sys.stderr)
             else:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(rendered_text)
+                # F3: confine the output and write with O_NOFOLLOW.
+                safe_write_text(output_path, rendered_text)
                 success = True
+        except OutputConfinementError as e:
+            self._log_error(f"Refused unsafe template output: {e}")
         except FileNotFoundError:
             self._log_error(f"Template file not found: {input_path}")
         except PermissionError:
@@ -1105,7 +1130,10 @@ class TemplateRenderer:
 
     def _substitute_closest_color(self, text: str) -> str:
         """Substitute {{closest_color}} in text."""
-        return re.sub(r"\{\{\s*closest_color\s*\}\}", self.closest_color, text)
+        # F2: quote in hook mode; use a function replacement so a backslash in the
+        # value can never be interpreted as a re backreference.
+        value = shlex.quote(self.closest_color) if self._quote_values else self.closest_color
+        return re.sub(r"\{\{\s*closest_color\s*\}\}", lambda _m: value, text)
 
     def process_config_file(self, config_path: Path):
         """Process Matugen TOML configuration file."""
@@ -1148,9 +1176,11 @@ class TemplateRenderer:
                 pre_hook = template.get("pre_hook")
                 if pre_hook:
                     import subprocess
-                    if self.closest_color:
-                        pre_hook = self._substitute_closest_color(pre_hook)
-                    pre_hook = self.render(pre_hook)
+                    # F2: render_hook() shell-quotes every substituted value
+                    # (incl. {{closest_color}}) so a hostile path/color cannot
+                    # inject shell syntax. Do NOT pre-substitute closest_color
+                    # here — that would insert it unquoted.
+                    pre_hook = self.render_hook(pre_hook)
                     try:
                         subprocess.run(pre_hook, shell=True, check=False)
                     except Exception as e:
@@ -1160,9 +1190,8 @@ class TemplateRenderer:
                 post_hook = template.get("post_hook")
                 if post_hook:
                     import subprocess
-                    if self.closest_color:
-                        post_hook = self._substitute_closest_color(post_hook)
-                    post_hook = self.render(post_hook)
+                    # F2: see pre_hook note above.
+                    post_hook = self.render_hook(post_hook)
                     try:
                         subprocess.run(post_hook, shell=True, check=False)
                     except Exception as e:

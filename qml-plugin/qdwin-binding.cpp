@@ -18,6 +18,7 @@
 #include "ext-idle-notify-v1-client-protocol.h"
 
 #include <algorithm>
+#include <initializer_list>
 
 #include <QDebug>
 #include <QMetaType>
@@ -68,6 +69,57 @@ constexpr auto kBrokerDefaultBusctlTimeout = "--timeout=200ms";
 
 inline QString qstr(const char *s) {
     return s ? QString::fromUtf8(s) : QString();
+}
+
+// F5: wire-sourced identity strings (app_id, instance_id, selinux label, exe,
+// sandbox engine, mime types) are relayed from possibly-malicious silo clients
+// and then handed to busctl as argv and across C ABIs via toUtf8().constData().
+// A QString may carry an embedded NUL or other C0 control char; the C-string
+// conversion truncates at the first NUL, so the broker would key its policy on a
+// DIFFERENT (shorter) identity than the QML gate keyed on — a cross-identity
+// policy desync. Reject such strings FAIL-CLOSED before they reach a security
+// decision; do NOT strip, because stripping rewrites identity and can manufacture
+// collisions.
+inline bool hasControlChars(const QString &s) {
+    for (const QChar c : s) {
+        const ushort u = c.unicode();
+        if (u < 0x20 || u == 0x7F)
+            return true;
+    }
+    return false;
+}
+
+inline bool anyControlChars(std::initializer_list<const QString *> strs) {
+    for (const QString *s : strs)
+        if (hasControlChars(*s))
+            return true;
+    return false;
+}
+
+// Fail-closed result for a broker-gate call whose identity inputs were rejected.
+// Mirrors the error/timeout edges the QML BrokerGate already treats as "deny".
+inline QVariantMap rejectedIdentityResult() {
+    return {
+        {QStringLiteral("exitCode"), -1},
+        {QStringLiteral("stdout"), QString()},
+        {QStringLiteral("stderr"),
+         QStringLiteral("rejected: control character in identity string")},
+        {QStringLiteral("timedOut"), false},
+    };
+}
+
+// Outbound informational strings (decision reasons, seat names) are not identity
+// decision inputs, so here stripping control chars is the safe move rather than
+// failing the action.
+inline QString stripControlChars(const QString &s) {
+    QString out;
+    out.reserve(s.size());
+    for (const QChar c : s) {
+        const ushort u = c.unicode();
+        if (u >= 0x20 && u != 0x7F)
+            out.append(c);
+    }
+    return out;
 }
 
 void appendVariantDict(QStringList &args, const QVariantMap &details) {
@@ -1389,7 +1441,8 @@ bool QdwinBinding::testLayout(const QVariantList &layout, quint32 serial) {
 // drops the seat's selection (and primary equivalent when isPrimary=1).
 void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
     if (!shell_) return;
-    QByteArray seatUtf8 = seat.toUtf8();
+    // F5: strip control chars so an embedded NUL can't truncate the seat name.
+    QByteArray seatUtf8 = stripControlChars(seat).toUtf8();
     qdwin_shell_v1_clear_selection(shell_, seatUtf8.constData(), isPrimary);
     if (display_) wl_display_flush(display_);
 }
@@ -1408,7 +1461,8 @@ void QdwinBinding::sendDataOfferReceiveDecision(quint32 requestHandle,
 void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
                                        const QString &reason) {
     if (!shell_) return;
-    QByteArray reasonUtf8 = reason.toUtf8();
+    // F5: outbound reason is informational; strip control chars before the ABI.
+    QByteArray reasonUtf8 = stripControlChars(reason).toUtf8();
     qdwin_shell_v1_nested_proxy_decision(shell_, handle, decision,
                                          reasonUtf8.constData());
     if (display_) wl_display_flush(display_);
@@ -1417,7 +1471,8 @@ void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
 void QdwinBinding::activationDecision(quint32 handle, quint32 decision,
                                       const QString &reason) {
     if (!shell_) return;
-    QByteArray reasonUtf8 = reason.toUtf8();
+    // F5: outbound reason is informational; strip control chars before the ABI.
+    QByteArray reasonUtf8 = stripControlChars(reason).toUtf8();
     qdwin_shell_v1_activation_decision(shell_, handle, decision,
                                        reasonUtf8.constData());
     if (display_) wl_display_flush(display_);
@@ -1481,6 +1536,10 @@ bool QdwinBinding::verifyClientIdentity(
     const QString &sandboxEngine,
     const QString &appId,
     const QString &instanceId) {
+    // F5: reject fail-closed if any identity string carries a control char.
+    if (anyControlChars({&exe, &selinuxLabel, &sandboxEngine, &appId,
+                         &instanceId}))
+        return false;
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -1527,6 +1586,10 @@ QVariantMap QdwinBinding::checkHandoffActivation(
     bool identityVerified,
     uint sourcePid,
     qulonglong sourceStarttime) {
+    // F5: fail closed on any control char in the relayed identity strings.
+    if (anyControlChars({&sourceSilo, &destSilo, &sourceAppId, &destAppId,
+                         &sourceSandboxEngine}))
+        return rejectedIdentityResult();
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -1590,6 +1653,14 @@ QVariantMap QdwinBinding::checkClipboardTransfer(
     bool identityVerified,
     uint sourcePid,
     qulonglong sourceStarttime) {
+    // F5: fail closed on any control char in the identity strings or any mime
+    // entry (every mimeTypes item also becomes a busctl arg).
+    if (anyControlChars({&sourceSilo, &destSilo, &sourceAppId, &destAppId,
+                         &sourceSandboxEngine}))
+        return rejectedIdentityResult();
+    for (const QString &mime : mimeTypes)
+        if (hasControlChars(mime))
+            return rejectedIdentityResult();
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),
@@ -1659,6 +1730,10 @@ QVariantMap QdwinBinding::checkClipboardReceive(
     bool identityVerified,
     uint sourcePid,
     qulonglong sourceStarttime) {
+    // F5: fail closed on any control char in the identity strings or mime type.
+    if (anyControlChars({&sourceSilo, &destSilo, &mimeType, &sourceAppId,
+                         &destAppId, &sourceSandboxEngine}))
+        return rejectedIdentityResult();
     QStringList args = {
         QStringLiteral("--system"),
         QStringLiteral("--no-pager"),

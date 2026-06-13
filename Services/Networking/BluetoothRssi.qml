@@ -58,12 +58,14 @@ QtObject {
       if (!dev)
         return;
       var addr = BluetoothUtils.macFromDevice(dev);
-      if (!addr || addr.length < 7)
+      // N3: addr is attacker-adjacent; require a canonical MAC and use argv
+      // (not a shell string) so a crafted address cannot smuggle commands.
+      if (!BluetoothUtils.isValidMac(addr))
         return;
       if (proc.running)
         return; // avoid overlap
       root._currentAddr = addr;
-      proc.command = ["sh", "-c", `bluetoothctl info "${addr}"`];
+      proc.command = ["bluetoothctl", "info", addr];
       try {
         proc.running = true;
       } catch (e) {}

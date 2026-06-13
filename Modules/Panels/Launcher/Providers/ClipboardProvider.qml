@@ -323,8 +323,14 @@ Item {
                      "icon": "pencil",
                      "tooltip": I18n.tr("tooltips.open-annotation-tool"),
                      "action": function () {
+                       // Re-validate the id (F7): every other clipboard-id call
+                       // site routes through this guard; a crafted non-numeric id
+                       // here would otherwise be interpolated into the shell.
+                       var safeId = ClipboardService.validId(item.clipboardId);
+                       if (!safeId)
+                         return;
                        var tool = LauncherSettings.screenshotAnnotationTool;
-                       Quickshell.execDetached(["sh", "-c", "cliphist decode " + item.clipboardId + " | " + tool]);
+                       Quickshell.execDetached(["sh", "-c", "cliphist decode " + safeId + " | " + tool]);
                        if (launcher)
                          launcher.close();
                      }

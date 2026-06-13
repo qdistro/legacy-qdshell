@@ -18,7 +18,6 @@ Popup {
   property string downloadError: ""
   property string downloadingScheme: ""
   property string pendingApplyScheme: "" // Scheme name to apply after reload
-  property string lastStderrOutput: "" // Store stderr from download process
   property real lastApiFetchTime: 0 // Track when we last fetched from API to prevent rapid calls
   property int minApiFetchInterval: 60 // Minimum seconds between API fetches (1 minute)
 
@@ -486,12 +485,107 @@ Popup {
             }
           };
         }(item);
+        // F1: the recursion URL comes from the registry JSON; only follow it if
+        // it points at the pinned first-party repo (no SSRF/redirect-to-file://).
+        if (!isAllowedSchemeUrl(item.url)) {
+          Logger.e("ColorSchemeDownload", "Rejected non-allowlisted directory URL:", item.url);
+          pending--;
+          checkComplete();
+          continue;
+        }
         xhr.open("GET", item.url);
         xhr.send();
       } else {
         checkComplete();
       }
     }
+  }
+
+  // F1: a scheme name/path segment is concatenated into local filesystem paths
+  // and remote API URLs. It comes from the (remote) registry JSON, so confine it
+  // to a safe charset and reject "."/".."/empty.
+  function isSafeSchemeName(name) {
+    var s = String(name || "");
+    return /^[A-Za-z0-9._-]+$/.test(s) && s !== "." && s !== "..";
+  }
+
+  // F1: normalize an untrusted relative file path from the registry tree. Reject
+  // absolute paths, control chars, and any "."/".."/empty segment so the result
+  // cannot escape the scheme's target directory. Returns the clean relative path
+  // or null.
+  function sanitizeRelativePath(rel) {
+    var s = String(rel || "");
+    if (s.length === 0 || s.charAt(0) === "/")
+      return null;
+    for (var ci = 0; ci < s.length; ci++) {
+      var code = s.charCodeAt(ci);
+      if (code < 0x20 || code === 0x7F)
+        return null;
+    }
+    var segs = s.split("/");
+    var clean = [];
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      if (seg === "" || seg === "." || seg === "..")
+        return null;
+      clean.push(seg);
+    }
+    return clean.join("/");
+  }
+
+  // F1: only download from the pinned first-party color-scheme repo over https.
+  function isAllowedSchemeUrl(url) {
+    var s = String(url || "");
+    return s.indexOf("https://raw.githubusercontent.com/qdshell-dev/qdshell-colorschemes/") === 0
+        || s.indexOf("https://api.github.com/repos/qdshell-dev/qdshell-colorschemes/") === 0;
+  }
+
+  function _finishDownload(schemeName, targetDir, jobs, index, anyError) {
+    if (index >= jobs.length) {
+      if (!anyError) {
+        Logger.i("ColorSchemeDownload", "Scheme downloaded successfully:", schemeName);
+        ToastService.showNotice(I18n.tr("panels.color-scheme.download-success-title"), I18n.tr("panels.color-scheme.download-success-description", {
+                                                                                                 "scheme": schemeName
+                                                                                               }), "settings-color-scheme");
+        pendingApplyScheme = schemeName;
+        ColorSchemeService.loadColorSchemes();
+        downloading = false;
+        downloadingScheme = "";
+      } else {
+        downloadError = I18n.tr("panels.color-scheme.download-error-download-failed", {
+                                  "code": 1
+                                });
+        Logger.e("ColorSchemeDownload", downloadError);
+        ToastService.showError(I18n.tr("panels.color-scheme.download-error-title"), I18n.tr("panels.color-scheme.download-error-description", {
+                                                                                              "scheme": schemeName
+                                                                                            }));
+        // Clean up the partially downloaded directory (argv; schemeName validated).
+        var cleanupProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process {}', root, "CleanupProcess_" + schemeName);
+        cleanupProcess.command = ["rm", "-rf", "--", targetDir];
+        cleanupProcess.exited.connect(function (cleanupExitCode) {
+          downloading = false;
+          downloadingScheme = "";
+          cleanupProcess.destroy();
+        });
+        cleanupProcess.running = true;
+      }
+      return;
+    }
+
+    var job = jobs[index];
+    var p = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process {}', root, "DownloadProcess_" + index);
+    // No shell: tokenized argv, https-only transport+redirects, curl creates the
+    // parent dirs under the (confined) localPath.
+    p.command = ["curl", "-fLsS", "--proto", "=https", "--proto-redir", "=https",
+                 "--create-dirs", "-o", job.localPath, job.url];
+    p.exited.connect(function (exitCode) {
+      var failed = anyError || (exitCode !== 0);
+      if (exitCode !== 0)
+        Logger.e("ColorSchemeDownload", "Download failed (exit " + exitCode + ") for", job.url);
+      p.destroy();
+      _finishDownload(schemeName, targetDir, jobs, index + 1, failed);
+    });
+    p.running = true;
   }
 
   function downloadSchemeFiles(schemeName, files) {
@@ -503,105 +597,54 @@ Popup {
       return;
     }
 
-    var targetDir = ColorSchemeService.downloadedSchemesDirectory + "/" + schemeName;
-    var downloadScript = "mkdir -p '" + targetDir + "'\n";
+    if (!isSafeSchemeName(schemeName)) {
+      downloadError = I18n.tr("panels.color-scheme.download-error-no-files");
+      downloading = false;
+      downloadingScheme = "";
+      Logger.e("ColorSchemeDownload", "Rejected unsafe scheme name:", schemeName);
+      return;
+    }
 
-    // Build download script for all files
+    var targetDir = ColorSchemeService.downloadedSchemesDirectory + "/" + schemeName;
+
+    // Build validated per-file download jobs. Any unsafe path or URL fails the
+    // whole download fail-closed (a malicious registry entry must not partially
+    // install).
+    var jobs = [];
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       var filePath = file.path;
-      // Remove scheme name and leading / from path
+      // Strip the scheme-name prefix if present (display layout).
       var relativePath = filePath;
       if (filePath.startsWith(schemeName + "/")) {
         relativePath = filePath.substring(schemeName.length + 1);
       } else if (filePath.startsWith("/" + schemeName + "/")) {
         relativePath = filePath.substring(schemeName.length + 2);
       }
-      var localPath = targetDir + "/" + relativePath;
-      var localDir = localPath.substring(0, localPath.lastIndexOf('/'));
-
-      downloadScript += "mkdir -p '" + localDir + "'\n";
-      var downloadUrl = file.url || file.download_url;
-      if (downloadUrl) {
-        downloadScript += "curl -L -s -o '" + localPath + "' '" + downloadUrl + "' || wget -q -O '" + localPath + "' '" + downloadUrl + "'\n";
-      }
-    }
-
-    Logger.d("ColorSchemeDownload", "Downloading", files.length, "files for scheme", schemeName);
-
-    // Execute download script
-    var stderrOutput = "";
-    var downloadProcess = Qt.createQmlObject(`
-                                             import QtQuick
-                                             import Quickshell.Io
-                                             import qs.Commons
-                                             Process {
-                                             id: downloadProcess
-                                             command: ["sh", "-c", ` + JSON.stringify(downloadScript) + `]
-                                             stderr: StdioCollector {
-                                               onStreamFinished: {
-                                                 if (text && text.trim()) {
-                                                   Logger.e("ColorSchemeDownload", "Download stderr:", text);
-                                                   root.lastStderrOutput = text.trim();
-                                                 }
-                                               }
-                                             }
-                                             }
-                                             `, root, "DownloadProcess_" + schemeName);
-
-    downloadProcess.exited.connect(function (exitCode) {
-      if (exitCode === 0) {
-        Logger.i("ColorSchemeDownload", "Scheme downloaded successfully:", schemeName);
-        ToastService.showNotice(I18n.tr("panels.color-scheme.download-success-title"), I18n.tr("panels.color-scheme.download-success-description", {
-                                                                                                 "scheme": schemeName
-                                                                                               }), "settings-color-scheme");
-        // Set pending scheme to apply after reload
-        pendingApplyScheme = schemeName;
-        // Reload color schemes
-        ColorSchemeService.loadColorSchemes();
+      var cleanRel = sanitizeRelativePath(relativePath);
+      if (!cleanRel) {
+        downloadError = I18n.tr("panels.color-scheme.download-error-no-files");
         downloading = false;
         downloadingScheme = "";
-      } else {
-        var errorDetails = "Exit code: " + exitCode;
-        if (root.lastStderrOutput) {
-          errorDetails += " - " + root.lastStderrOutput;
-        }
-        downloadError = I18n.tr("panels.color-scheme.download-error-download-failed", {
-                                  "code": exitCode
-                                }) + "\n" + errorDetails;
-        Logger.e("ColorSchemeDownload", downloadError);
-        ToastService.showError(I18n.tr("panels.color-scheme.download-error-title"), I18n.tr("panels.color-scheme.download-error-description", {
-                                                                                              "scheme": schemeName
-                                                                                            }) + "\n" + errorDetails);
-        // Clean up the partially downloaded directory on failure
-        var cleanupScript = "rm -rf '" + targetDir + "'";
-        var cleanupProcess = Qt.createQmlObject(`
-                                                 import QtQuick
-                                                 import Quickshell.Io
-                                                 Process {
-                                                 id: cleanupProcess
-                                                 command: ["sh", "-c", ` + JSON.stringify(cleanupScript) + `]
-                                                 }
-                                                 `, root, "CleanupProcess_" + schemeName);
-
-        cleanupProcess.exited.connect(function (cleanupExitCode) {
-          if (cleanupExitCode === 0) {
-            Logger.d("ColorSchemeDownload", "Partially downloaded scheme directory cleaned up:", targetDir);
-          } else {
-            Logger.w("ColorSchemeDownload", "Failed to clean up partially downloaded scheme directory:", targetDir);
-          }
-          downloading = false;
-          downloadingScheme = "";
-          cleanupProcess.destroy();
-        });
-
-        cleanupProcess.running = true;
+        Logger.e("ColorSchemeDownload", "Rejected unsafe scheme file path:", filePath);
+        return;
       }
-      root.lastStderrOutput = "";
-      downloadProcess.destroy();
-    });
+      var downloadUrl = file.url || file.download_url;
+      if (!isAllowedSchemeUrl(downloadUrl)) {
+        downloadError = I18n.tr("panels.color-scheme.download-error-no-files");
+        downloading = false;
+        downloadingScheme = "";
+        Logger.e("ColorSchemeDownload", "Rejected non-allowlisted download URL:", downloadUrl);
+        return;
+      }
+      jobs.push({
+                  "localPath": targetDir + "/" + cleanRel,
+                  "url": downloadUrl
+                });
+    }
 
-    downloadProcess.running = true;
+    Logger.d("ColorSchemeDownload", "Downloading", jobs.length, "files for scheme", schemeName);
+    _finishDownload(schemeName, targetDir, jobs, 0, false);
   }
 
   function isSchemeInstalled(schemeName) {
@@ -631,6 +674,12 @@ Popup {
       return;
     }
 
+    // F1: schemeName is concatenated into the rm target; reject unsafe names.
+    if (!isSafeSchemeName(schemeName)) {
+      Logger.e("ColorSchemeDownload", "Rejected unsafe scheme name for delete:", schemeName);
+      return;
+    }
+
     Logger.i("ColorSchemeDownload", "Deleting scheme:", schemeName);
 
     // Check if the deleted scheme is the currently active one
@@ -640,16 +689,10 @@ Popup {
 
     // Only allow deleting downloaded schemes, not preinstalled ones
     var targetDir = ColorSchemeService.downloadedSchemesDirectory + "/" + schemeName;
-    var deleteScript = "rm -rf '" + targetDir + "'";
 
-    var deleteProcess = Qt.createQmlObject(`
-                                           import QtQuick
-                                           import Quickshell.Io
-                                           Process {
-                                           id: deleteProcess
-                                           command: ["sh", "-c", ` + JSON.stringify(deleteScript) + `]
-                                           }
-                                           `, root, "DeleteProcess_" + schemeName);
+    // No shell: tokenized argv (schemeName validated above).
+    var deleteProcess = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process {}', root, "DeleteProcess_" + schemeName);
+    deleteProcess.command = ["rm", "-rf", "--", targetDir];
 
     deleteProcess.exited.connect(function (exitCode) {
       if (exitCode === 0) {

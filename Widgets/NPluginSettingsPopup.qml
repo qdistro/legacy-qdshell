@@ -135,9 +135,13 @@ Popup {
       return;
     }
 
-    // Get plugin directory
-    var pluginDir = PluginRegistry.getPluginDir(pluginId);
-    var settingsPath = pluginDir + "/" + pluginManifest.entryPoints.settings;
+    // N2: confine the manifest entry point beneath the plugin dir.
+    var settingsPath = (pluginManifest && pluginManifest.entryPoints)
+        ? PluginRegistry.resolvePluginEntryPoint(pluginId, pluginManifest.entryPoints.settings) : null;
+    if (!settingsPath) {
+      Logger.w("NPluginSettingsPopup", "Rejected unsafe settings entry point for plugin:", pluginId);
+      return;
+    }
 
     settingsLoader.setSource("file://" + settingsPath, {
                                "pluginApi": currentPluginApi

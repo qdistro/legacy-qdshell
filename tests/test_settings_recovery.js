@@ -168,4 +168,25 @@ const R = require("../Services/Qdshell/SettingsRecovery.js");
   assert.strictEqual(w2.label, "");
 })();
 
+// ── F12: mergeDefaults must not let a user-supplied __proto__ key pollute the
+// result's prototype (JSON.parse exposes __proto__ as an OWN property). ──
+(function testProtoPollution() {
+  const defaults = { a: 1 };
+  // Build a user object with __proto__ as a real own enumerable property, the
+  // way JSON.parse('{"__proto__":{...}}') produces it.
+  const user = JSON.parse('{"a":2,"__proto__":{"polluted":true},"b":3}');
+  const out = R.mergeDefaults(defaults, user);
+  // user-only key b is preserved...
+  assert.strictEqual(out.b, 3, "user-only key preserved");
+  // ...but __proto__ did not reparent `out` and did not pollute Object.prototype
+  assert.strictEqual(out.polluted, undefined, "no polluted key visible on result");
+  assert.strictEqual(({}).polluted, undefined, "Object.prototype not polluted");
+  assert.strictEqual(Object.getPrototypeOf(out), Object.prototype, "result prototype intact");
+  // constructor / prototype keys are likewise not copied through
+  const user2 = JSON.parse('{"constructor":"x","prototype":"y","c":4}');
+  const out2 = R.mergeDefaults({}, user2);
+  assert.strictEqual(out2.c, 4);
+  assert.strictEqual(typeof out2.constructor, "function", "constructor untouched");
+})();
+
 console.log("settings-recovery: all assertions passed");

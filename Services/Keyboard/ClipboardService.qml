@@ -584,6 +584,13 @@ Singleton {
     return null;
   }
 
+  // Public guard: return the id as a validated numeric string, or null.
+  // Callers that interpolate a clipboard id into a command MUST route through
+  // this (mirrors the ClipboardActions.validId() guard used internally).
+  function validId(id) {
+    return ClipboardActions.validId(id);
+  }
+
   // Async decode - checks cache first, then falls back to cliphist
   function decode(id, cb) {
     if (!root.cliphistAvailable) {

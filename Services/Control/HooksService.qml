@@ -118,12 +118,15 @@ Singleton {
       return;
     }
 
-    let command = script.replace(/\$1/g, wallpaperPath);
-    command = command.replace(/\$2/g, screenName || "");
-    HooksGate.gate("wallpaperChange", command, () => {
+    // F2: pass the wallpaper path / screen name as real positional parameters
+    // ($1/$2) instead of string-substituting them into the hook. The shell now
+    // quotes them, so a malicious wallpaper filename (which can arrive from a
+    // download or another silo) cannot inject shell syntax. The user's hook
+    // script still references $1/$2 exactly as before.
+    HooksGate.gate("wallpaperChange", script, () => {
       try {
-        Quickshell.execDetached(["sh", "-lc", command]);
-        Logger.d("HooksService", `Executed wallpaper hook: ${command}`);
+        Quickshell.execDetached(["sh", "-lc", script, "qdshell-hook", wallpaperPath || "", screenName || ""]);
+        Logger.d("HooksService", `Executed wallpaper hook (screen=${screenName || ""})`);
       } catch (e) {
         Logger.e("HooksService", `Failed to execute wallpaper hook: ${e}`);
       }
@@ -141,11 +144,11 @@ Singleton {
       return;
     }
 
-    const command = script.replace(/\$1/g, isDarkMode ? "true" : "false");
-    HooksGate.gate("darkModeChange", command, () => {
+    // F2: pass the value as a positional parameter ($1) rather than substituting.
+    HooksGate.gate("darkModeChange", script, () => {
       try {
-        Quickshell.execDetached(["sh", "-lc", command]);
-        Logger.d("HooksService", `Executed dark mode hook: ${command}`);
+        Quickshell.execDetached(["sh", "-lc", script, "qdshell-hook", isDarkMode ? "true" : "false"]);
+        Logger.d("HooksService", `Executed dark mode hook (dark=${isDarkMode})`);
       } catch (e) {
         Logger.e("HooksService", `Failed to execute dark mode hook: ${e}`);
       }
@@ -272,9 +275,13 @@ Singleton {
       return;
     }
 
-    const command = `${script} ${action}`;
+    // F2: `action` is an internal session verb (e.g. "logout"), but constrain it
+    // to a safe charset before appending so it can never carry shell syntax even
+    // if a future caller passes something less trusted.
+    const safeAction = /^[A-Za-z0-9_-]+$/.test(String(action || "")) ? action : "";
+    const command = `${script} ${safeAction}`;
     HooksGate.gate("session", command, () => {
-      Logger.i("HooksService", `Executing session hook for ${action}`);
+      Logger.i("HooksService", `Executing session hook for ${safeAction}`);
       runPowerHook(command, callback);
     });
   }

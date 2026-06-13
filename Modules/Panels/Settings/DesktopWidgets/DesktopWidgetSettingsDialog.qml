@@ -177,8 +177,13 @@ Popup {
         return;
       }
 
-      var pluginDir = PluginRegistry.getPluginDir(pluginId);
-      var settingsPath = "file://" + pluginDir + "/" + manifest.entryPoints.settings;
+      // N2: confine the manifest entry point beneath the plugin dir.
+      var settingsResolved = PluginRegistry.resolvePluginEntryPoint(pluginId, manifest.entryPoints.settings);
+      if (!settingsResolved) {
+        Logger.w("DesktopWidgetSettingsDialog", "Rejected unsafe settings entry point for plugin:", pluginId);
+        return;
+      }
+      var settingsPath = "file://" + settingsResolved;
       var loadVersion = PluginRegistry.pluginLoadVersions[pluginId] || 0;
       var api = PluginService.getPluginAPI(pluginId);
 
