@@ -162,27 +162,95 @@ function applySortMode(entries, sortMode) {
 // rows out — the QML side reads Qdwin window fields and passes the
 // primitives, and dispatches the returned actions.
 
-// Human-readable isolation tier from the secctx identity. The app_id /
-// sandbox_engine prefix encodes the tier (see doc/isolation-tiers.md and the
-// secctx contract): qdistro.disp.<token> = a tier-2 disposable;
-// qdistro.tier4.<vm> = per-app VM; qdistro.tier3.<silo> = waypipe VM app;
-// qdistro.tier2 = rootless container. An empty identity is a native window.
-function siloTierLabel(secctxAppId, sandboxEngine) {
+// Stable tier KEY from the secctx identity — a short, language-independent
+// token the QML side maps to an I18n key (bar.taskbar.isolation.tier-<key>)
+// for display. The app_id / sandbox_engine prefix encodes the tier (see
+// doc/isolation-tiers.md and the secctx contract): qdistro.disp.<token> = a
+// tier-2 disposable; qdistro.tier4.<vm> = per-app VM; qdistro.tier3.<silo> =
+// waypipe VM app; qdistro.tier2 = rootless container. An empty identity is a
+// native window.
+function siloTierKey(secctxAppId, sandboxEngine) {
   var id = (secctxAppId || "") + "";
   var eng = (sandboxEngine || "") + "";
   if (id.indexOf("qdistro.disp.") === 0)
-    return "disposable (tier 2)";
+    return "disposable";
   if (id.indexOf("qdistro.tier5.") === 0 || eng.indexOf("qdistro.tier5") === 0)
-    return "tier 5 (VM)";
+    return "tier5";
   if (id.indexOf("qdistro.tier4.") === 0 || eng.indexOf("qdistro.tier4") === 0)
-    return "tier 4 (VM)";
+    return "tier4";
   if (id.indexOf("qdistro.tier3.") === 0 || eng.indexOf("qdistro.tier3") === 0)
-    return "tier 3 (VM app)";
+    return "tier3";
   if (eng.indexOf("qdistro.tier2") === 0 || id.indexOf("qdistro.tier2") === 0)
-    return "tier 2 (container)";
+    return "tier2";
   if (!id && !eng)
-    return "native (tier 0/1)";
+    return "native";
   return "sandboxed";
+}
+
+// English fallback labels per tier key. Used by siloTierLabel() (and the JS
+// unit tests) so a node-side caller without I18n still gets a readable string;
+// the QML side prefers the I18n key (bar.taskbar.isolation.tier-<key>).
+var _TIER_LABELS_EN = {
+  "disposable": "disposable (tier 2)",
+  "tier5": "tier 5 (VM)",
+  "tier4": "tier 4 (VM)",
+  "tier3": "tier 3 (VM app)",
+  "tier2": "tier 2 (container)",
+  "native": "native (tier 0/1)",
+  "sandboxed": "sandboxed",
+};
+
+// Human-readable isolation tier from the secctx identity (English fallback).
+// The canonical signal is siloTierKey(); this wraps it with the English label
+// table so non-i18n callers (and the existing JS tests) still get a string.
+function siloTierLabel(secctxAppId, sandboxEngine) {
+  var key = siloTierKey(secctxAppId, sandboxEngine);
+  return _TIER_LABELS_EN[key] || _TIER_LABELS_EN.sandboxed;
+}
+
+// Resolve the Snapper CONFIG for a window's silo, or report it as not
+// snapshottable. The broker's SnapshotBefore(config, description) takes a
+// SNAPPER CONFIG NAME (per-user-home / per-silo config), NOT a qdshell silo
+// label — so we map only the case we can map cleanly:
+//
+//   * Persistent tier-2 container: the derived silo is "tier2/<name>"; the
+//     Snapper config is <name> (the per-silo / per-user-home config). We strip
+//     exactly one "tier2/" prefix and use <name>.
+//
+// Everything else is NOT offered a host-Snapper snapshot:
+//   * Disposables (qdistro.disp.<token>): tmpfs /home + --rm — no durable
+//     subvolume to snapshot; "Dispose" is the right action instead.
+//   * VM tiers (tier3/4/5): the real story is a VM disk/state snapshot, not a
+//     host Snapper config by bare name — passing a bare name could snapshot an
+//     unrelated config that happens to share it. Deferred to a qdistro-owned
+//     VM snapshot surface (forward item).
+//   * Native (tier 0/1): no isolation identity at all.
+//
+// The returned config is validated to a strict config-name shape
+// (^[A-Za-z0-9][A-Za-z0-9._-]*$, no '/', no leading '-') so a non-normalised or
+// surprising silo label can never reach the broker as a config. Returns
+// { snapshottable: bool, config: string }; config is "" when not snapshottable.
+var _SNAP_CONFIG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+function snapshotConfigForWindow(identity) {
+  identity = identity || {};
+  // Disposables are never snapshottable (ephemeral home).
+  if (isDisposableWindow(identity))
+    return { "snapshottable": false, "config": "" };
+  var key = siloTierKey(identity.secctxAppId, identity.sandboxEngine);
+  // Only persistent tier-2 containers map to a host Snapper config.
+  if (key !== "tier2")
+    return { "snapshottable": false, "config": "" };
+  var silo = (identity.silo || "") + "";
+  // The persistent tier-2 silo is "tier2/<name>"; <name> is the config.
+  if (silo.indexOf("tier2/") !== 0)
+    return { "snapshottable": false, "config": "" };
+  var config = silo.slice("tier2/".length);
+  // Reject anything that still carries a '/' or fails the config-name shape:
+  // a clean per-silo config is a simple name, and a residual '/' means we did
+  // not actually normalise a tier-2 label.
+  if (!config || config.indexOf("/") !== -1 || !_SNAP_CONFIG_RE.test(config))
+    return { "snapshottable": false, "config": "" };
+  return { "snapshottable": true, "config": config };
 }
 
 // A window is a disposable iff its secctx app_id is qdistro.disp.<token>.
@@ -203,7 +271,14 @@ function isDisposableWindow(identity) {
 // the menu is UNCHANGED for non-silo apps. Identity rows are disabled
 // (informational, "show identity"); snapshot / dispose / permissions are
 // live actions the QML onTriggered handler dispatches. `dispose` only
-// appears for disposable windows.
+// appears for disposable windows; `snapshot` only for windows whose silo maps
+// to a real Snapper config (persistent tier-2 — see snapshotConfigForWindow).
+//
+// i18n: each row carries BOTH a `label` (English fallback, so node-side callers
+// and the existing JS tests still get a readable string) AND a `labelKey` plus
+// optional `labelParams` for the QML side to resolve via I18n.tr(labelKey,
+// labelParams). The identity rows interpolate the silo / tier / secctx VALUES
+// as params so a translator only ever localises the surrounding text.
 function buildIsolationMenuItems(identity) {
   identity = identity || {};
   var secctx = (identity.secctxAppId || "") + "";
@@ -212,27 +287,46 @@ function buildIsolationMenuItems(identity) {
   // Native window: no isolation identity -> no qdistro section.
   if (!secctx && !engine && !silo)
     return [];
+  var tierKey = siloTierKey(secctx, engine);
   var tier = siloTierLabel(secctx, engine);
+  var siloName = silo || "(unnamed)";
   var disposable = isDisposableWindow(identity);
+  var snap = snapshotConfigForWindow(identity);
   var items = [];
-  // Identity (disabled, informational rows).
+  // Identity (disabled, informational rows). labelKey carries the localisable
+  // template; labelParams carry the raw identity values to interpolate.
   items.push({ "label": "qdistro silo", "action": "qd-header",
-               "icon": "shield", "enabled": false, "isQdistro": true });
-  items.push({ "label": "Silo: " + (silo || "(unnamed)"),
-               "action": "qd-id-silo", "enabled": false, "isQdistro": true });
+               "icon": "shield", "enabled": false, "isQdistro": true,
+               "labelKey": "bar.taskbar.isolation.header" });
+  items.push({ "label": "Silo: " + siloName,
+               "action": "qd-id-silo", "enabled": false, "isQdistro": true,
+               "labelKey": "bar.taskbar.isolation.silo",
+               "labelParams": { "silo": siloName } });
   items.push({ "label": "Isolation: " + tier,
-               "action": "qd-id-tier", "enabled": false, "isQdistro": true });
+               "action": "qd-id-tier", "enabled": false, "isQdistro": true,
+               "labelKey": "bar.taskbar.isolation.tier",
+               // The tier itself is a localisable enum (tier-<key>); the QML
+               // side resolves the inner key first, then the outer template.
+               "tierKey": tierKey,
+               "labelParams": { "tier": tier } });
   if (secctx)
     items.push({ "label": "Context: " + secctx, "action": "qd-id-secctx",
-                 "enabled": false, "isQdistro": true });
-  // Actions.
-  items.push({ "label": "Snapshot now", "action": "qd-snapshot",
-               "icon": "camera", "isQdistro": true });
+                 "enabled": false, "isQdistro": true,
+                 "labelKey": "bar.taskbar.isolation.context",
+                 "labelParams": { "context": secctx } });
+  // Actions. Snapshot only when the silo maps to a real Snapper config.
+  if (snap.snapshottable)
+    items.push({ "label": "Snapshot now", "action": "qd-snapshot",
+                 "icon": "camera", "isQdistro": true,
+                 "labelKey": "bar.taskbar.isolation.snapshot",
+                 "snapConfig": snap.config });
   if (disposable)
     items.push({ "label": "Dispose", "action": "qd-dispose",
-                 "icon": "trash-2", "isQdistro": true });
+                 "icon": "trash-2", "isQdistro": true,
+                 "labelKey": "bar.taskbar.isolation.dispose" });
   items.push({ "label": "Permissions…", "action": "qd-permissions",
-               "icon": "lock", "isQdistro": true });
+               "icon": "lock", "isQdistro": true,
+               "labelKey": "bar.taskbar.isolation.permissions" });
   return items;
 }
 
@@ -265,7 +359,9 @@ if (typeof module !== "undefined") {
     isRunningWindowEntry: isRunningWindowEntry,
     groupApps: groupApps,
     applySortMode: applySortMode,
+    siloTierKey: siloTierKey,
     siloTierLabel: siloTierLabel,
+    snapshotConfigForWindow: snapshotConfigForWindow,
     isDisposableWindow: isDisposableWindow,
     buildIsolationMenuItems: buildIsolationMenuItems,
     disposeWindowPlan: disposeWindowPlan,

@@ -247,6 +247,64 @@ function noDuplicateIds(entries) {
 })();
 
 // ── qdistro isolation menu (D16 v1) ──
+(function testSiloTierKey() {
+  // The stable, language-independent enum the QML side maps to an I18n key.
+  assert.strictEqual(
+    TaskbarLogic.siloTierKey("qdistro.disp.deadbeef", "qdistro.tier2"), "disposable");
+  assert.strictEqual(TaskbarLogic.siloTierKey("qdistro.tier5.work-vm", ""), "tier5");
+  assert.strictEqual(TaskbarLogic.siloTierKey("qdistro.tier4.work-vm", ""), "tier4");
+  assert.strictEqual(TaskbarLogic.siloTierKey("qdistro.tier3.dev", ""), "tier3");
+  assert.strictEqual(
+    TaskbarLogic.siloTierKey("c1/weston-terminal", "qdistro.tier2"), "tier2");
+  assert.strictEqual(TaskbarLogic.siloTierKey("", ""), "native");
+  // disposable wins over the tier2 engine it rides on
+  assert.strictEqual(
+    TaskbarLogic.siloTierKey("qdistro.disp.abc", "qdistro.tier2"), "disposable");
+})();
+
+(function testSnapshotConfigForWindow() {
+  // Persistent tier-2: "tier2/<name>" -> Snapper config <name>.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "c1/weston-terminal", sandboxEngine: "qdistro.tier2", silo: "tier2/c1" }),
+    { snapshottable: true, config: "c1" });
+  // Disposable: never snapshottable (ephemeral home), even on the tier2 engine.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "qdistro.disp.deadbeef", sandboxEngine: "qdistro.tier2",
+      silo: "tier2/qdistro.disp.deadbeef" }),
+    { snapshottable: false, config: "" });
+  // VM tiers: not a host Snapper config — not offered.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "qdistro.tier5.work-vm", sandboxEngine: "qdistro.tier5", silo: "vm-work-vm" }),
+    { snapshottable: false, config: "" });
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "qdistro.tier3.dev", sandboxEngine: "qdistro.tier3", silo: "dev" }),
+    { snapshottable: false, config: "" });
+  // Native: no identity -> not snapshottable.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({}), { snapshottable: false, config: "" });
+  // A tier-2 silo without the "tier2/" prefix (e.g. an unexpected label) is
+  // NOT snapshottable — we never guess a bare name.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "c1/x", sandboxEngine: "qdistro.tier2", silo: "dev" }),
+    { snapshottable: false, config: "" });
+  // A residual '/' after stripping (e.g. nested label) is rejected.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "c1/x", sandboxEngine: "qdistro.tier2", silo: "tier2/a/b" }),
+    { snapshottable: false, config: "" });
+  // A config name that fails the strict shape (leading '-', odd chars) is
+  // rejected so it can never reach the broker argv.
+  assert.deepStrictEqual(
+    TaskbarLogic.snapshotConfigForWindow({
+      secctxAppId: "c1/x", sandboxEngine: "qdistro.tier2", silo: "tier2/-evil" }),
+    { snapshottable: false, config: "" });
+})();
+
 (function testSiloTierLabel() {
   assert.strictEqual(
     TaskbarLogic.siloTierLabel("qdistro.disp.deadbeef", "qdistro.tier2"),
@@ -320,37 +378,62 @@ function noDuplicateIds(entries) {
 })();
 
 (function testBuildIsolationMenu_tier2_noDispose() {
+  // A persistent tier-2 silo's derived string is "tier2/<name>" (see
+  // ClipboardSilo.fromSecctx) — that is what reaches buildIsolationMenuItems.
   const items = TaskbarLogic.buildIsolationMenuItems({
-    secctxAppId: "c1/weston-terminal", sandboxEngine: "qdistro.tier2", silo: "dev"
+    secctxAppId: "c1/weston-terminal", sandboxEngine: "qdistro.tier2", silo: "tier2/dev"
   });
   const actions = items.map(function (i) { return i.action; });
   // identity rows + snapshot + permissions, but NO dispose for a persistent silo
   assert.ok(actions.indexOf("qd-snapshot") !== -1);
   assert.ok(actions.indexOf("qd-permissions") !== -1);
   assert.strictEqual(actions.indexOf("qd-dispose"), -1);
+  // the snapshot row carries the RESOLVED Snapper config (tier2/ stripped).
+  const snapRow = items.find(function (i) { return i.action === "qd-snapshot"; });
+  assert.strictEqual(snapRow.snapConfig, "dev");
   // identity rows are disabled + carry the tier + silo
   const tierRow = items.find(function (i) { return i.action === "qd-id-tier"; });
   assert.strictEqual(tierRow.enabled, false);
   assert.ok(tierRow.label.indexOf("tier 2") !== -1);
+  // i18n: rows carry a labelKey; the tier row also carries the tierKey enum.
+  assert.strictEqual(tierRow.labelKey, "bar.taskbar.isolation.tier");
+  assert.strictEqual(tierRow.tierKey, "tier2");
   const siloRow = items.find(function (i) { return i.action === "qd-id-silo"; });
   assert.ok(siloRow.label.indexOf("dev") !== -1);
+  assert.strictEqual(siloRow.labelParams.silo, "tier2/dev");
   // every row is tagged so the QML/menu can distinguish the qdistro section
   items.forEach(function (i) { assert.strictEqual(i.isQdistro, true); });
 })();
 
-(function testBuildIsolationMenu_disposable_hasDispose() {
+(function testBuildIsolationMenu_disposable_hasDispose_noSnapshot() {
   const items = TaskbarLogic.buildIsolationMenuItems({
     secctxAppId: "qdistro.disp.deadbeef", sandboxEngine: "qdistro.tier2",
-    silo: "disp-pdf-20260612-151828"
+    silo: "tier2/qdistro.disp.deadbeef", instanceId: "0123456789abcdef"
   });
   const actions = items.map(function (i) { return i.action; });
   assert.ok(actions.indexOf("qd-dispose") !== -1);   // dispose IS shown
-  assert.ok(actions.indexOf("qd-snapshot") !== -1);
+  // Snapshot is HIDDEN for a disposable: its home is ephemeral (tmpfs/--rm),
+  // so a host Snapper snapshot is a category error.
+  assert.strictEqual(actions.indexOf("qd-snapshot"), -1);
+  assert.ok(actions.indexOf("qd-permissions") !== -1);
   const tierRow = items.find(function (i) { return i.action === "qd-id-tier"; });
   assert.ok(tierRow.label.indexOf("disposable") !== -1);
+  assert.strictEqual(tierRow.tierKey, "disposable");
   // the secctx context row is present and shows the app_id
   const ctxRow = items.find(function (i) { return i.action === "qd-id-secctx"; });
   assert.ok(ctxRow.label.indexOf("qdistro.disp.deadbeef") !== -1);
+})();
+
+(function testBuildIsolationMenu_vmTier_noSnapshot() {
+  // VM tiers get no host Snapper snapshot item (their snapshot story is
+  // VM-disk, not a host Snapper config). Identity rows + permissions remain.
+  const items = TaskbarLogic.buildIsolationMenuItems({
+    secctxAppId: "qdistro.tier5.work-vm", sandboxEngine: "qdistro.tier5", silo: "vm-work-vm"
+  });
+  const actions = items.map(function (i) { return i.action; });
+  assert.strictEqual(actions.indexOf("qd-snapshot"), -1);
+  assert.strictEqual(actions.indexOf("qd-dispose"), -1);
+  assert.ok(actions.indexOf("qd-permissions") !== -1);
 })();
 
 console.log("taskbar-logic: all assertions passed");

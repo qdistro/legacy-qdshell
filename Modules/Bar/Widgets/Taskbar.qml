@@ -12,6 +12,7 @@ import qs.Services.System
 import qs.Services.UI
 import qs.Widgets
 import "TaskbarLogic.js" as TaskbarLogic
+import "PermissionsLogic.js" as PermissionsLogic
 
 Item {
   id: root
@@ -92,6 +93,10 @@ Item {
   // Context menu state - store ID instead of object reference to avoid stale references
   property string selectedWindowId: ""
   property string selectedAppId: ""
+  // The taskbar item the context menu was anchored to, kept so a follow-up
+  // popup (the permissions panel) can anchor to the same place after the
+  // context menu has closed and the selection has been cleared.
+  property var selectedAnchorItem: null
 
   // Helper to get the current model entry from the selected ID. Returns
   // the full entry (which may be a group) or null.
@@ -650,7 +655,7 @@ Item {
                                                                 "silo": root.qdSiloForWindow(_qdWin, entry)
                                                               });
         for (var _qi = 0; _qi < _qdItems.length; _qi++)
-          items.push(_qdItems[_qi]);
+          items.push(root.qdLocalizeIsolationItem(_qdItems[_qi]));
       }
     }
     items.push({
@@ -659,6 +664,40 @@ Item {
                  "icon": "settings"
                });
     return items;
+  }
+
+  // Localize one isolation-menu row built by TaskbarLogic. The pure JS builder
+  // emits a `labelKey` (+ optional `labelParams`) plus an English `label`
+  // fallback; here we resolve the key through I18n.tr so the menu honors the
+  // active language, and keep the English string if the key is missing. The
+  // tier row carries a nested `tierKey` (a localisable enum) that we resolve
+  // first into the `tier` param. The original item is shallow-copied so the
+  // builder's output (and the JS tests' English labels) stay untouched.
+  function qdLocalizeIsolationItem(item) {
+    if (!item || !item.labelKey)
+      return item;
+    var out = {};
+    for (var k in item)
+      out[k] = item[k];
+    var params = {};
+    if (item.labelParams) {
+      for (var p in item.labelParams)
+        params[p] = item.labelParams[p];
+    }
+    // Resolve the nested tier enum (bar.taskbar.isolation.tier-<key>) before
+    // the outer template so the localized tier name is interpolated in.
+    if (item.tierKey) {
+      var tierKeyFull = "bar.taskbar.isolation.tier-" + item.tierKey;
+      var localizedTier = I18n.tr(tierKeyFull);
+      // I18n.tr returns the key (or !!key!!) when unresolved — fall back to the
+      // English tier already in labelParams in that case.
+      if (localizedTier && localizedTier.indexOf("!!") !== 0 && localizedTier !== tierKeyFull)
+        params.tier = localizedTier;
+    }
+    var localized = I18n.tr(item.labelKey, params);
+    if (localized && localized.indexOf("!!") !== 0 && localized !== item.labelKey)
+      out.label = localized;
+    return out;
   }
 
   // Derive the silo identity for a window the same way the rest of the
@@ -681,15 +720,19 @@ Item {
     return root.qdSiloForWindow(root.getSelectedWindow(), root.getSelectedEntry());
   }
 
-  // Snapshot-now (D16): ask the broker to take a Snapper snapshot via its
-  // existing SnapshotBefore method (broker -> Snapper; no new protocol). The
-  // result is captured and toasted honestly — a wrong/unknown config surfaces
-  // the broker's real error rather than a false "done". The silo->Snapper-
-  // config mapping is best-effort for v1 (passes the derived silo as config);
-  // a dedicated per-silo config is a follow-up.
+  // Snapshot-now (D16/P2c): ask the broker to take a Snapper snapshot via its
+  // existing SnapshotBefore(config, description) method (broker -> Snapper; no
+  // new protocol). `config` is a SNAPPER CONFIG NAME, not a qdshell silo label,
+  // so the menu item carries the resolved config (TaskbarLogic
+  // .snapshotConfigForWindow strips the "tier2/" prefix of a persistent
+  // tier-2 silo). The Snapshot item is only OFFERED for windows whose silo maps
+  // to a real config (persistent tier-2): disposables (ephemeral home) and VM
+  // tiers (their snapshot story is VM-disk, not host Snapper) get no item. The
+  // result is toasted honestly — a config that still does not exist on this
+  // host surfaces the broker's real error rather than a false "done".
   Process {
     id: qdSnapshotProc
-    property string siloName: ""
+    property string configName: ""
     stdout: StdioCollector {
       id: qdSnapshotOut
     }
@@ -698,32 +741,35 @@ Item {
     }
     onExited: (code, status) => {
       if (code === 0) {
-        ToastService.showNotice(qsTr("Snapshot"), qsTr("Snapshot taken for %1").arg(qdSnapshotProc.siloName), "camera", 3000);
+        ToastService.showNotice(I18n.tr("toast.snapshot.title"), I18n.tr("toast.snapshot.taken", { "config": qdSnapshotProc.configName }), "camera", 3000);
       } else {
-        const msg = (qdSnapshotErr.text || "").trim() || qsTr("broker error");
-        ToastService.showError(qsTr("Snapshot failed"), msg, 6000);
+        const msg = (qdSnapshotErr.text || "").trim() || I18n.tr("toast.snapshot.broker-error");
+        ToastService.showError(I18n.tr("toast.snapshot.failed"), msg, 6000);
       }
     }
   }
 
-  function qdSnapshotNow(silo) {
-    if (!silo) {
-      ToastService.showWarning(qsTr("Snapshot"), qsTr("This window has no silo to snapshot."), 4000);
+  function qdSnapshotNow(config) {
+    if (!config) {
+      ToastService.showWarning(I18n.tr("toast.snapshot.title"), I18n.tr("toast.snapshot.no-config"), 4000);
       return;
     }
-    // Guard the gdbus method arg: a value starting with '-' would be parsed
-    // as a gdbus option, not the config string. Not reachable from host-
-    // assigned secctx identities, but keep the invariant local.
-    if (!/^[A-Za-z0-9][A-Za-z0-9._/:-]*$/.test(silo)) {
-      ToastService.showWarning(qsTr("Snapshot"), qsTr("Refusing to snapshot a silo with an unexpected name."), 4000);
+    // Final guard on the resolved CONFIG name (not the raw silo). A real
+    // Snapper config is a simple name; reject anything with a '/', a leading
+    // '-' (would be parsed as a gdbus option), or an out-of-shape character.
+    // TaskbarLogic.snapshotConfigForWindow already enforces this, but the
+    // invariant is re-checked here so a config can never reach the broker
+    // un-validated.
+    if (config.indexOf("/") !== -1 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(config)) {
+      ToastService.showWarning(I18n.tr("toast.snapshot.title"), I18n.tr("toast.snapshot.bad-config"), 4000);
       return;
     }
-    qdSnapshotProc.siloName = silo;
+    qdSnapshotProc.configName = config;
     qdSnapshotProc.command = ["gdbus", "call", "--system",
                               "--dest", "org.qdistro.AdminBroker1",
                               "--object-path", "/org/qdistro/AdminBroker1",
                               "--method", "org.qdistro.AdminBroker1.SnapshotBefore",
-                              silo, "qdistro: manual snapshot from taskbar"];
+                              config, "qdistro: manual snapshot from taskbar"];
     qdSnapshotProc.running = true;
   }
 
@@ -750,11 +796,11 @@ Item {
     }
     onExited: (code, status) => {
       if (code === 0 && /\(\s*true\s*,/.test(qdDisposeOut.text || "")) {
-        ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(qdDisposeProc.siloLabel || qsTr("silo")), "trash-2", 3000);
+        ToastService.showNotice(I18n.tr("toast.dispose.done-title"), I18n.tr("toast.dispose.done", { "silo": qdDisposeProc.siloLabel || I18n.tr("toast.dispose.silo") }), "trash-2", 3000);
       } else {
         const msg = (qdDisposeErr.text || "").trim()
-                  || (code === 0 ? qsTr("teardown did not complete") : qsTr("session manager error"));
-        ToastService.showError(qsTr("Dispose failed"), msg, 6000);
+                  || (code === 0 ? I18n.tr("toast.dispose.incomplete") : I18n.tr("toast.dispose.sm-error"));
+        ToastService.showError(I18n.tr("toast.dispose.failed"), msg, 6000);
       }
     }
   }
@@ -763,7 +809,7 @@ Item {
     if (qdDisposeProc.running) {
       // Single non-reentrant Process; a destructive op must not be silently
       // dropped (which would also mislabel the in-flight toast).
-      ToastService.showNotice(qsTr("Dispose"), qsTr("A dispose is already in progress."), "trash-2", 2000);
+      ToastService.showNotice(I18n.tr("toast.dispose.title"), I18n.tr("toast.dispose.in-progress"), "trash-2", 2000);
       return;
     }
     const win = root.getSelectedWindow();
@@ -781,7 +827,7 @@ Item {
       // exits the app so --rm / the startup reaper tears the container down.
       // This is the only teardown mechanism available without a token.
       root.closeWindows([win]);
-      ToastService.showNotice(qsTr("Disposed"), qsTr("Disposed %1").arg(label || qsTr("silo")), "trash-2", 3000);
+      ToastService.showNotice(I18n.tr("toast.dispose.done-title"), I18n.tr("toast.dispose.done", { "silo": label || I18n.tr("toast.dispose.silo") }), "trash-2", 3000);
       return;
     }
     qdDisposeProc.siloLabel = label;
@@ -791,6 +837,67 @@ Item {
                              "--method", "org.qdistro.SessionManager1.DisposeByToken",
                              plan.token];
     qdDisposeProc.running = true;
+  }
+
+  // Permissions panel (D16/P2c): a READ-ONLY view of the broker rules that
+  // apply to the selected window's silo. Queries the admin-only
+  // org.qdistro.AdminBroker1.ListRules over the system bus (busctl
+  // --json=short), filters the rule set to this window's app_id /
+  // sandbox_engine (PermissionsLogic), and shows the result as disabled
+  // (informational) rows in a popup menu. ListRules is admin-gated, so on a
+  // non-admin session busctl exits non-zero and we toast honestly rather than
+  // showing an empty panel.
+  property var qdPermIdentity: ({})  // {secctxAppId, sandboxEngine} captured at open
+  Process {
+    id: qdPermProc
+    stdout: StdioCollector {
+      id: qdPermOut
+    }
+    stderr: StdioCollector {
+      id: qdPermErr
+    }
+    onExited: (code, status) => {
+      if (code !== 0) {
+        const msg = (qdPermErr.text || "").trim() || I18n.tr("toast.permissions.broker-error");
+        ToastService.showError(I18n.tr("toast.permissions.title"), msg, 6000);
+        return;
+      }
+      const rules = PermissionsLogic.parseListRules(qdPermOut.text || "");
+      const items = PermissionsLogic.buildPermissionsMenu(rules, root.qdPermIdentity);
+      // Localize each row's labelKey the same way the isolation menu does.
+      const localized = [];
+      for (var i = 0; i < items.length; i++)
+        localized.push(root.qdLocalizeIsolationItem(items[i]));
+      permissionsMenu.model = localized;
+      if (root.selectedAnchorItem)
+        PanelService.showContextMenu(permissionsMenu, root, root.screen, root.selectedAnchorItem);
+    }
+  }
+
+  function qdOpenPermissions(win) {
+    if (!win)
+      return;
+    if (qdPermProc.running)
+      return;  // a query is already in flight
+    root.qdPermIdentity = {
+      "secctxAppId": win.secctxAppId || "",
+      "sandboxEngine": win.sandboxEngine || ""
+    };
+    qdPermProc.command = ["busctl", "--system", "--json=short", "call",
+                          "org.qdistro.AdminBroker1",
+                          "/org/qdistro/AdminBroker1",
+                          "org.qdistro.AdminBroker1", "ListRules"];
+    qdPermProc.running = true;
+  }
+
+  // The permissions panel popup. Read-only: every row is disabled, so
+  // onTriggered just closes it (no live actions).
+  NPopupContextMenu {
+    id: permissionsMenu
+    onTriggered: (action, item) => {
+                   permissionsMenu.close();
+                   PanelService.closeContextMenu(root.screen);
+                 }
   }
 
   NPopupContextMenu {
@@ -823,7 +930,10 @@ Item {
                    } else if (action === "widget-settings") {
                      BarService.openWidgetSettings(root.screen, root.section, root.sectionWidgetIndex, root.widgetId, root.widgetSettings);
                    } else if (action === "qd-snapshot") {
-                     root.qdSnapshotNow(root.qdSiloForSelected());
+                     // The menu item carries the resolved Snapper config
+                     // (TaskbarLogic stripped the "tier2/" prefix); pass it
+                     // directly rather than re-deriving the silo label.
+                     root.qdSnapshotNow(item && item.snapConfig ? item.snapConfig : "");
                    } else if (action === "qd-dispose") {
                      // Explicit lease teardown of a tier-2 disposable: ask the
                      // session manager to remove the CONTAINER by its launch
@@ -833,7 +943,11 @@ Item {
                      // window falls back to window-close inside the helper.
                      root.qdDisposeSelected();
                    } else if (action === "qd-permissions") {
-                     ToastService.showNotice(qsTr("Permissions"), qsTr("Per-silo permissions view is coming soon."), "lock", 3000);
+                     // Open the read-only per-silo permissions panel. Capture
+                     // the window identity NOW (selected* is cleared below) so
+                     // the async ListRules result can be filtered to this silo.
+                     if (selectedWindow)
+                       root.qdOpenPermissions(selectedWindow);
                    } else if (action.startsWith("desktop-action-") && item && item.desktopAction) {
                      if (item.desktopAction.command && item.desktopAction.command.length > 0) {
                        Quickshell.execDetached(item.desktopAction.command);
@@ -1363,6 +1477,9 @@ Item {
     // Set the model directly (shared builder keeps it in sync with the
     // reactive contextMenu.model binding).
     contextMenu.model = root.buildContextMenuModel();
+
+    // Remember the anchor so a follow-up popup (permissions panel) can reuse it.
+    root.selectedAnchorItem = item;
 
     // Anchor to root (stable) but center horizontally on the clicked item
     PanelService.showContextMenu(contextMenu, root, screen, item);

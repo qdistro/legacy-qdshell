@@ -268,6 +268,22 @@
       "hide-mode-label": "Hiding mode",
       "icon-scale-description": "Sets the scaling factor for taskbar icons.",
       "icon-scale-label": "Icon scaling",
+      "isolation": {
+        "context": "Context: {context}",
+        "dispose": "Dispose",
+        "header": "qdistro silo",
+        "permissions": "Permissions…",
+        "silo": "Silo: {silo}",
+        "snapshot": "Snapshot now",
+        "tier": "Isolation: {tier}",
+        "tier-disposable": "disposable (tier 2)",
+        "tier-native": "native (tier 0/1)",
+        "tier-sandboxed": "sandboxed",
+        "tier-tier2": "tier 2 (container)",
+        "tier-tier3": "tier 3 (VM app)",
+        "tier-tier4": "tier 4 (VM)",
+        "tier-tier5": "tier 5 (VM)"
+      },
       "max-width-description": "Maximum width of the taskbar as a percentage of screen width.",
       "max-width-label": "Maximum width",
       "minimize-all-in-group": "Minimize all windows",
@@ -275,6 +291,14 @@
       "only-active-workspaces-label": "Only from active workspaces",
       "only-same-monitor-description": "Show only apps from the monitor where the bar is located.",
       "only-same-monitor-label": "Only from same monitor",
+      "permissions": {
+        "global-header": "Global defaults",
+        "header": "Permissions",
+        "none": "No rules apply to this silo.",
+        "rule-allow": "Allow: {action}",
+        "rule-deny": "Deny: {action}",
+        "rule-other": "{decision}: {action}"
+      },
       "show-pinned-apps-description": "Show pinned apps from the dock in the taskbar.",
       "show-pinned-apps-label": "Show pinned apps",
       "sort-mode-description": "Order taskbar buttons by launch order (allows drag-and-drop), window title, or application group.",
@@ -2442,6 +2466,16 @@
       "unavailable": "Clipboard history unavailable",
       "unavailable-desc": "The 'cliphist' application is not installed. Please install it to use clipboard history features"
     },
+    "dispose": {
+      "done": "Disposed {silo}",
+      "done-title": "Disposed",
+      "failed": "Dispose failed",
+      "in-progress": "A dispose is already in progress.",
+      "incomplete": "teardown did not complete",
+      "silo": "silo",
+      "sm-error": "session manager error",
+      "title": "Dispose"
+    },
     "do-not-disturb": {
       "disabled": "Do Not Disturb disabled",
       "disabled-desc": "Showing all notifications",
@@ -2463,6 +2497,10 @@
       "normal": "Normal mode",
       "not-installed": "wlsunset not installed"
     },
+    "permissions": {
+      "broker-error": "could not read broker rules",
+      "title": "Permissions"
+    },
     "qdshell-performance": {
       "disabled": "Performance mode disabled",
       "enabled": "Performance mode enabled",
@@ -2471,6 +2509,14 @@
     "power-profile": {
       "changed": "Power profile changed",
       "profile-name": "{profile}"
+    },
+    "snapshot": {
+      "bad-config": "Refusing to snapshot an unexpected config name.",
+      "broker-error": "broker error",
+      "failed": "Snapshot failed",
+      "no-config": "This window has no snapshottable silo.",
+      "taken": "Snapshot taken for {config}",
+      "title": "Snapshot"
     },
     "theming-processor-failed": {
       "desc-generic": "Encountered an error while processing templates",
