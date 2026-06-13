@@ -12,12 +12,43 @@
 // Settings singletons. The QML side runs the busctl Process, reads its stdout,
 // and passes the raw text + the window's identity primitives in.
 
+// Unwrap one busctl --json=short value. For an aa{sv} return, each dict VALUE is
+// a D-Bus variant, which busctl --json=short renders as a {"type":…,"data":…}
+// wrapper (the variant type is NOT stripped in short mode — only the outer
+// container types are). So r.name is {"type":"s","data":"work"}, not "work". We
+// unwrap that wrapper; a bare value (a hypothetical future short-mode change, or
+// a non-variant field) passes through unchanged. Nested containers inside a
+// variant keep their own .data shape, which is fine for the scalar fields we
+// read here.
+function _unwrap(v) {
+  if (v && typeof v === "object" && !Array.isArray(v) &&
+      typeof v.type === "string" && ("data" in v)) {
+    return v.data;
+  }
+  return v;
+}
+
+function _str(v) {
+  v = _unwrap(v);
+  if (v === null || v === undefined)
+    return "";
+  if (typeof v === "object")
+    return "";   // never stringify a container into "[object Object]"
+  return String(v);
+}
+
+function _int(v) {
+  v = _unwrap(v);
+  return (typeof v === "number") ? v : -1;
+}
+
 // Parse the `busctl --json=short call … ListRules` stdout into a plain array
 // of rule objects. busctl --json=short renders aa{sv} as
-//   {"type":"aa{sv}","data":[[ {key: value, …}, … ]]}
-// with the variant wrappers stripped (short mode), so data[0] is already the
-// array of plain rule dicts. Returns [] on empty / unparseable / unexpected
-// shapes (fail-safe: an empty panel, never a crash).
+//   {"type":"aa{sv}","data":[[ {key:{"type":t,"data":val}, …}, … ]]}
+// (the per-value variant wrappers are KEPT in short mode), so data[0] is the
+// array of rule dicts whose values are {type,data}-wrapped — we unwrap each.
+// Returns [] on empty / unparseable / unexpected shapes (fail-safe: an empty
+// panel, never a crash or a "[object Object]" row).
 function parseListRules(raw) {
   if (!raw)
     return [];
@@ -32,25 +63,25 @@ function parseListRules(raw) {
   var rows = parsed.data[0];
   if (!Array.isArray(rows))
     return [];
-  // Each row is a plain object; defensively coerce field types so a malformed
-  // entry can't poison the renderer.
+  // Each row is a dict of {type,data}-wrapped values; unwrap + defensively
+  // coerce field types so a malformed entry can't poison the renderer.
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (!r || typeof r !== "object")
       continue;
     out.push({
-      "name":           String(r.name || ""),
-      "decision":       String(r.decision || ""),
-      "source_path":    String(r.source_path || ""),
-      "uid":            (typeof r.uid === "number") ? r.uid : -1,
-      "action":         String(r.action || ""),
-      "exe":            String(r.exe || ""),
-      "app_id":         String(r.app_id || ""),
-      "sandbox_engine": String(r.sandbox_engine || ""),
-      "mime_type":      String(r.mime_type || ""),
-      "scope":          String(r.scope || ""),
-      "rationale":      String(r.rationale || ""),
+      "name":           _str(r.name),
+      "decision":       _str(r.decision),
+      "source_path":    _str(r.source_path),
+      "uid":            _int(r.uid),
+      "action":         _str(r.action),
+      "exe":            _str(r.exe),
+      "app_id":         _str(r.app_id),
+      "sandbox_engine": _str(r.sandbox_engine),
+      "mime_type":      _str(r.mime_type),
+      "scope":          _str(r.scope),
+      "rationale":      _str(r.rationale),
     });
   }
   return out;

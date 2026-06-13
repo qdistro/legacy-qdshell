@@ -2,9 +2,25 @@ const assert = require("assert");
 const PermissionsLogic = require("../Modules/Bar/Widgets/PermissionsLogic.js");
 
 // busctl --json=short renders aa{sv} as {"type":"aa{sv}","data":[[ {…}, … ]]}
-// with the variant wrappers stripped, so data[0] is the array of plain dicts.
+// where each dict VALUE is a variant rendered as {"type":t,"data":val} (short
+// mode keeps the per-value variant wrapper). Wrap each rule field the way
+// busctl really does so the test exercises the production shape, not a
+// pre-unwrapped fixture.
+function wrapVal(v) {
+  if (typeof v === "number")
+    return { "type": "i", "data": v };
+  return { "type": "s", "data": String(v) };
+}
 function busctlOut(rules) {
-  return JSON.stringify({ "type": "aa{sv}", "data": [rules] });
+  var wrapped = rules.map(function (r) {
+    if (r === null || typeof r !== "object")
+      return r;  // exercise the "non-dict row is skipped" path verbatim
+    var o = {};
+    for (var k in r)
+      o[k] = wrapVal(r[k]);
+    return o;
+  });
+  return JSON.stringify({ "type": "aa{sv}", "data": [wrapped] });
 }
 
 // ── parseListRules: well-formed, empty, malformed inputs ──
@@ -32,6 +48,25 @@ function busctlOut(rules) {
   assert.strictEqual(mixed[0].name, "ok");
   // uid missing -> -1 sentinel
   assert.strictEqual(mixed[0].uid, -1);
+  // Regression: the per-value variant wrapper {"type":"s","data":"work"} MUST
+  // be unwrapped, never stringified into "[object Object]". Feed the raw
+  // wrapped shape directly (bypassing the helper) to lock this in.
+  const rawWrapped = JSON.stringify({ "type": "aa{sv}", "data": [[
+    { "name": { "type": "s", "data": "w1" },
+      "decision": { "type": "s", "data": "allow" },
+      "app_id": { "type": "s", "data": "qdistro.tier2.work" },
+      "uid": { "type": "i", "data": 1000 } } ]] });
+  const wrapped = PermissionsLogic.parseListRules(rawWrapped);
+  assert.strictEqual(wrapped.length, 1);
+  assert.strictEqual(wrapped[0].name, "w1");
+  assert.strictEqual(wrapped[0].decision, "allow");
+  assert.strictEqual(wrapped[0].app_id, "qdistro.tier2.work");
+  assert.strictEqual(wrapped[0].uid, 1000);
+  // a value that is unexpectedly a nested container coerces to "" (never
+  // "[object Object]").
+  const nested = PermissionsLogic.parseListRules(JSON.stringify({ "type": "aa{sv}",
+    "data": [[ { "name": { "type": "as", "data": ["a", "b"] } } ]] }));
+  assert.strictEqual(nested[0].name, "");
 })();
 
 // ── ruleAppliesToWindow: app_id / engine match semantics ──
