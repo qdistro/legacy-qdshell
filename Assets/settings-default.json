@@ -191,7 +191,7 @@
     "fillMode": "crop",
     "fillColor": "#000000",
     "useSolidColor": true,
-    "solidColor": "#3b4252",
+    "solidColor": "#1a1a1a",
     "automationEnabled": false,
     "wallpaperChangeMode": "random",
     "randomIntervalSec": 300,
