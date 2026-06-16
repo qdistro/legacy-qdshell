@@ -57,6 +57,10 @@ def pytest_collection_modifyitems(config, items):
 # stay valid even though the UI tests themselves only RUN against a live qdwin
 # VM (QDSHELL_UI_TESTS=1 + QDSHELL_UI_VM). All kwargs are optional and the
 # report block degrades gracefully if some are missing.
+#
+# KEEP IN SYNC: `_format_cheat_aware_block` and `pytest_runtest_makereport`
+# below are a hand-copy of the canonical qdistro/tests/unit/conftest.py and must
+# stay byte-identical — qdistro/tests/unit/test_cheat_aware_sync.py fails on drift.
 # ---------------------------------------------------------------------------
 def pytest_configure(config) -> None:
     config.addinivalue_line(
@@ -93,7 +97,9 @@ def _format_cheat_aware_block(kwargs: dict) -> str:
             lines.append(f"  - {c}")
 
     if not lines:
-        lines.append("(no structured fields supplied on the cheat_aware marker)")
+        lines.append(
+            "(no structured fields supplied on the cheat_aware marker)"
+        )
     return "\n".join(lines)
 
 
@@ -101,8 +107,8 @@ def _format_cheat_aware_block(kwargs: dict) -> str:
 def pytest_runtest_makereport(item, call):
     """Surface cheat_aware context when a marked test FAILS.
 
-    Only acts on the `call` phase and only when the test actually failed, so
-    passing tests stay silent and setup/teardown noise is ignored.
+    Only acts on the `call` phase and only when the test actually failed,
+    so passing tests stay silent and setup/teardown noise is ignored.
     """
     outcome = yield
     report = outcome.get_result()

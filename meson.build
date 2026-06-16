@@ -57,6 +57,11 @@ if node.found()
   # (silo identity, tier classification) — it MUST run in CI (04/F6,
   # maturity-review #5).
   test('drift-guard', node, args: files('tests/test_drift_guard.js'))
+  # Cross-repo complement to drift-guard: assert qdshell's mirrored qdistro
+  # identifiers (tier secctx prefixes, AdminBroker1/SessionManager1 D-Bus names,
+  # broker reply fields) match qdistro's contract fixture. Skips loudly if the
+  # sibling ../qdistro checkout is absent.
+  test('qdistro-contract-drift', node, args: files('tests/test_qdistro_contract_drift.js'))
   test('silo-chrome', node, args: files('tests/test_silo_chrome.js'))
   test('colorkeys', node, args: files('tests/test_colorkeys.js'))
   test('fuzzysort', node, args: files('tests/test_fuzzysort.js'))
