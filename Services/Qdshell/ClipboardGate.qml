@@ -6,6 +6,7 @@ import qs.Commons
 import "ClipboardBroker.js" as ClipboardBroker
 import "ClipboardSilo.js" as ClipboardSilo
 import "ClipboardFocusClear.js" as ClipboardFocusClear
+import "ClipboardDenyCoalesce.js" as ClipboardDenyCoalesce
 
 // spec/10 Phase-1 — compositor-mediated clipboard gate.
 // Track-04 Phase-1 scope. Implements the cross-silo clipboard
@@ -153,6 +154,19 @@ Singleton {
     // which case focus changes are a no-op (nothing trustworthy to clear).
     //   _selectionSourceSilo[isPrimary] = silo string (or absent)
     property var _selectionSourceSilo: ({})
+
+    // deny-storm coalescer (clipboard.md §"deny-storm robustness",
+    // ClipboardDenyCoalesce.js). Maps a denied-offer identity key (seat +
+    // kind + src_silo + dst_silo + mime_csv) → the ms timestamp of the last
+    // clear_selection wire call we actually issued for it. ClipboardDenyCoalesce
+    // .shouldSendClear() reads + mutates this so a producer re-asserting a
+    // denied selection in a tight loop can't flood the 4 KB wl output buffer
+    // (which fatally errors the shell↔compositor connection). The FIRST deny
+    // per key always clears; identical repeats inside _denyClearCoalesceMs are
+    // suppressed at the WIRE call only — the CLIPBOARD_GATE verdict is still
+    // logged every time, and fail-closed is preserved.
+    property var _lastDenyClearByKey: ({})
+    property int _denyClearCoalesceMs: 500
 
     // -- handle/silo tracking -------------------------------------------
     function _onToplevelAdded(handle, ownerUid, appId, title, isXwayland) {
@@ -335,7 +349,18 @@ Singleton {
     function _logDecisionAndMaybeClear(entry, verdict, reason) {
         Logger.i("ClipboardGate", "CLIPBOARD_GATE", "seat=" + (entry.seat || "default"), "src_silo=" + entry.srcSilo, "dst_silo=" + entry.dstSilo, "mime_types=" + entry.mimeCsv, "verdict=" + verdict, "reason=" + reason);
         if (verdict === "deny" && root._binding) {
-            root._binding.clearSelection(entry.seat || "default", entry.isPrimary);
+            // Deny-storm coalescer: the FIRST deny for this offer identity
+            // always clears (fail-closed); identical repeats inside the window
+            // suppress only the redundant clear_selection WIRE write so a
+            // re-offer loop can't overflow the 4 KB wl buffer and kill the
+            // shell↔compositor connection. The verdict line above is logged
+            // unconditionally regardless. See ClipboardDenyCoalesce.js.
+            const _nowMs = Date.now();
+            if (ClipboardDenyCoalesce.shouldSendClear(root._lastDenyClearByKey, entry, _nowMs, root._denyClearCoalesceMs)) {
+                root._binding.clearSelection(entry.seat || "default", entry.isPrimary);
+            } else {
+                Logger.d("ClipboardGate", "CLIPBOARD_CLEAR_COALESCED", "seat=" + (entry.seat || "default"), "src_silo=" + entry.srcSilo, "dst_silo=" + entry.dstSilo, "is_primary=" + entry.isPrimary, "reason=" + reason);
+            }
         }
     }
 

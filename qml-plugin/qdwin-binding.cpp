@@ -879,35 +879,63 @@ void QdwinBinding::setFocused(const QString &seat, quint32 handle) {
 
 // -------- imperative requests ----------
 
+// Flush after an imperative request and HONOUR the result. Every imperative
+// qdwin_shell_v1 request below is fire-and-forget from QML, then flushed so the
+// write actually hits the socket. A flush that fails with EAGAIN is benign —
+// the kernel socket buffer is momentarily full, libwayland keeps the request
+// queued and a later flush (or the read-path flush in onWaylandReadable)
+// drains it. Any OTHER error (EPIPE/ECONNRESET — the deny-storm overran
+// libwayland's 4 KB buffer and the connection is fatally errored) means the
+// request did NOT and will NOT reach the compositor: we must tear the binding
+// down and reconnect rather than silently pretend it was sent (which is how a
+// load-bearing set_keyboard_focus/clear_selection got dropped under load). See
+// clipboard.md §"deny-storm robustness". `requestName` (pass __func__) names
+// the request in the error for diagnostics. Returns true if the write is on its
+// way (sent or queued), false if the binding was torn down.
+bool QdwinBinding::flushAfterRequest(const char *requestName) {
+    if (!display_)
+        return false;
+    if (wl_display_flush(display_) != -1)
+        return true;
+    if (errno == EAGAIN)
+        return true;
+    setLastError(QStringLiteral("%1: wl_display_flush failed: errno=%2: %3")
+                     .arg(qstr(requestName))
+                     .arg(errno)
+                     .arg(qstr(std::strerror(errno))));
+    teardown(lastError_);
+    return false;
+}
+
 void QdwinBinding::focusWindow(quint32 handle, const QString &seat) {
     if (!shell_) return;
     QByteArray seatUtf8 = seat.toUtf8();
     qdwin_shell_v1_set_keyboard_focus(shell_, seatUtf8.constData(), handle);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::closeWindow(quint32 handle) {
     if (!shell_) return;
     qdwin_shell_v1_request_close(shell_, handle);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::requestMaximize(quint32 handle, bool maximized) {
     if (!shell_) return;
     qdwin_shell_v1_request_maximize(shell_, handle, maximized ? 1u : 0u);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::requestMinimize(quint32 handle) {
     if (!shell_) return;
     qdwin_shell_v1_request_minimize(shell_, handle);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::setBorderColor(quint32 handle, quint32 argb) {
     if (!shell_) return;
     qdwin_shell_v1_set_border_color(shell_, handle, argb);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // -------- v24 workspaces (ext-workspace-v1 client) --------
@@ -1017,7 +1045,7 @@ void QdwinBinding::activateWorkspace(quint32 index) {
         return;
     ext_workspace_handle_v1_activate(wsByIndex_[index]);
     ext_workspace_manager_v1_commit(wsManager_);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::createWorkspace() {
@@ -1027,7 +1055,7 @@ void QdwinBinding::createWorkspace() {
     // name is a shell-side overlay. Pass empty.
     ext_workspace_group_handle_v1_create_workspace(wsGroup_, "");
     ext_workspace_manager_v1_commit(wsManager_);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::removeWorkspace(quint32 index) {
@@ -1035,7 +1063,7 @@ void QdwinBinding::removeWorkspace(quint32 index) {
         return;
     ext_workspace_handle_v1_remove(wsByIndex_[index]);
     ext_workspace_manager_v1_commit(wsManager_);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // Reconcile the compositor's workspace count to the shell's persisted
@@ -1058,14 +1086,14 @@ void QdwinBinding::setWorkspaceCount(quint32 count) {
         return;  // already matches
     }
     ext_workspace_manager_v1_commit(wsManager_);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::moveToplevelToWorkspace(quint32 handle, quint32 index) {
     if (!shell_ || shellVersion_ < 24)
         return;
     qdwin_shell_v1_move_toplevel_to_workspace(shell_, handle, index);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // ==================== v25 window-manager policy ====================
@@ -1081,21 +1109,21 @@ void QdwinBinding::setWmPolicy(quint32 focusPolicy, quint32 ffmDelayMs,
                                  raiseOnHover ? 1u : 0u,
                                  placement, snapEnabled ? 1u : 0u,
                                  snapDistance);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::requestFullscreen(quint32 handle, bool fullscreen) {
     if (!shell_ || shellVersion_ < 25)
         return;
     qdwin_shell_v1_request_fullscreen(shell_, handle, fullscreen ? 1u : 0u);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::requestTile(quint32 handle, quint32 tileEdge) {
     if (!shell_ || shellVersion_ < 25)
         return;
     qdwin_shell_v1_request_tile(shell_, handle, tileEdge);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::registerHotkey(quint32 id, quint32 modifiers, quint32 key) {
@@ -1104,14 +1132,14 @@ void QdwinBinding::registerHotkey(quint32 id, quint32 modifiers, quint32 key) {
     if (!shell_ || shellVersion_ < 19)
         return;
     qdwin_shell_v1_register_hotkey(shell_, id, modifiers, key);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::unregisterHotkey(quint32 id) {
     if (!shell_ || shellVersion_ < 19)
         return;
     qdwin_shell_v1_unregister_hotkey(shell_, id);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // ==================== v26 idle / DPMS ====================
@@ -1127,7 +1155,7 @@ void QdwinBinding::setIdleNotification(quint32 slot, quint32 timeoutMs) {
         s.notif = nullptr;
     }
     if (timeoutMs == 0 || !idleNotifier_ || !seat_) {
-        if (display_) wl_display_flush(display_);
+        flushAfterRequest(__func__);
         return;
     }
     s.self = this;
@@ -1136,14 +1164,14 @@ void QdwinBinding::setIdleNotification(quint32 slot, quint32 timeoutMs) {
         idleNotifier_, timeoutMs, seat_);
     if (s.notif)
         ext_idle_notification_v1_add_listener(s.notif, &kIdleListener, &s);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::setDisplayPower(bool on) {
     if (!shell_ || shellVersion_ < 26)
         return;
     qdwin_shell_v1_set_display_power(shell_, on ? 1u : 0u);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // v27 ext-workspace-v1 NAME parity: forward the user's custom workspace
@@ -1159,7 +1187,7 @@ void QdwinBinding::setWorkspaceName(int index, const QString &name) {
         return;
     qdwin_shell_v1_set_workspace_name(shell_,
         static_cast<uint32_t>(index), name.toUtf8().constData());
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // ==================== v28 live input config ====================
@@ -1181,14 +1209,14 @@ void QdwinBinding::setPointerConfig(int accelSpeed, quint32 accelProfile,
         naturalScroll ? 1u : 0u, tapToClick ? 1u : 0u,
         leftHanded ? 1u : 0u, middleEmulation ? 1u : 0u,
         disableWhileTyping ? 1u : 0u, scrollMethod);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::setKeyRepeat(quint32 rate, quint32 delay) {
     if (!shell_ || shellVersion_ < 28)
         return;
     qdwin_shell_v1_set_key_repeat(shell_, rate, delay);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::idleGlobalRemoved(uint32_t name) {
@@ -1216,7 +1244,7 @@ void QdwinBinding::idleGlobalRemoved(uint32_t name) {
         seat_ = nullptr;
         seatName_ = 0;
     }
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
     emit idleNotifierAvailableChanged();
 }
 
@@ -1339,7 +1367,7 @@ void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
     // Per spec the client destroys the configuration object on any of
     // succeeded/failed/cancelled.
     zwlr_output_configuration_v1_destroy(cfg);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
     emit layoutResult(applied, ok, cancelled);
 }
 
@@ -1425,7 +1453,7 @@ bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
         zwlr_output_configuration_v1_apply(cfg);
     else
         zwlr_output_configuration_v1_test(cfg);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
     return true;
 }
 
@@ -1444,7 +1472,7 @@ void QdwinBinding::clearSelection(const QString &seat, quint32 isPrimary) {
     // F5: strip control chars so an embedded NUL can't truncate the seat name.
     QByteArray seatUtf8 = stripControlChars(seat).toUtf8();
     qdwin_shell_v1_clear_selection(shell_, seatUtf8.constData(), isPrimary);
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 // spec/10 §"receive-time gating" — echo the broker verdict back for a
@@ -1455,7 +1483,7 @@ void QdwinBinding::sendDataOfferReceiveDecision(quint32 requestHandle,
     if (!shell_) return;
     qdwin_shell_v1_data_offer_receive_decision(shell_, requestHandle,
                                                allow ? "allow" : "deny");
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
@@ -1465,7 +1493,7 @@ void QdwinBinding::nestedProxyDecision(quint32 handle, quint32 decision,
     QByteArray reasonUtf8 = stripControlChars(reason).toUtf8();
     qdwin_shell_v1_nested_proxy_decision(shell_, handle, decision,
                                          reasonUtf8.constData());
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 void QdwinBinding::activationDecision(quint32 handle, quint32 decision,
@@ -1475,7 +1503,7 @@ void QdwinBinding::activationDecision(quint32 handle, quint32 decision,
     QByteArray reasonUtf8 = stripControlChars(reason).toUtf8();
     qdwin_shell_v1_activation_decision(shell_, handle, decision,
                                        reasonUtf8.constData());
-    if (display_) wl_display_flush(display_);
+    flushAfterRequest(__func__);
 }
 
 QVariantMap QdwinBinding::checkPermission(const QString &action,
