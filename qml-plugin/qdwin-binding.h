@@ -410,6 +410,10 @@ private slots:
 private:
     void connectAndBind();
     void teardown(const QString &reason);
+    // Flush after an imperative request; tear down + reconnect on a fatal
+    // (non-EAGAIN) flush error instead of assuming the request was sent.
+    // Returns true if the write is sent/queued, false if torn down.
+    bool flushAfterRequest(const char *requestName);
     void scheduleReconnect();
     void setLastError(const QString &s);
     void setBound(bool b);
