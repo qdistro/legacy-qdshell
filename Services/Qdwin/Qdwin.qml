@@ -814,7 +814,13 @@ Singleton {
                 }
             }
         }
-        if (RemoteMachine.isRemoteMachine(mmSecctx)) {
+        // Use isManagedRemote (prefix AND a parseable origin+stream), not the
+        // bare prefix: a malformed qdistro.mm.* id would be intercepted here but
+        // dropped by RemoteMachineWindows (which needs both), black-holing close
+        // (codex impl-36 MED). A malformed mm window instead falls through; the
+        // qdwin compositor guard still refuses request_close for engine=qdistro.mm
+        // (a safe no-op), so it is never xdg-closed.
+        if (RemoteMachine.isManagedRemote(mmSecctx)) {
             root.remoteCloseRequested(h);
             return;     // NO qdwinBinding.closeWindow — source-mediated close
         }

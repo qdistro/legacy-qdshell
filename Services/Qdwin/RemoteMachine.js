@@ -41,6 +41,20 @@ function isRemoteMachine(appId) {
     return !!appId && appId.indexOf(MM_PREFIX) === 0;
 }
 
+// A FULLY-ATTRIBUTABLE remote-machine app_id: the qdistro.mm.* prefix AND both an
+// origin and a stream parse out of it. The close interception in Qdwin.qml uses
+// THIS (not the bare prefix) so its notion of "remote" matches what
+// RemoteMachineWindows can actually attribute — a malformed `qdistro.mm.foo`
+// would otherwise be intercepted (no xdg-close) but dropped by the service,
+// black-holing close (codex impl-36 MED). A malformed qdistro.mm.* window thus
+// falls through to the normal path, where the qdwin compositor guard still
+// refuses request_close for engine=qdistro.mm (a safe no-op, never an orphan).
+function isManagedRemote(appId) {
+    return isRemoteMachine(appId)
+        && originFromSecctx(appId) !== ""
+        && streamFromSecctx(appId) !== "";
+}
+
 // qdistro.mm.<origin>.<stream> → origin. The stream_id is the LAST dot-segment;
 // the origin is everything between the prefix and that last dot (so an origin
 // containing dots, e.g. a hostname, still parses). Returns "" if either the
@@ -116,6 +130,7 @@ if (typeof module !== "undefined") {
         MM_PREFIX: MM_PREFIX,
         MM_PALETTE: MM_PALETTE,
         isRemoteMachine: isRemoteMachine,
+        isManagedRemote: isManagedRemote,
         originFromSecctx: originFromSecctx,
         streamFromSecctx: streamFromSecctx,
         colourForOrigin: colourForOrigin,

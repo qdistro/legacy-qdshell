@@ -36,6 +36,20 @@ const RM = require("../Services/Qdwin/RemoteMachine.js");
   assert.strictEqual(RM.originFromSecctx(null), "");
 })();
 
+// ── isManagedRemote: prefix AND parseable origin+stream ──
+(function () {
+  assert.strictEqual(RM.isManagedRemote("qdistro.mm.vm-a.streamA"), true);
+  assert.strictEqual(RM.isManagedRemote("qdistro.mm.host.example.com.s1"), true);
+  // prefix-only / missing stream / trailing dot → NOT managed (falls through to
+  // the qdwin compositor guard, never xdg-closed).
+  assert.strictEqual(RM.isManagedRemote("qdistro.mm.foo"), false, "no stream");
+  assert.strictEqual(RM.isManagedRemote("qdistro.mm.vm-a."), false, "trailing dot");
+  assert.strictEqual(RM.isManagedRemote("qdistro.mm."), false, "bare prefix");
+  assert.strictEqual(RM.isManagedRemote("qdistro.tier4.vm-a"), false, "tier4");
+  assert.strictEqual(RM.isManagedRemote(""), false);
+  assert.strictEqual(RM.isManagedRemote(null), false);
+})();
+
 // ── streamFromSecctx ──
 (function () {
   assert.strictEqual(RM.streamFromSecctx("qdistro.mm.vm-a.streamA"), "streamA");
