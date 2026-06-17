@@ -58,6 +58,7 @@ if node.found()
   # maturity-review #5).
   test('drift-guard', node, args: files('tests/test_drift_guard.js'))
   test('silo-chrome', node, args: files('tests/test_silo_chrome.js'))
+  test('remote-machine', node, args: files('tests/test_remote_machine.js'))
   test('colorkeys', node, args: files('tests/test_colorkeys.js'))
   test('fuzzysort', node, args: files('tests/test_fuzzysort.js'))
   test('timeformat', node, args: files('tests/test_timeformat.js'))

@@ -1,0 +1,111 @@
+const assert = require("assert");
+const RM = require("../Services/Qdwin/RemoteMachine.js");
+
+// Tests for the multi-machine remote-window identity/chrome logic
+// (Services/Qdwin/RemoteMachine.js), shared by RemoteMachineWindows.qml.
+//
+// The ORIGIN is the load-bearing identity, derived from the wp_security_context
+// app_id (qdistro.mm.<origin>.<stream>) — never from window title or remote
+// pixels (impl-30 Q6). Getting parsing/colour wrong means remote windows could be
+// mis-attributed or the non-spoofable trust chrome painted inconsistently.
+
+// ── isRemoteMachine ──
+(function () {
+  assert.strictEqual(RM.isRemoteMachine("qdistro.mm.vm-a.streamA"), true);
+  assert.strictEqual(RM.isRemoteMachine("qdistro.mm."), true, "bare prefix is mm-shaped");
+  assert.strictEqual(RM.isRemoteMachine("qdistro.tier4.vm-a"), false);
+  assert.strictEqual(RM.isRemoteMachine("org.gnome.Files"), false);
+  assert.strictEqual(RM.isRemoteMachine(""), false);
+  assert.strictEqual(RM.isRemoteMachine(null), false);
+  assert.strictEqual(RM.isRemoteMachine(undefined), false);
+})();
+
+// ── originFromSecctx ──
+(function () {
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm.vm-a.streamA"), "vm-a");
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm.vm-b.streamB"), "vm-b");
+  // origin containing dots (e.g. a hostname) — stream is the LAST segment.
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm.host.example.com.s1"),
+    "host.example.com");
+  // fail closed: missing stream segment, bare prefix, non-mm, empty.
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm.vm-a"), "", "no stream → empty");
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm."), "", "bare prefix → empty");
+  assert.strictEqual(RM.originFromSecctx("qdistro.mm.vm-a."), "", "trailing dot → empty");
+  assert.strictEqual(RM.originFromSecctx("qdistro.tier4.vm-a"), "", "tier4 → empty");
+  assert.strictEqual(RM.originFromSecctx(""), "");
+  assert.strictEqual(RM.originFromSecctx(null), "");
+})();
+
+// ── streamFromSecctx ──
+(function () {
+  assert.strictEqual(RM.streamFromSecctx("qdistro.mm.vm-a.streamA"), "streamA");
+  assert.strictEqual(RM.streamFromSecctx("qdistro.mm.host.example.com.s1"), "s1");
+  assert.strictEqual(RM.streamFromSecctx("qdistro.mm.vm-a"), "", "no stream → empty");
+  assert.strictEqual(RM.streamFromSecctx("qdistro.mm.vm-a."), "", "trailing dot → empty");
+  assert.strictEqual(RM.streamFromSecctx("org.gnome.Files"), "");
+})();
+
+// ── colourForOrigin: determinism + palette membership + distribution ──
+(function () {
+  var origins = ["vm-a", "vm-b", "work", "laptop", "phone"];
+  origins.forEach(function (o) {
+    assert.strictEqual(RM.colourForOrigin(o), RM.colourForOrigin(o),
+      "colourForOrigin('" + o + "') deterministic");
+    assert.ok(RM.MM_PALETTE.indexOf(RM.colourForOrigin(o)) !== -1,
+      "colourForOrigin('" + o + "') in palette");
+  });
+  assert.strictEqual(RM.colourForOrigin(""), RM.MM_PALETTE[0], "empty → palette[0]");
+  assert.strictEqual(RM.colourForOrigin(null), RM.MM_PALETTE[0], "null → palette[0]");
+  var seen = new Set();
+  for (var i = 0; i < 30; i++) seen.add(RM.colourForOrigin("vm" + i));
+  assert.ok(seen.size > 2, "30 origins use >2 palette entries: " + seen.size);
+})();
+
+// ── MM_PALETTE: valid hex ──
+(function () {
+  assert.ok(RM.MM_PALETTE.length >= 4);
+  RM.MM_PALETTE.forEach(function (c, i) {
+    assert.ok(/^#[0-9a-f]{6}$/.test(c), "palette[" + i + "] valid #rrggbb: " + c);
+  });
+})();
+
+// ── hexToRgba: bit-packing + safe fallback (mirrors SiloChrome / tier4_chrome) ──
+(function () {
+  assert.strictEqual(RM.hexToRgba("#e53935"), 0xe53935ff >>> 0);
+  assert.strictEqual(RM.hexToRgba("#ffffff"), 0xffffffff >>> 0);
+  assert.strictEqual(RM.hexToRgba("#000000"), 0x000000ff >>> 0);
+  assert.strictEqual((RM.hexToRgba("#1e88e5") & 0xFF), 0xFF, "alpha always 0xFF");
+  // bad input → 0, never throws.
+  ["", null, undefined, "#fff", "ffffff", "#gggggg", "#ff000000"].forEach(function (bad) {
+    assert.strictEqual(RM.hexToRgba(bad), 0, "bad input → 0: " + bad);
+  });
+  // every palette colour packs to a non-zero rgba.
+  RM.MM_PALETTE.forEach(function (hex) {
+    assert.ok(RM.hexToRgba(hex) > 0, hex + " → non-zero rgba");
+  });
+})();
+
+// ── dim + pendingColourForOrigin ──
+(function () {
+  assert.strictEqual(RM.dim("#ffffff", 0.5), "#808080", "white dimmed 0.5");
+  assert.strictEqual(RM.dim("#000000", 0.5), "#000000", "black stays black");
+  assert.strictEqual(RM.dim("#102030", 0.5), "#081018", "channels halved + padded");
+  assert.strictEqual(RM.dim("bad", 0.5), "bad", "bad input unchanged");
+  // pending colour is a darker variant of the origin colour, still valid hex,
+  // and distinct from the bright colour (so close-pending is visible).
+  var o = "vm-a";
+  var bright = RM.colourForOrigin(o);
+  var pending = RM.pendingColourForOrigin(o);
+  assert.ok(/^#[0-9a-f]{6}$/.test(pending), "pending is valid hex: " + pending);
+  assert.notStrictEqual(pending, bright, "pending differs from bright (visible)");
+  assert.ok(RM.hexToRgba(pending) !== RM.hexToRgba(bright));
+})();
+
+// ── no cross-contamination with tier3/tier4 ──
+(function () {
+  assert.ok(!RM.isRemoteMachine("qdistro.tier3.user1"));
+  assert.ok(!RM.isRemoteMachine("qdistro.tier4.vm-dev"));
+  assert.strictEqual(RM.originFromSecctx("qdistro.tier4.vm-dev"), "");
+})();
+
+console.log("remote-machine: all assertions passed");
