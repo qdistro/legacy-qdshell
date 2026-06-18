@@ -1176,6 +1176,7 @@
       "download-error-no-files": "No files found for scheme",
       "download-error-parse-failed": "Failed to parse API response: {error}",
       "download-error-rate-limit": "GitHub API rate limit exceeded",
+      "download-error-verification-failed": "Signature verification failed; scheme rejected",
       "download-error-title": "Download failed",
       "download-fetching": "Fetching available color schemes...",
       "download-success-description": "Successfully downloaded {scheme}",

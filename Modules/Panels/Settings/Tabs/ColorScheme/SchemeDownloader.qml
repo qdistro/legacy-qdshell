@@ -540,9 +540,24 @@ Popup {
         || s.indexOf("https://api.github.com/repos/qdshell-dev/qdshell-colorschemes/") === 0;
   }
 
-  function _finishDownload(schemeName, targetDir, jobs, index, anyError) {
-    if (index >= jobs.length) {
-      if (!anyError) {
+  // F1 content-signing hook (optional, fail-closed). The helper reads on-disk
+  // trust config (~/.config/qdshell/signing.json) ITSELF — never a flag we pass —
+  // so a download that omits a signature cannot downgrade an opted-in user, and a
+  // compromised UI/argv cannot disable verification. Unsigned mode (the default,
+  // no signing.json) makes this a cheap no-op returning exit 0: current behavior,
+  // no regression. Enforced mode verifies targetDir against its signed SHA256SUMS;
+  // a nonzero exit is treated exactly like a download failure (cleanup + error).
+  // The trust decision MUST be made by the trusted helper (not QML), so the verify
+  // path necessarily routes through python3 + plugin-helper.py — the same runtime
+  // the F9 plugin system already requires; this is an intentional, shared dependency.
+  readonly property string signingHelperScript: Quickshell.shellDir + "/Scripts/python/src/plugins/plugin-helper.py"
+
+  function _verifyThenFinish(schemeName, targetDir) {
+    var vp = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process {}', root, "VerifyScheme_" + schemeName);
+    vp.command = ["python3", signingHelperScript, "verify-scheme", targetDir];
+    vp.exited.connect(function (verifyExit) {
+      vp.destroy();
+      if (verifyExit === 0) {
         Logger.i("ColorSchemeDownload", "Scheme downloaded successfully:", schemeName);
         ToastService.showNotice(I18n.tr("panels.color-scheme.download-success-title"), I18n.tr("panels.color-scheme.download-success-description", {
                                                                                                  "scheme": schemeName
@@ -551,6 +566,31 @@ Popup {
         ColorSchemeService.loadColorSchemes();
         downloading = false;
         downloadingScheme = "";
+      } else {
+        // Fail closed: enforced-mode verification failed — never load the scheme.
+        downloadError = I18n.tr("panels.color-scheme.download-error-verification-failed");
+        Logger.e("ColorSchemeDownload", "Signature verification failed for scheme:", schemeName);
+        ToastService.showError(I18n.tr("panels.color-scheme.download-error-title"), I18n.tr("panels.color-scheme.download-error-description", {
+                                                                                              "scheme": schemeName
+                                                                                            }));
+        var cp = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process {}', root, "VerifyCleanup_" + schemeName);
+        cp.command = ["rm", "-rf", "--", targetDir];
+        cp.exited.connect(function (ce) {
+          downloading = false;
+          downloadingScheme = "";
+          cp.destroy();
+        });
+        cp.running = true;
+      }
+    });
+    vp.running = true;
+  }
+
+  function _finishDownload(schemeName, targetDir, jobs, index, anyError) {
+    if (index >= jobs.length) {
+      if (!anyError) {
+        // Verify (no-op in unsigned mode) before loading any downloaded bytes.
+        _verifyThenFinish(schemeName, targetDir);
       } else {
         downloadError = I18n.tr("panels.color-scheme.download-error-download-failed", {
                                   "code": 1
