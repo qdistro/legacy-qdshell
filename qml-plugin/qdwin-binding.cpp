@@ -739,6 +739,12 @@ QdwinBinding::QdwinBinding(QObject *parent) : QObject(parent) {
                              << reconnectAttempts_;
         connectAndBind();
     });
+    // Stability gate: a (re)bind only resets the reconnect backoff once it has
+    // survived the grace period (see stableTimer_ in the header + setBound).
+    stableTimer_.setSingleShot(true);
+    connect(&stableTimer_, &QTimer::timeout, this, [this]() {
+        if (bound_) reconnectAttempts_ = 0;
+    });
     connectAndBind();
 
     ctrlServer_ = new CtrlServer(*this, this);
@@ -747,6 +753,7 @@ QdwinBinding::QdwinBinding(QObject *parent) : QObject(parent) {
 QdwinBinding::~QdwinBinding() {
     destroying_ = true;
     reconnectTimer_.stop();
+    stableTimer_.stop();
     teardown(QStringLiteral("binding destroyed"));
 }
 
@@ -758,6 +765,13 @@ void QdwinBinding::connectAndBind() {
             .arg(qstr(std::getenv("WAYLAND_DISPLAY")))
             .arg(errno).arg(qstr(std::strerror(errno))));
         emit disconnected();
+        // Re-arm the (one-shot) reconnect timer ourselves. teardown() is the
+        // usual path that schedules a reconnect, but there are no display
+        // resources to tear down here, so it isn't called — and without this a
+        // scheduled reconnect that races the compositor still being unavailable
+        // (socket not yet up after a restart) would consume the one-shot timer
+        // and leave the binding stuck unbound forever. Backoff still applies.
+        if (!destroying_) scheduleReconnect();
         return;
     }
 
@@ -857,15 +871,30 @@ void QdwinBinding::setLastError(const QString &s) {
     emit lastErrorChanged();
 }
 
+// Grace period a (re)connection must stay bound before its backoff is reset.
+// Matches the scheduleReconnect() ceiling so a genuinely stable connection
+// resets promptly while a sub-second flap never does.
+static constexpr int kReconnectStableMs = 5000;
+
 void QdwinBinding::setBound(bool b) {
     if (bound_ == b) return;
     bound_ = b;
     if (b) {
-        // A successful hello resets the reconnect backoff so the next
-        // unexpected disconnect retries promptly rather than at the
-        // previous attempt's ceiling.
-        reconnectAttempts_ = 0;
+        // Do NOT reset the reconnect backoff here. A hello only means the
+        // connection bound this instant; under a teardown/reconnect flap the
+        // fresh connection routinely dies again within milliseconds (the
+        // onBound capability re-assert burst re-errors it after a fatal
+        // protocol error like ERROR_LOCKED). Resetting reconnectAttempts_ on
+        // every brief bind pins the backoff at 200 ms and turns one fatal
+        // error into a perpetual reconnect storm. Instead arm the stability
+        // timer; only a connection that survives kReconnectStableMs is treated
+        // as stable and resets the backoff (see stableTimer_).
+        stableTimer_.start(kReconnectStableMs);
         lastError_.clear();
+    } else {
+        // Unbound again before proving stable — keep the elevated backoff so
+        // scheduleReconnect() spaces the next attempt out (storm self-limits).
+        stableTimer_.stop();
     }
     emit boundChanged();
 }

@@ -544,4 +544,15 @@ private:
     bool destroying_ = false;
     int reconnectAttempts_ = 0;
     QTimer reconnectTimer_;
+    // Stability gate for the reconnect backoff. setBound(true) does NOT reset
+    // the backoff immediately — it arms this one-shot timer; only a connection
+    // that stays bound for the grace period counts as a genuinely stable
+    // (re)connect and resets reconnectAttempts_ to 0. A connection that binds
+    // then tears down again before the timer fires (a teardown/reconnect FLAP —
+    // e.g. a fatal protocol error such as ERROR_LOCKED, after which the onBound
+    // capability re-assert burst re-errors the freshly-rebound connection) thus
+    // keeps GROWING the backoff toward its 5 s ceiling instead of pinning it at
+    // 200 ms, so a single fatal error can no longer become a perpetual
+    // teardown/reconnect storm. teardown()/setBound(false) stop the timer.
+    QTimer stableTimer_;
 };
