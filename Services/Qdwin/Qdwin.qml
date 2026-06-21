@@ -326,6 +326,29 @@ Singleton {
             decision.reason);
     }
 
+    IpcHandler {
+        target: "qdwin"
+
+        function closeWindow(handle: int): void {
+            root.closeHandle(handle);
+        }
+
+        function focusWindow(handle: int): void {
+            root.focusWindow(handle);
+        }
+
+        function lastOverlayKeys(): string {
+            return "count=" + (qdwinBinding ? qdwinBinding.overlayKeyCount : 0);
+        }
+
+        function capabilities(): string {
+            return "bound=" + (!!(qdwinBinding && qdwinBinding.bound))
+                + " version=" + (qdwinBinding ? qdwinBinding.shellVersion : 0)
+                + " wmPolicy=" + (qdwinBinding ? (qdwinBinding.shellVersion >= 25) : false)
+                + " keybindRegistration=" + (qdwinBinding ? (qdwinBinding.shellVersion >= 25) : false);
+        }
+    }
+
     QdwinBinding {
         id: qdwinBinding
 
