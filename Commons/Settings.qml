@@ -1017,6 +1017,23 @@ Singleton {
       property bool disableNotificationsWhileInhibited: false
     }
 
+    // sandboxed VM apps (tier-5) — disposable per-app VM teardown policy.
+    // Mirrored to ~/.config/qdistro/tier5-lifecycle.conf by VMAppsTab and read
+    // by qdistro's spawn-tier5.sh (which independently clamps every value).
+    property JsonObject vmApps
+    vmApps: JsonObject {
+      // Global defaults (the [global] section of tier5-lifecycle.conf).
+      property string shutdownMethod: "graceful" // graceful | force
+      property int shutdownGraceSecs: 15          // 0..300
+      property int idleShutdownMinutes: 0         // 0 = shut down immediately
+      property int lowMemoryMb: 0                  // 0 = disabled
+      // Per-app overrides, keyed by catalogue appId (e.g. "tier5/firefox").
+      // Each value: { enabled, shutdownMethod, shutdownGraceSecs,
+      // idleShutdownMinutes, lowMemoryMb }. Only enabled entries are written as
+      // [app:<appId>] sections; disabled/absent apps inherit the global values.
+      property var perApp: ({})
+    }
+
     // appearance
     property JsonObject appearance
     appearance: JsonObject {

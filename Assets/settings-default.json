@@ -553,6 +553,13 @@
     "inhibitWhenFullscreen": false,
     "disableNotificationsWhileInhibited": false
   },
+  "vmApps": {
+    "shutdownMethod": "graceful",
+    "shutdownGraceSecs": 15,
+    "idleShutdownMinutes": 0,
+    "lowMemoryMb": 0,
+    "perApp": {}
+  },
   "appearance": {
     "iconTheme": "",
     "cursorTheme": "",
@@ -611,7 +618,9 @@
     "cursorBlink": true,
     "cursorBlinkRate": 1200,
     "model": "pc105",
-    "layouts": ["us"],
+    "layouts": [
+      "us"
+    ],
     "variants": {},
     "switchShortcut": "",
     "composeKey": "",

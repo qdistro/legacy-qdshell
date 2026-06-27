@@ -129,7 +129,7 @@
     "labelKey": "panels.advanced.search-label",
     "descriptionKey": "panels.advanced.search-description",
     "widget": "NTextInput",
-    "tab": 32,
+    "tab": 33,
     "tabLabel": "panels.advanced.title",
     "subTab": null
   },
@@ -646,7 +646,7 @@
     "labelKey": "common.bluetooth",
     "descriptionKey": null,
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -655,7 +655,7 @@
     "labelKey": "bluetooth.panel.connected-devices",
     "descriptionKey": null,
     "widget": "NLabel",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -664,7 +664,7 @@
     "labelKey": "bluetooth.panel.paired-devices",
     "descriptionKey": null,
     "widget": "NLabel",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -673,7 +673,7 @@
     "labelKey": "bluetooth.panel.available-devices",
     "descriptionKey": null,
     "widget": "NLabel",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -682,7 +682,7 @@
     "labelKey": "panels.connections.hide-unnamed-devices-label",
     "descriptionKey": "panels.connections.hide-unnamed-devices-description",
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -691,7 +691,7 @@
     "labelKey": "panels.connections.disable-discoverability-label",
     "descriptionKey": "panels.connections.disable-discoverability-description",
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -700,7 +700,7 @@
     "labelKey": "panels.connections.bluetooth-rssi-polling-label",
     "descriptionKey": "panels.connections.bluetooth-rssi-polling-description",
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -709,7 +709,7 @@
     "labelKey": "panels.connections.bluetooth-rssi-polling-interval-label",
     "descriptionKey": "panels.connections.bluetooth-rssi-polling-interval-description",
     "widget": "NSpinBox",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 1,
     "subTabLabel": "common.bluetooth"
@@ -718,7 +718,7 @@
     "labelKey": "toast.airplane-mode.title",
     "descriptionKey": null,
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 0,
     "subTabLabel": "common.wifi"
@@ -727,7 +727,7 @@
     "labelKey": "common.wifi",
     "descriptionKey": null,
     "widget": "NToggle",
-    "tab": 26,
+    "tab": 27,
     "tabLabel": "panels.connections.title",
     "subTab": 0,
     "subTabLabel": "common.wifi"
@@ -1144,7 +1144,7 @@
     "labelKey": "panels.hooks.system-hooks-enable-label",
     "descriptionKey": "panels.hooks.system-hooks-enable-description",
     "widget": "NToggle",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 0,
     "subTabLabel": "common.general"
@@ -1153,7 +1153,7 @@
     "labelKey": "panels.hooks.info-parameters-label",
     "descriptionKey": "panels.hooks.info-parameters-description",
     "widget": "NLabel",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 0,
     "subTabLabel": "common.general"
@@ -1162,7 +1162,7 @@
     "labelKey": "panels.hooks.qdshell-started-label",
     "descriptionKey": "panels.hooks.qdshell-started-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1171,7 +1171,7 @@
     "labelKey": "panels.hooks.wallpaper-changed-label",
     "descriptionKey": "panels.hooks.wallpaper-changed-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1180,7 +1180,7 @@
     "labelKey": "panels.hooks.theme-changed-label",
     "descriptionKey": "panels.hooks.theme-changed-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1189,7 +1189,7 @@
     "labelKey": "panels.hooks.screen-lock-label",
     "descriptionKey": "panels.hooks.screen-lock-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1198,7 +1198,7 @@
     "labelKey": "panels.hooks.screen-unlock-label",
     "descriptionKey": "panels.hooks.screen-unlock-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1207,7 +1207,7 @@
     "labelKey": "panels.hooks.performance-mode-enabled-label",
     "descriptionKey": "panels.hooks.performance-mode-enabled-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1216,7 +1216,7 @@
     "labelKey": "panels.hooks.performance-mode-disabled-label",
     "descriptionKey": "panels.hooks.performance-mode-disabled-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -1225,7 +1225,7 @@
     "labelKey": "panels.hooks.session-label",
     "descriptionKey": "panels.hooks.session-description",
     "widget": "HookRow",
-    "tab": 30,
+    "tab": 31,
     "tabLabel": "panels.hooks.title",
     "subTab": 1,
     "subTabLabel": "panels.hooks.title"
@@ -2309,7 +2309,7 @@
     "labelKey": "panels.plugins.available-no-plugins-label",
     "descriptionKey": "panels.plugins.available-no-plugins-description",
     "widget": "NLabel",
-    "tab": 29,
+    "tab": 30,
     "tabLabel": "panels.plugins.title",
     "subTab": 1,
     "subTabLabel": "common.available"
@@ -2318,7 +2318,7 @@
     "labelKey": "panels.plugins.auto-update",
     "descriptionKey": "panels.plugins.auto-update-description",
     "widget": "NToggle",
-    "tab": 29,
+    "tab": 30,
     "tabLabel": "panels.plugins.title",
     "subTab": 0,
     "subTabLabel": "common.installed"
@@ -2327,7 +2327,7 @@
     "labelKey": "panels.plugins.installed-no-plugins-label",
     "descriptionKey": "panels.plugins.installed-no-plugins-description",
     "widget": "NLabel",
-    "tab": 29,
+    "tab": 30,
     "tabLabel": "panels.plugins.title",
     "subTab": 0,
     "subTabLabel": "common.installed"
@@ -2336,7 +2336,7 @@
     "labelKey": "panels.plugins.sources-add-dialog-name",
     "descriptionKey": null,
     "widget": "NTextInput",
-    "tab": 29,
+    "tab": 30,
     "tabLabel": "panels.plugins.title",
     "subTab": 2,
     "subTabLabel": "common.sources"
@@ -2345,7 +2345,7 @@
     "labelKey": "panels.plugins.sources-add-dialog-url",
     "descriptionKey": null,
     "widget": "NTextInput",
-    "tab": 29,
+    "tab": 30,
     "tabLabel": "panels.plugins.title",
     "subTab": 2,
     "subTabLabel": "common.sources"
@@ -2506,7 +2506,7 @@
     "labelKey": "panels.location.date-time-use-analog-label",
     "descriptionKey": "panels.location.date-time-use-analog-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 2,
     "subTabLabel": "common.calendar-panel"
@@ -2515,7 +2515,7 @@
     "labelKey": "panels.location.date-time-week-numbers-label",
     "descriptionKey": "panels.location.date-time-week-numbers-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 2,
     "subTabLabel": "common.calendar-panel"
@@ -2524,7 +2524,7 @@
     "labelKey": "panels.location.date-time-show-events-label",
     "descriptionKey": "panels.location.date-time-show-events-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 2,
     "subTabLabel": "common.calendar-panel"
@@ -2533,7 +2533,7 @@
     "labelKey": "panels.location.date-time-12hour-format-label",
     "descriptionKey": "panels.location.date-time-12hour-format-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 1,
     "subTabLabel": "common.date"
@@ -2542,7 +2542,7 @@
     "labelKey": "panels.location.date-time-first-day-of-week-label",
     "descriptionKey": "panels.location.date-time-first-day-of-week-description",
     "widget": "NComboBox",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 1,
     "subTabLabel": "common.date"
@@ -2551,7 +2551,7 @@
     "labelKey": "panels.general.language-select-label",
     "descriptionKey": "panels.general.language-select-description",
     "widget": "NComboBox",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2560,7 +2560,7 @@
     "labelKey": "panels.location.location-search-label",
     "descriptionKey": "panels.location.location-search-description",
     "widget": "NTextInput",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2569,7 +2569,7 @@
     "labelKey": "panels.location.weather-enabled-label",
     "descriptionKey": "panels.location.weather-enabled-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2578,7 +2578,7 @@
     "labelKey": "panels.location.weather-fahrenheit-label",
     "descriptionKey": "panels.location.weather-fahrenheit-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2587,7 +2587,7 @@
     "labelKey": "panels.location.weather-show-effects-label",
     "descriptionKey": "panels.location.weather-show-effects-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2596,7 +2596,7 @@
     "labelKey": "panels.location.weather-hide-city-label",
     "descriptionKey": "panels.location.weather-hide-city-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2605,7 +2605,7 @@
     "labelKey": "panels.location.weather-hide-timezone-label",
     "descriptionKey": "panels.location.weather-hide-timezone-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 0,
     "subTabLabel": "common.location"
@@ -2614,7 +2614,7 @@
     "labelKey": "panels.location.system-clock-timezone-label",
     "descriptionKey": "panels.location.system-clock-timezone-description",
     "widget": "NSearchableComboBox",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -2623,7 +2623,7 @@
     "labelKey": "panels.location.system-clock-ntp-label",
     "descriptionKey": "panels.location.system-clock-ntp-description",
     "widget": "NToggle",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -2632,7 +2632,7 @@
     "labelKey": "panels.location.system-clock-manual-label",
     "descriptionKey": null,
     "widget": "NTextInputButton",
-    "tab": 27,
+    "tab": 28,
     "tabLabel": "panels.region.title",
     "subTab": 3,
     "subTabLabel": "common.system-clock"
@@ -2641,7 +2641,7 @@
     "labelKey": "panels.removable-media.enabled-label",
     "descriptionKey": "panels.removable-media.enabled-description",
     "widget": "NToggle",
-    "tab": 24,
+    "tab": 25,
     "tabLabel": "panels.removable-media.title",
     "subTab": null
   },
@@ -2649,7 +2649,7 @@
     "labelKey": "panels.removable-media.notify-insert-label",
     "descriptionKey": "panels.removable-media.notify-insert-description",
     "widget": "NToggle",
-    "tab": 24,
+    "tab": 25,
     "tabLabel": "panels.removable-media.title",
     "subTab": null
   },
@@ -2657,7 +2657,7 @@
     "labelKey": "panels.removable-media.notify-remove-label",
     "descriptionKey": "panels.removable-media.notify-remove-description",
     "widget": "NToggle",
-    "tab": 24,
+    "tab": 25,
     "tabLabel": "panels.removable-media.title",
     "subTab": null
   },
@@ -2665,7 +2665,7 @@
     "labelKey": "panels.removable-media.mount-policy-label",
     "descriptionKey": "panels.removable-media.mount-policy-description",
     "widget": "NComboBox",
-    "tab": 24,
+    "tab": 25,
     "tabLabel": "panels.removable-media.title",
     "subTab": null
   },
@@ -2673,7 +2673,7 @@
     "labelKey": "panels.removable-media.autorun-policy-label",
     "descriptionKey": "panels.removable-media.autorun-policy-description",
     "widget": "NComboBox",
-    "tab": 24,
+    "tab": 25,
     "tabLabel": "panels.removable-media.title",
     "subTab": null
   },
@@ -2749,7 +2749,7 @@
     "labelKey": "panels.system-monitor.enable-dgpu-monitoring-label",
     "descriptionKey": "panels.system-monitor.enable-dgpu-monitoring-description",
     "widget": "NToggle",
-    "tab": 28,
+    "tab": 29,
     "tabLabel": "system-monitor.title",
     "subTab": 0,
     "subTabLabel": "common.general"
@@ -2758,7 +2758,7 @@
     "labelKey": "panels.system-monitor.use-custom-highlight-colors-label",
     "descriptionKey": "panels.system-monitor.use-custom-highlight-colors-description",
     "widget": "NToggle",
-    "tab": 28,
+    "tab": 29,
     "tabLabel": "system-monitor.title",
     "subTab": 0,
     "subTabLabel": "common.general"
@@ -2767,7 +2767,7 @@
     "labelKey": "panels.system-monitor.external-monitor-label",
     "descriptionKey": "panels.system-monitor.external-monitor-description",
     "widget": "NTextInput",
-    "tab": 28,
+    "tab": 29,
     "tabLabel": "system-monitor.title",
     "subTab": 0,
     "subTabLabel": "common.general"
@@ -2926,6 +2926,38 @@
     "subTabLabel": "common.screen-corners"
   },
   {
+    "labelKey": "panels.vmApps.method-label",
+    "descriptionKey": "panels.vmApps.method-description",
+    "widget": "NComboBox",
+    "tab": 24,
+    "tabLabel": "panels.vmApps.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.vmApps.grace-label",
+    "descriptionKey": "panels.vmApps.grace-description",
+    "widget": "NSpinBox",
+    "tab": 24,
+    "tabLabel": "panels.vmApps.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.vmApps.idle-label",
+    "descriptionKey": "panels.vmApps.idle-description",
+    "widget": "NSpinBox",
+    "tab": 24,
+    "tabLabel": "panels.vmApps.title",
+    "subTab": null
+  },
+  {
+    "labelKey": "panels.vmApps.lowmem-label",
+    "descriptionKey": "panels.vmApps.lowmem-description",
+    "widget": "NSpinBox",
+    "tab": 24,
+    "tabLabel": "panels.vmApps.title",
+    "subTab": null
+  },
+  {
     "labelKey": "panels.wallpaper.automation-scheduled-change-label",
     "descriptionKey": "panels.wallpaper.automation-scheduled-change-description",
     "widget": "NToggle",
@@ -3064,7 +3096,7 @@
     "labelKey": "panels.window-manager.focus-policy-label",
     "descriptionKey": "panels.window-manager.focus-policy-description",
     "widget": "NComboBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3072,7 +3104,7 @@
     "labelKey": "panels.window-manager.ffm-delay-label",
     "descriptionKey": "panels.window-manager.ffm-delay-description",
     "widget": "NSpinBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3080,7 +3112,7 @@
     "labelKey": "panels.window-manager.raise-on-click-label",
     "descriptionKey": "panels.window-manager.raise-on-click-description",
     "widget": "NToggle",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3088,7 +3120,7 @@
     "labelKey": "panels.window-manager.raise-on-hover-label",
     "descriptionKey": "panels.window-manager.raise-on-hover-description",
     "widget": "NToggle",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3096,7 +3128,7 @@
     "labelKey": "panels.window-manager.placement-label",
     "descriptionKey": "panels.window-manager.placement-description",
     "widget": "NComboBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3104,7 +3136,7 @@
     "labelKey": "panels.window-manager.snap-enabled-label",
     "descriptionKey": "panels.window-manager.snap-enabled-description",
     "widget": "NToggle",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3112,7 +3144,7 @@
     "labelKey": "panels.window-manager.snap-distance-label",
     "descriptionKey": "panels.window-manager.snap-distance-description",
     "widget": "NSpinBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3120,7 +3152,7 @@
     "labelKey": "panels.window-manager.titlebar-double-click-label",
     "descriptionKey": "panels.window-manager.titlebar-double-click-description",
     "widget": "NComboBox",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3128,7 +3160,7 @@
     "labelKey": "panels.window-manager.decoration-theme-label",
     "descriptionKey": "panels.window-manager.decoration-theme-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3136,7 +3168,7 @@
     "labelKey": "panels.window-manager.shortcut-close-label",
     "descriptionKey": "panels.window-manager.shortcut-close-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3144,7 +3176,7 @@
     "labelKey": "panels.window-manager.shortcut-maximize-label",
     "descriptionKey": "panels.window-manager.shortcut-maximize-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3152,7 +3184,7 @@
     "labelKey": "panels.window-manager.shortcut-fullscreen-label",
     "descriptionKey": "panels.window-manager.shortcut-fullscreen-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3160,7 +3192,7 @@
     "labelKey": "panels.window-manager.shortcut-tile-left-label",
     "descriptionKey": "panels.window-manager.shortcut-tile-left-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   },
@@ -3168,7 +3200,7 @@
     "labelKey": "panels.window-manager.shortcut-tile-right-label",
     "descriptionKey": "panels.window-manager.shortcut-tile-right-description",
     "widget": "NTextInput",
-    "tab": 25,
+    "tab": 26,
     "tabLabel": "panels.window-manager.title",
     "subTab": null
   }

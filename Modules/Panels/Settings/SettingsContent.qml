@@ -34,6 +34,7 @@ import qs.Modules.Panels.Settings.Tabs.SessionMenu
 import qs.Modules.Panels.Settings.Tabs.SystemMonitor
 import qs.Modules.Panels.Settings.Tabs.UserInterface
 import qs.Modules.Panels.Settings.Tabs.Vault
+import qs.Modules.Panels.Settings.Tabs.VMApps
 import qs.Modules.Panels.Settings.Tabs.Wallpaper
 import qs.Modules.Panels.Settings.Tabs.WindowManager
 import qs.Services.System
@@ -504,6 +505,10 @@ Item {
     PowerTab {}
   }
   Component {
+    id: vmAppsTab
+    VMAppsTab {}
+  }
+  Component {
     id: removableMediaTab
     RemovableMediaTab {}
   }
@@ -689,6 +694,12 @@ Item {
             "label": "panels.power.title",
             "icon": "bolt",
             "source": powerTab
+          },
+          {
+            "id": SettingsPanel.Tab.VMApps,
+            "label": "panels.vmApps.title",
+            "icon": "computer",
+            "source": vmAppsTab
           },
           {
             "id": SettingsPanel.Tab.RemovableMedia,

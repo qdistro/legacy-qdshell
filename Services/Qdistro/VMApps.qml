@@ -56,6 +56,25 @@ Singleton {
     readonly property string spawnHelper: "qdistro-tier5-spawn"
     readonly property string spawnLauncher: "pkexec"
 
+    // Shared tier-5 app catalogue. The launcher (VMAppsProvider) surfaces these
+    // and the Settings "Sandboxed VM apps" tab lists them for per-app lifecycle
+    // overrides — both read this single source so the policy key (appId) lines
+    // up. Hardcoded today (the base qcow2 ships a fixed app set); see
+    // VMAppsProvider for the future auto-scan note. Each entry: appId, name,
+    // iconName, comment, execArgv (JSON-stringified array of strings).
+    readonly property var catalogue: [
+        { "appId": "tier5/firefox",          "name": "Firefox (VM)",       "iconName": "firefox",                 "comment": "Isolated Firefox in a per-app VM",                        "execArgv": JSON.stringify(["firefox"]) },
+        { "appId": "tier5/weston-terminal",  "name": "Terminal (VM)",      "iconName": "utilities-terminal",      "comment": "Isolated weston-terminal in a per-app VM (test)",          "execArgv": JSON.stringify(["weston-terminal"]) },
+        { "appId": "tier5/baobab",           "name": "Disk Usage (VM)",    "iconName": "org.gnome.baobab",        "comment": "GNOME disk usage analyzer (GTK4/libadwaita, CSD)",         "execArgv": JSON.stringify(["baobab"]) },
+        { "appId": "tier5/gnome-text-editor","name": "Text Editor (VM)",   "iconName": "org.gnome.TextEditor",    "comment": "GNOME text editor (GTK4/libadwaita, CSD)",                 "execArgv": JSON.stringify(["gnome-text-editor"]) },
+        { "appId": "tier5/nautilus",         "name": "Files (VM)",         "iconName": "org.gnome.Nautilus",      "comment": "GNOME file manager (GTK4/libadwaita, CSD)",                "execArgv": JSON.stringify(["nautilus"]) },
+        { "appId": "tier5/gnome-calculator", "name": "Calculator (VM)",    "iconName": "org.gnome.Calculator",    "comment": "GNOME calculator (GTK4/libadwaita, CSD)",                  "execArgv": JSON.stringify(["gnome-calculator"]) },
+        { "appId": "tier5/dolphin",          "name": "Dolphin (VM)",       "iconName": "system-file-manager",     "comment": "KDE file manager (Qt6/KDE Frameworks, SSD)",               "execArgv": JSON.stringify(["dolphin"]) },
+        { "appId": "tier5/konsole",          "name": "Konsole (VM)",       "iconName": "utilities-terminal",      "comment": "KDE terminal (Qt6/KDE Frameworks, SSD)",                   "execArgv": JSON.stringify(["konsole"]) },
+        { "appId": "tier5/kate",             "name": "Kate (VM)",          "iconName": "accessories-text-editor", "comment": "KDE text editor (Qt6/KDE Frameworks, SSD)",                "execArgv": JSON.stringify(["kate"]) },
+        { "appId": "tier5/kcalc",            "name": "KCalc (VM)",         "iconName": "accessories-calculator",  "comment": "KDE calculator (Qt6, SSD)",                                "execArgv": JSON.stringify(["kcalc"]) },
+    ]
+
     // ---- toplevel filter (existing v1 surface) ---------------------------
     // Each row mirrors Qdwin.windows + adds `silo` ("vm-<tag>").
     property ListModel tier5Windows: ListModel {}
@@ -166,11 +185,17 @@ Singleton {
             return;
         }
         const vmName = row.vmName || root._generateVmName(row.appId);
-        // Build: pkexec qdistro-tier5-spawn --vm <vmName> -- <argv...>
-        // pkexec passes stdin/stdout/stderr through so the
+        // Build: pkexec qdistro-tier5-spawn --vm <vmName> --policy-key <appId>
+        //        -- <argv...>
+        // --policy-key carries the STABLE catalogue appId so the wrapper can
+        // resolve this app's per-app lifecycle policy from
+        // ~/.config/qdistro/tier5-lifecycle.conf (env can't ride through pkexec,
+        // but argv does; the flag is parsed before `--` so it never reaches the
+        // guest argv). pkexec passes stdin/stdout/stderr through so the
         // LAUNCH_TOKEN= line on stdout still reaches our SplitParser.
         const cmd = [root.spawnLauncher, root.spawnHelper,
-                     "--vm", vmName, "--"].concat(argv);
+                     "--vm", vmName, "--policy-key", row.appId,
+                     "--"].concat(argv);
 
         const proc = launchProcessComp.createObject(root, {
             "command":   cmd,

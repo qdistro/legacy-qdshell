@@ -103,7 +103,8 @@ SmartPanel {
     UserInterface,
     Vault,
     Wallpaper,
-    WindowManager
+    WindowManager,
+    VMApps
   }
 
   property int requestedTab: SettingsPanel.Tab.General

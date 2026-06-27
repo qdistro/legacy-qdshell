@@ -40,81 +40,11 @@ Item {
   property bool ignoreDensity: false
   property bool showsCategories: false
 
-  // Hardcoded tier-5 app catalogue. Each entry must carry an
-  // execArgv (JSON-stringified array of strings). The argv runs
-  // inside the guest VM via waypipe-server.
-  readonly property var apps: [
-    {
-      "appId":       "tier5/firefox",
-      "name":        "Firefox (VM)",
-      "iconName":    "firefox",
-      "comment":     "Isolated Firefox in a per-app VM",
-      "execArgv":    JSON.stringify(["firefox"]),
-    },
-    {
-      "appId":       "tier5/weston-terminal",
-      "name":        "Terminal (VM)",
-      "iconName":    "utilities-terminal",
-      "comment":     "Isolated weston-terminal in a per-app VM (test)",
-      "execArgv":    JSON.stringify(["weston-terminal"]),
-    },
-    {
-      "appId":       "tier5/baobab",
-      "name":        "Disk Usage (VM)",
-      "iconName":    "org.gnome.baobab",
-      "comment":     "GNOME disk usage analyzer (GTK4/libadwaita, CSD)",
-      "execArgv":    JSON.stringify(["baobab"]),
-    },
-    {
-      "appId":       "tier5/gnome-text-editor",
-      "name":        "Text Editor (VM)",
-      "iconName":    "org.gnome.TextEditor",
-      "comment":     "GNOME text editor (GTK4/libadwaita, CSD)",
-      "execArgv":    JSON.stringify(["gnome-text-editor"]),
-    },
-    {
-      "appId":       "tier5/nautilus",
-      "name":        "Files (VM)",
-      "iconName":    "org.gnome.Nautilus",
-      "comment":     "GNOME file manager (GTK4/libadwaita, CSD)",
-      "execArgv":    JSON.stringify(["nautilus"]),
-    },
-    {
-      "appId":       "tier5/gnome-calculator",
-      "name":        "Calculator (VM)",
-      "iconName":    "org.gnome.Calculator",
-      "comment":     "GNOME calculator (GTK4/libadwaita, CSD)",
-      "execArgv":    JSON.stringify(["gnome-calculator"]),
-    },
-    {
-      "appId":       "tier5/dolphin",
-      "name":        "Dolphin (VM)",
-      "iconName":    "system-file-manager",
-      "comment":     "KDE file manager (Qt6/KDE Frameworks, SSD)",
-      "execArgv":    JSON.stringify(["dolphin"]),
-    },
-    {
-      "appId":       "tier5/konsole",
-      "name":        "Konsole (VM)",
-      "iconName":    "utilities-terminal",
-      "comment":     "KDE terminal (Qt6/KDE Frameworks, SSD)",
-      "execArgv":    JSON.stringify(["konsole"]),
-    },
-    {
-      "appId":       "tier5/kate",
-      "name":        "Kate (VM)",
-      "iconName":    "accessories-text-editor",
-      "comment":     "KDE text editor (Qt6/KDE Frameworks, SSD)",
-      "execArgv":    JSON.stringify(["kate"]),
-    },
-    {
-      "appId":       "tier5/kcalc",
-      "name":        "KCalc (VM)",
-      "iconName":    "accessories-calculator",
-      "comment":     "KDE calculator (Qt6, SSD)",
-      "execArgv":    JSON.stringify(["kcalc"]),
-    },
-  ]
+  // Tier-5 app catalogue — shared with the Settings "Sandboxed VM apps" tab via
+  // the VMApps singleton, so the launcher and per-app lifecycle config agree on
+  // the appId (the policy key). Each entry carries an execArgv (JSON-stringified
+  // array of strings) that runs inside the guest VM via waypipe-server.
+  readonly property var apps: VMApps.catalogue
 
   function init() {}
   function onOpened() {}

@@ -2214,6 +2214,26 @@
       "action-ask": "Ask",
       "action-hybrid-sleep": "Hybrid Sleep"
     },
+    "vmApps": {
+      "title": "Sandboxed VM apps",
+      "intro": "Tier-5 apps each run in their own disposable virtual machine. These options control how that VM is shut down when the app closes. Tier-5 is experimental.",
+      "section-shutdown": "Shutdown",
+      "method-label": "Shutdown method",
+      "method-description": "How a VM is torn down when its app exits. Graceful asks the guest to power off cleanly via the ACPI power button before forcing it off; Force destroys it immediately.",
+      "method-graceful": "Graceful (ACPI power button)",
+      "method-force": "Force (immediate)",
+      "grace-label": "Graceful shutdown timeout",
+      "grace-description": "How long to wait for a graceful shutdown to finish before forcing the VM off.",
+      "section-idle": "Idle",
+      "idle-label": "Shut down idle VM after",
+      "idle-description": "Keep a VM running this long after its app closes, then shut it down. 0 shuts it down immediately. (No relaunch reuse yet — this is a shutdown delay.)",
+      "section-memory": "Memory",
+      "lowmem-label": "Shut down idle VMs under low memory",
+      "lowmem-description": "When free system memory drops below this amount, shut idle VMs down right away instead of waiting for the idle timeout. 0 disables this.",
+      "section-perapp": "Per-app overrides",
+      "perapp-intro": "Override the defaults above for individual apps. Apps without an override use the global settings.",
+      "override-label": "Override defaults for this app"
+    },
     "window-manager": {
       "title": "Window Manager",
       "section-focus": "Focus",
