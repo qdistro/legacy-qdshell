@@ -345,7 +345,12 @@ Singleton {
             return "bound=" + (!!(qdwinBinding && qdwinBinding.bound))
                 + " version=" + (qdwinBinding ? qdwinBinding.shellVersion : 0)
                 + " wmPolicy=" + (qdwinBinding ? (qdwinBinding.shellVersion >= 25) : false)
-                + " keybindRegistration=" + (qdwinBinding ? (qdwinBinding.shellVersion >= 25) : false);
+                + " keybindRegistration=" + (qdwinBinding ? (qdwinBinding.shellVersion >= 25) : false)
+                // v26: the real derived idle/DPMS capability (a >= v26 bind AND
+                // ext_idle_notifier_v1 + a wl_seat) — the same CapabilityService
+                // state that drives the `idleDpms -> true` log, so the read is
+                // deterministic instead of racing a transient journal line.
+                + " idleDpms=" + CapabilityService.idleDpms;
         }
     }
 
