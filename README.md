@@ -25,7 +25,8 @@ published. See [CREDITS.md](CREDITS.md).
 
 - Single compositor: qdshell only targets qdwin. The
   `CompositorService` abstraction was dropped — qdshell binds Qdwin
-  APIs directly.
+  APIs directly. A guard test forbids foreign-WM dispatch code from
+  re-entering the tree.
 - Broker integration: every hook script and notification is mediated
   by the qdistro broker. Runtime locking is delegated to qdlocker over
   its control socket.
@@ -49,20 +50,59 @@ qdistro-org/
 See the [qdistro umbrella README](https://codeberg.org/qdistro/qdistro)
 for the full clone sequence.
 
-## Build
+## Build & run
 
-qdshell is Quickshell QML. From a checkout:
+The QML tree itself has no build step. Two pieces do get built/installed:
+
+- **Native QML plugin** (`qml-plugin/`): a small Qt plugin, built with
+  meson, that binds the `qdwin_shell_v1` IPC into QML. This is the only
+  thing meson builds here — meson does not install the QML tree.
+- **Deployment**: the real session install (QML tree to
+  `/usr/share/quickshell/qdshell` plus the plugin) is done by the
+  umbrella repo's `scripts/install/install-qdwin-session-for-vm.sh`,
+  which is what the bootstrap and the CI VM provisioning use.
+
+For a quick host-side preview outside a qdwin session:
 
 ```sh
 quickshell -p shell.qml
 ```
 
-Tests:
+Note that many surfaces need a live qdwin compositor (and broker) to do
+anything meaningful — the supported way to see qdshell working is inside a
+qdistro test VM (see below).
+
+## Testing
+
+Coverage lives in three layers, driven by two scripts:
 
 ```sh
-scripts/ci-local.sh    # host-side smoke
-scripts/ci-in-vm.sh    # full qmltest suite (133 cases) in a VM
+scripts/ci-local.sh     # host gates: qmltestrunner (Tests/tst_*.qml),
+                        # Node JS unit tests (tests/test_*.js), qmllint
+                        # (informational), qmlformat check; optional bats
+                        # integration. Flags: --strict --no-int --quick
+QDISTRO_VM=<vm> scripts/ci-in-vm.sh   # runs the qmltest suite inside a
+                        # qdistro VM; --bats adds broker end-to-end bats
 ```
+
+- `tests/test_*.js` — plain Node unit tests (also wired as `meson test`).
+  This is where the security-critical gate logic is covered: clipboard
+  brokering, fail-closed broker gates, silo-identity drift guards, input
+  config, taskbar behaviour.
+- `Tests/tst_*.qml` — qmltestrunner smoke tests.
+- `tests/ui/test_*.py` — agent-assisted live-VM UI tests (pytest); they
+  only execute with `QDSHELL_UI_TESTS=1` and `QDSHELL_UI_VM=<vm>` set.
+- `tests/test_*.py` — host-side Python unit tests (`python3 -m pytest
+  tests`). Not currently wired into `ci-local.sh`; run them manually when
+  touching the areas they cover (bluetooth pairing, content signing,
+  plugin helper, safe write, theming hooks).
+
+Host `qmllint` cannot resolve Quickshell's `qs.*` modules, so
+`.qmllint.ini` relaxes the categories that would false-positive; full QML
+validation happens inside a VM where the modules resolve.
+
+If you edit tests, read `tests/AGENTS.md` first — it codifies a strict
+never-reduce-coverage policy.
 
 ## License
 
