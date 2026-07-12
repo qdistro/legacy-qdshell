@@ -20,6 +20,14 @@ assert.ok(qml.includes('root._trustDomainByHandle[req.handle] = identity.trust_d
   "trust chrome must use the broker-vouched trust domain");
 assert.ok(qml.includes('root._secctxByHandle[req.handle] = req.secctxAppId'),
   "handle authorization must bind the exact secctx observation");
+assert.ok(qml.includes('target: "multimachine"'),
+  "authorized remote windows must expose the stable operator IPC surface");
+assert.ok(qml.includes('if (!root._authorizedHandle(handle)) return false;'),
+  "neutral/unpaired lookalikes must not gain IPC focus or close authority");
+assert.ok(qml.includes('Qdwin.closeWindow(handle);'),
+  "IPC close must enter qdshell's source-mediated remote close path");
+assert.ok(qml.includes('"[mm] neutral chrome handle="'),
+  "live evidence must expose the neutral-before-bind boundary");
 
 // Ensures: the old unchecked fire-and-forget bind cannot silently return.
 assert.ok(!qml.includes('"BindHandle", "sssst"'),

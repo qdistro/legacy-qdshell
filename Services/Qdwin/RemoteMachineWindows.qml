@@ -79,6 +79,45 @@ Singleton {
         return RM.isRemoteMachine(secctxAppId);
     }
 
+    function _authorizedHandle(handle) {
+        return root._originByHandle[handle] !== undefined
+            && root._secctxByHandle[handle] !== undefined;
+    }
+
+    // Stable operator/automation surface for the remote-managed subset. It
+    // deliberately acts only on broker-authorized handles: neutral/unpaired
+    // lookalikes remain visible for diagnosis but gain no focus/close authority.
+    IpcHandler {
+        target: "multimachine"
+
+        function list(): string {
+            const rows = [];
+            for (let i = 0; i < root.remoteWindows.count; i++) {
+                const row = root.remoteWindows.get(i);
+                rows.push({
+                    handle: row.handle, origin: row.origin,
+                    streamId: row.streamId, secctxAppId: row.secctxAppId,
+                    authorized: row.authorized,
+                    trustDomainId: row.trustDomainId,
+                    allowInput: row.allowInput, colour: row.colour
+                });
+            }
+            return JSON.stringify(rows);
+        }
+
+        function focus(handle: int): bool {
+            if (!root._authorizedHandle(handle)) return false;
+            Qdwin.focusWindow(handle);
+            return true;
+        }
+
+        function close(handle: int): bool {
+            if (!root._authorizedHandle(handle)) return false;
+            Qdwin.closeWindow(handle);
+            return true;
+        }
+    }
+
     // ---- chrome paint ---------------------------------------------------
     function _paintBorder(handle, origin, trustDomainId, pending) {
         const bright = RM.colourForTrustedOrigin(origin, trustDomainId);
@@ -150,6 +189,8 @@ Singleton {
                 + " trust_domain=" + identity.trust_domain_id
                 + " generation=" + identity.generation
                 + " allow_input=" + identity.allow_input
+                + " colour=" + RM.colourForTrustedOrigin(
+                    identity.origin, identity.trust_domain_id)
                 + " handle=" + identity.handle);
             root.remoteWindowAdded(req.handle, identity.origin,
                                    identity.stream_id,
@@ -218,6 +259,9 @@ Singleton {
                         "[mm] toplevel observed origin=" + row.origin
                         + " stream=" + row.streamId + " secctx=" + row.secctxAppId
                         + " handle=" + row.handle);
+                    Logger.i("RemoteMachineWindows",
+                        "[mm] neutral chrome handle=" + row.handle
+                        + " secctx=" + row.secctxAppId);
                 }
                 // Neutral chrome until the broker joins this secctx observation
                 // to a paired origin grant and source-minted stream record.
