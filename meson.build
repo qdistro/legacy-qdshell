@@ -63,6 +63,7 @@ if node.found()
   # sibling ../qdistro checkout is absent.
   test('qdistro-contract-drift', node, args: files('tests/test_qdistro_contract_drift.js'))
   test('silo-chrome', node, args: files('tests/test_silo_chrome.js'))
+  test('remote-machine', node, args: files('tests/test_remote_machine.js'))
   test('colorkeys', node, args: files('tests/test_colorkeys.js'))
   test('fuzzysort', node, args: files('tests/test_fuzzysort.js'))
   test('timeformat', node, args: files('tests/test_timeformat.js'))

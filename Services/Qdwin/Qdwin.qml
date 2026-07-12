@@ -10,6 +10,7 @@ import qs.Services.Qdshell
 import qs.Services.UI
 import "../Qdshell/BrokerGate.js" as BrokerGate
 import "../Qdshell/ClipboardSilo.js" as ClipboardSilo
+import "RemoteMachine.js" as RemoteMachine
 
 /// qdshell Qdwin — qdwin-only.
 ///
@@ -637,6 +638,13 @@ Singleton {
     signal workspaceChanged
     signal activeWindowChanged
     signal windowListChanged
+    // Emitted INSTEAD of request_close for multi-machine remote (qdistro.mm.*)
+    // toplevels: their close is SOURCE-mediated (impl-34 Q3). RemoteMachineWindows
+    // routes it to the in-VM broker's RequestClose; the window stays visible until
+    // the source emits Closed. NEVER followed by qdwinBinding.closeWindow here
+    // (that xdg-closes FreeRDP = the forbidden client-tree kill; qdwin also
+    // refuses request_close for these as a compositor backstop).
+    signal remoteCloseRequested(int handle)
     // Fires when wp_security_context_v1 fields arrive for a known
     // toplevel. PodApps / VMApps services listen here to resolve
     // their cold-start placeholders by instanceId match.
@@ -814,6 +822,36 @@ Singleton {
     function closeWindow(window) {
         const h = _handleOf(window);
         if (h < 0) return;
+        // Multi-machine remote (qdistro.mm.*) toplevels: close is SOURCE-mediated
+        // (impl-34 Q3). Resolve the secctx app_id for this handle (object caller
+        // or bare-handle Taskbar/Workspace caller) and, if it is a remote-machine
+        // window, emit remoteCloseRequested INSTEAD of request_close and RETURN —
+        // never xdg-close the FreeRDP client (the forbidden client-tree kill).
+        // RemoteMachineWindows routes it to the broker's RequestClose; teardown
+        // waits for the source Closed.
+        let mmSecctx = "";
+        if (typeof window === "object" && window !== null
+                && typeof window.secctxAppId === "string")
+            mmSecctx = window.secctxAppId;
+        if (!mmSecctx) {
+            for (let i = 0; i < root.windows.count; i++) {
+                const w0 = root.windows.get(i);
+                if (w0.handle === h && typeof w0.secctxAppId === "string") {
+                    mmSecctx = w0.secctxAppId;
+                    break;
+                }
+            }
+        }
+        // Use isManagedRemote (prefix AND a parseable origin+stream), not the
+        // bare prefix: a malformed qdistro.mm.* id would be intercepted here but
+        // dropped by RemoteMachineWindows (which needs both), black-holing close
+        // (codex impl-36 MED). A malformed mm window instead falls through; the
+        // qdwin compositor guard still refuses request_close for engine=qdistro.mm
+        // (a safe no-op), so it is never xdg-closed.
+        if (RemoteMachine.isManagedRemote(mmSecctx)) {
+            root.remoteCloseRequested(h);
+            return;     // NO qdwinBinding.closeWindow — source-mediated close
+        }
         // P05a: if this is a tier-4 VM toplevel, route the close button
         // through the per-VM Tier4VM.Control.Close() RPC FIRST so the
         // ACPI→destroy lifecycle (with virsh timeout + orphan reap) runs
