@@ -31,10 +31,24 @@ for (const operation of ["minimize", "maximize", "restore", "move"])
     `authorized remote windows must expose source-mediated ${operation}`);
 assert.ok(qml.includes('"RequestShellOperation", "tsii"'),
   "R3 shell operations must route through the broker");
-assert.ok(!qml.includes('Qdwin.requestMinimize(handle)'),
-  "remote minimize must not mutate the viewer-local proxy");
+assert.ok(qml.includes('Qdwin.dismissUnattributedRemote(handle);'),
+  "unattributed remote close must retain a local presentation-dismiss action");
+assert.ok(qml.includes('delete root._bindAttemptByHandle[req.handle]'),
+  "failed binds must clear the one-shot marker before bounded retry");
+assert.ok(qml.includes('root._scheduleBindRetry(req)'),
+  "transient broker bind failures must be retried");
+assert.ok(qml.includes('id: _bindTimeout') && qml.includes('interval: 5000'),
+  "serialized broker binds must have a finite timeout");
+assert.ok(qml.includes('if (count > 5)'),
+  "broker bind retry must be bounded");
+assert.ok(qml.includes('root._queueBrokerRequest(['),
+  "close and shell operations must remain children of the pinned qdshell peer");
+assert.ok(!qml.includes('Quickshell.execDetached(['),
+  "broker calls must not detach and lose their pinned qdshell parent");
 assert.ok(!qml.includes('Qdwin.requestMaximize(handle'),
   "remote maximize/restore must not mutate the viewer-local proxy");
+assert.ok(!qml.includes('Qdwin.requestMinimize(handle)'),
+  "authorized remote minimize must not mutate the viewer-local proxy");
 assert.ok(qml.includes('"[mm] neutral chrome handle="'),
   "live evidence must expose the neutral-before-bind boundary");
 

@@ -69,8 +69,13 @@ Singleton {
     property var _allowInputByHandle: ({})
     property var _secctxByHandle: ({})
     property var _bindAttemptByHandle: ({})
+    property var _bindRetryCountByHandle: ({})
     property var _bindQueue: []
+    property var _bindRetryQueue: []
     property var _bindCurrent: null
+    property bool _bindTimedOut: false
+    property var _requestQueue: []
+    property bool _requestCurrent: false
 
     signal remoteWindowAdded(int handle, string origin, string streamId, string colour)
     signal remoteWindowRemoved(int handle, string origin)
@@ -177,6 +182,25 @@ Singleton {
             req.origin, "", "", req.secctxAppId, String(req.handle)
         ];
         _bindProc.running = true;
+        _bindTimeout.restart();
+    }
+
+    function _scheduleBindRetry(req) {
+        if (!req) return;
+        const count = (root._bindRetryCountByHandle[req.handle] || 0) + 1;
+        root._bindRetryCountByHandle[req.handle] = count;
+        if (count > 5) {
+            Logger.w("RemoteMachineWindows",
+                "[mm] broker bind retry limit reached; leaving neutral chrome"
+                + " handle=" + req.handle);
+            return;
+        }
+        const delay = Math.min(4000, 250 * Math.pow(2, count - 1));
+        root._bindRetryQueue = root._bindRetryQueue.concat([{
+            origin: req.origin, secctxAppId: req.secctxAppId,
+            handle: req.handle, due: Date.now() + delay
+        }]);
+        _bindRetryTimer.start();
     }
 
     function _acceptBoundIdentity(req, identity) {
@@ -198,6 +222,7 @@ Singleton {
             root._trustDomainByHandle[req.handle] = identity.trust_domain_id;
             root._allowInputByHandle[req.handle] = identity.allow_input;
             root._secctxByHandle[req.handle] = req.secctxAppId;
+            delete root._bindRetryCountByHandle[req.handle];
             root._paintBorder(req.handle, identity.origin,
                               identity.trust_domain_id, false);
             Logger.i("RemoteMachineWindows",
@@ -223,7 +248,7 @@ Singleton {
         // CloseRequest upstream and tears the backend down only after source
         // Closed. Fire-and-forget — the user-visible teardown is driven by the
         // source Closed, not this call's reply (same shape as Tier4VM close).
-        Quickshell.execDetached([
+        root._queueBrokerRequest([
             "/usr/bin/busctl", "--user", "--no-pager", "call",
             root.brokerBus, root.brokerPath, root.brokerIface,
             "RequestClose", "t", String(handle)
@@ -235,13 +260,30 @@ Singleton {
         Logger.i("RemoteMachineWindows",
             "[mm] shell-requested handle=" + handle + " operation=" + operation
             + " x=" + x + " y=" + y + " -> broker");
-        Quickshell.execDetached([
+        root._queueBrokerRequest([
             "/usr/bin/busctl", "--user", "--no-pager", "call",
             root.brokerBus, root.brokerPath, root.brokerIface,
             "RequestShellOperation", "tsii", String(handle), operation,
             String(x), String(y)
         ]);
         return true;
+    }
+
+    function _queueBrokerRequest(command) {
+        root._requestQueue = root._requestQueue.concat([command]);
+        root._startNextRequest();
+    }
+
+    function _startNextRequest() {
+        if (_requestProc.running || root._requestCurrent
+                || root._requestQueue.length === 0)
+            return;
+        const queue = root._requestQueue.slice();
+        _requestProc.command = queue.shift();
+        root._requestQueue = queue;
+        root._requestCurrent = true;
+        _requestProc.running = true;
+        _requestTimeout.restart();
     }
 
     // ---- rebuild from Qdwin.windows ------------------------------------
@@ -312,6 +354,7 @@ Singleton {
                 delete root._allowInputByHandle[h];
                 delete root._secctxByHandle[h];
                 delete root._bindAttemptByHandle[h];
+                delete root._bindRetryCountByHandle[h];
             }
     }
 
@@ -330,7 +373,16 @@ Singleton {
         // until the source Closed drives teardown.
         function onRemoteCloseRequested(handle) {
             const origin = root._originByHandle[handle];
-            if (origin === undefined) return;
+            if (origin === undefined) {
+                // An unattributed remote-looking proxy has no source lifecycle
+                // authority.  Dismiss only its viewer-local presentation; never
+                // synthesize a source close or xdg-close the FreeRDP client.
+                Logger.w("RemoteMachineWindows",
+                    "[mm] dismissing unattributed remote presentation handle="
+                    + handle);
+                Qdwin.dismissUnattributedRemote(handle);
+                return;
+            }
             Logger.i("RemoteMachineWindows",
                 "[mm] close-requested handle=" + handle + " origin=" + origin
                 + " -> broker RequestClose (source-mediated)");
@@ -346,8 +398,9 @@ Singleton {
         stdout: StdioCollector { id: _bindStdout }
         stderr: StdioCollector { id: _bindStderr }
         onExited: (exitCode, exitStatus) => {
+            _bindTimeout.stop();
             const req = root._bindCurrent;
-            const identity = exitCode === 0
+            const identity = !_bindTimedOut && exitCode === 0
                 ? RM.parseBindIdentity(String(_bindStdout.text || "")) : null;
             if (!req || !root._acceptBoundIdentity(req, identity)) {
                 Logger.w("RemoteMachineWindows",
@@ -355,9 +408,84 @@ Singleton {
                     + " handle=" + (req ? req.handle : 0)
                     + " exit=" + exitCode
                     + " stderr=" + String(_bindStderr.text || "").trim());
+                if (req) {
+                    delete root._bindAttemptByHandle[req.handle];
+                    root._scheduleBindRetry(req);
+                }
             }
+            root._bindTimedOut = false;
             root._bindCurrent = null;
             root._startNextBind();
+        }
+    }
+
+    Process {
+        id: _requestProc
+        running: false
+        stderr: StdioCollector { id: _requestStderr }
+        onExited: (exitCode, exitStatus) => {
+            _requestTimeout.stop();
+            if (exitCode !== 0)
+                Logger.w("RemoteMachineWindows",
+                    "[mm] broker request failed exit=" + exitCode
+                    + " stderr=" + String(_requestStderr.text || "").trim());
+            root._requestCurrent = false;
+            root._startNextRequest();
+        }
+    }
+
+    Timer {
+        id: _requestTimeout
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            if (!_requestProc.running) return;
+            Logger.w("RemoteMachineWindows", "[mm] broker request timed out");
+            _requestProc.running = false;
+        }
+    }
+
+    Timer {
+        id: _bindTimeout
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            if (!_bindProc.running) return;
+            root._bindTimedOut = true;
+            Logger.w("RemoteMachineWindows", "[mm] broker bind timed out");
+            _bindProc.running = false;
+        }
+    }
+
+    Timer {
+        id: _bindRetryTimer
+        interval: 100
+        repeat: true
+        onTriggered: {
+            const now = Date.now();
+            const pending = [];
+            for (const req of root._bindRetryQueue) {
+                if (req.due > now) {
+                    pending.push(req);
+                    continue;
+                }
+                let present = false;
+                for (let i = 0; i < root.remoteWindows.count; i++) {
+                    const row = root.remoteWindows.get(i);
+                    if (row.handle === req.handle
+                            && row.secctxAppId === req.secctxAppId
+                            && !row.authorized) {
+                        present = true;
+                        break;
+                    }
+                }
+                if (present
+                        && root._bindAttemptByHandle[req.handle] === undefined)
+                    root._brokerBindHandle(req.origin, req.secctxAppId,
+                                           req.handle);
+            }
+            root._bindRetryQueue = pending;
+            if (pending.length === 0) stop();
         }
     }
 }

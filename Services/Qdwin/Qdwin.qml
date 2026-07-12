@@ -926,6 +926,15 @@ Singleton {
         qdwinBinding.requestMinimize(h);
     }
 
+    // Presentation-only escape hatch for a well-formed remote proxy whose
+    // broker attribution never succeeds. This deliberately cannot request
+    // source close; RemoteMachineWindows is the sole policy caller.
+    function dismissUnattributedRemote(window) {
+        const h = _handleOf(window);
+        if (h < 0) return;
+        qdwinBinding.requestMinimize(h);
+    }
+
     // ── v25 window-manager policy + shortcut helpers ────────────────
     // Push the live WM policy snapshot to the compositor. Called by
     // WindowManagerService whenever the policy changes or the shell
