@@ -560,7 +560,13 @@ Singleton {
                 Logger.w("Qdwin", "nested_proxy_pixel_source: empty pw_node for handle " + handle);
                 return;
             }
-            const argv = ["qdistro-nested-pixelfeed", String(handle), pwNode];
+            // The daemon's dmabuf lane is still an explicitly documented
+            // diagnostic path: backend-pipewire can crash the nested Weston
+            // after format negotiation. Keep the production path on the SHM
+            // fallback until that producer bug has a live reliability gate.
+            const argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
+                          "/usr/bin/qdistro-nested-pixelfeed",
+                          String(handle), pwNode];
             if (inputSink && inputSink.length > 0) argv.push(inputSink);
             Logger.i("Qdwin", "spawning pixelfeed for handle " + handle
                               + " pw_node=" + pwNode);
