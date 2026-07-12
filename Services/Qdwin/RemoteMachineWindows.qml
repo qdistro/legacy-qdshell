@@ -44,7 +44,13 @@ import "RemoteMachine.js" as RM
 Singleton {
     id: root
 
-    Component.onCompleted: Logger.i("RemoteMachineWindows", "service started")
+    Component.onCompleted: {
+        Logger.i("RemoteMachineWindows", "service started");
+        // Pick up toplevels that mapped before this singleton instantiated —
+        // shell.qml forces instantiation at startup, but that can land after
+        // Qdwin.shellBound already fired.
+        rebuild(true);
+    }
 
     readonly property string mmEngine: "qdistro.mm"
     readonly property string brokerBus: "org.qdistro.MultiMachine1"
@@ -72,17 +78,22 @@ Singleton {
     }
 
     // ---- broker mirror (fire-and-forget busctl; impl-34 Q2) -------------
-    function _brokerBindHandle(origin, streamId, secctxAppId, handle) {
+    function _brokerBindHandle(origin, secctxAppId, handle) {
         // org.qdistro.MultiMachine1.BindHandle(origin, stream, generation,
-        // secctx_app_id, handle). generation is owned by the broker's Announce;
-        // qdshell passes "" (the broker resolves it from the live record). The
-        // broker is the registry authority; this is the viewer's confirmation of
-        // what it actually mapped, used only for the handle↔stream map.
+        // secctx_app_id, handle). The broker validates any NON-empty redundant
+        // field against the peer it resolves from secctx_app_id — and its
+        // peer.stream_id is the SOURCE-MINTED id, a separate namespace from the
+        // <stream_label> segment of the app_id (which is all qdshell knows).
+        // Passing the label there would be rejected whenever it differs from the
+        // minted id, black-holing close (codex mm-merge review HIGH-2), so
+        // stream and generation are sent empty (skip-check); origin IS
+        // validated. The broker is the registry authority; this is the viewer's
+        // confirmation of what it mapped, used only for the handle↔stream map.
         Quickshell.execDetached([
             "busctl", "--user", "--no-pager", "call",
             root.brokerBus, root.brokerPath, root.brokerIface,
             "BindHandle", "sssst",
-            origin, streamId, "", secctxAppId, String(handle)
+            origin, "", "", secctxAppId, String(handle)
         ]);
     }
 
@@ -135,8 +146,8 @@ Singleton {
                     + " handle=" + row.handle);
                 Logger.i("RemoteMachineWindows",
                     "[mm] origin=" + row.origin + " color=" + row.colour);
-                root._brokerBindHandle(row.origin, row.streamId,
-                                       row.secctxAppId, row.handle);
+                root._brokerBindHandle(row.origin, row.secctxAppId,
+                                       row.handle);
                 root.remoteWindowAdded(row.handle, row.origin, row.streamId,
                                        row.colour);
             }

@@ -185,6 +185,14 @@ ShellRoot {
           // Tier4Apps. (P05a integration HIGH-1.)
           void Tier4Apps.tier4Prefix;
 
+          // Same trick for RemoteMachineWindows — force Connections
+          // active so the first multi-machine remote toplevel
+          // (qdistro.mm.*) gets its per-origin border + BindHandle, and
+          // so Qdwin.remoteCloseRequested has a receiver (without this
+          // the lazy singleton never instantiates and a managed-remote
+          // close is silently dropped — codex mm-merge review HIGH-1).
+          void RemoteMachineWindows.mmEngine;
+
           // Force RemovableMediaService instantiation so its
           // `udisksctl monitor` starts watching for device insert/remove
           // even when no panel is open. Mount/unmount is brokered via
