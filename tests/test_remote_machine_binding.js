@@ -26,6 +26,15 @@ assert.ok(qml.includes('if (!root._authorizedHandle(handle)) return false;'),
   "neutral/unpaired lookalikes must not gain IPC focus or close authority");
 assert.ok(qml.includes('Qdwin.closeWindow(handle);'),
   "IPC close must enter qdshell's source-mediated remote close path");
+for (const operation of ["minimize", "maximize", "restore", "move"])
+  assert.ok(qml.includes(`function ${operation}(`),
+    `authorized remote windows must expose source-mediated ${operation}`);
+assert.ok(qml.includes('"RequestShellOperation", "tsii"'),
+  "R3 shell operations must route through the broker");
+assert.ok(!qml.includes('Qdwin.requestMinimize(handle)'),
+  "remote minimize must not mutate the viewer-local proxy");
+assert.ok(!qml.includes('Qdwin.requestMaximize(handle'),
+  "remote maximize/restore must not mutate the viewer-local proxy");
 assert.ok(qml.includes('"[mm] neutral chrome handle="'),
   "live evidence must expose the neutral-before-bind boundary");
 

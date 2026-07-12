@@ -116,6 +116,22 @@ Singleton {
             Qdwin.closeWindow(handle);
             return true;
         }
+
+        function minimize(handle: int): bool {
+            return root._requestShellOperation(handle, "minimize", 0, 0);
+        }
+
+        function maximize(handle: int): bool {
+            return root._requestShellOperation(handle, "maximize", 0, 0);
+        }
+
+        function restore(handle: int): bool {
+            return root._requestShellOperation(handle, "restore", 0, 0);
+        }
+
+        function move(handle: int, x: int, y: int): bool {
+            return root._requestShellOperation(handle, "move", x, y);
+        }
     }
 
     // ---- chrome paint ---------------------------------------------------
@@ -212,6 +228,20 @@ Singleton {
             root.brokerBus, root.brokerPath, root.brokerIface,
             "RequestClose", "t", String(handle)
         ]);
+    }
+
+    function _requestShellOperation(handle, operation, x, y) {
+        if (!root._authorizedHandle(handle)) return false;
+        Logger.i("RemoteMachineWindows",
+            "[mm] shell-requested handle=" + handle + " operation=" + operation
+            + " x=" + x + " y=" + y + " -> broker");
+        Quickshell.execDetached([
+            "/usr/bin/busctl", "--user", "--no-pager", "call",
+            root.brokerBus, root.brokerPath, root.brokerIface,
+            "RequestShellOperation", "tsii", String(handle), operation,
+            String(x), String(y)
+        ]);
+        return true;
     }
 
     // ---- rebuild from Qdwin.windows ------------------------------------
