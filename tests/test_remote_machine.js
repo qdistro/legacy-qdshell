@@ -75,6 +75,40 @@ const RM = require("../Services/Qdwin/RemoteMachine.js");
   assert.ok(seen.size > 2, "30 origins use >2 palette entries: " + seen.size);
 })();
 
+// ── broker-vouched trust-domain chrome + fail-closed reply parsing ──
+(function () {
+  assert.strictEqual(RM.colourForTrustDomain(""), RM.UNVERIFIED_COLOUR);
+  assert.strictEqual(RM.colourForTrustDomain(null), RM.UNVERIFIED_COLOUR);
+  assert.strictEqual(RM.colourForTrustDomain("owner-machines"),
+    RM.colourForOrigin("owner-machines"));
+  assert.strictEqual(RM.colourForTrustedOrigin("", "owner-machines"),
+    RM.UNVERIFIED_COLOUR);
+  assert.strictEqual(RM.colourForTrustedOrigin("vm-a", ""),
+    RM.UNVERIFIED_COLOUR);
+  assert.strictEqual(RM.colourForTrustedOrigin("vm-a", "owner-machines"),
+    RM.colourForOrigin("owner-machines:vm-a"));
+  assert.notStrictEqual(
+    RM.colourForTrustedOrigin("vm-a", "owner-machines"),
+    RM.colourForTrustedOrigin("vm-b", "owner-machines"),
+    "two origins in one trust domain retain distinct chrome");
+
+  var identity = {
+    handle: 42, origin: "vm-a", stream_id: "source-minted-a", generation: 51,
+    trust_domain_id: "owner-machines", allow_input: 1
+  };
+  var wire = JSON.stringify({type: "s", data: [JSON.stringify(identity)]});
+  assert.deepStrictEqual(RM.parseBindIdentity(wire), identity);
+  ["", "not-json", JSON.stringify({data: []}),
+   JSON.stringify({data: [""]}),
+   JSON.stringify({data: [JSON.stringify({...identity, trust_domain_id: ""})]}),
+   JSON.stringify({data: [JSON.stringify({...identity, allow_input: 2})]}),
+   JSON.stringify({data: [JSON.stringify({...identity, handle: 0})]})
+  ].forEach(function (bad) {
+    assert.strictEqual(RM.parseBindIdentity(bad), null,
+      "malformed/untrusted broker reply fails closed: " + bad);
+  });
+})();
+
 // ── MM_PALETTE: valid hex ──
 (function () {
   assert.ok(RM.MM_PALETTE.length >= 4);

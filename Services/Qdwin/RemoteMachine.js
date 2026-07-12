@@ -23,6 +23,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 var MM_PREFIX = "qdistro.mm.";
+var UNVERIFIED_COLOUR = "#616161";
 
 // Per-origin border palette (distinct, saturated; identity chrome reads at a
 // glance which machine a window belongs to). Deterministic per origin name.
@@ -89,6 +90,43 @@ function colourForOrigin(origin) {
     return MM_PALETTE[h % MM_PALETTE.length];
 }
 
+// Trust chrome is keyed by the broker-vouched trust domain, not by the
+// secctx-parsed origin. Until the broker confirms a handle, paint a neutral
+// border that carries no trusted-machine meaning.
+function colourForTrustDomain(trustDomainId) {
+    if (!trustDomainId) return UNVERIFIED_COLOUR;
+    return colourForOrigin(trustDomainId);
+}
+
+function colourForTrustedOrigin(origin, trustDomainId) {
+    if (!origin || !trustDomainId) return UNVERIFIED_COLOUR;
+    return colourForOrigin(trustDomainId + ":" + origin);
+}
+
+// Parse `busctl --json=short call ... BindHandleIdentity` output. The outer
+// JSON is busctl's D-Bus envelope; data[0] is the broker's JSON identity.
+// Any malformed/missing field returns null so QML leaves neutral chrome.
+function parseBindIdentity(raw) {
+    try {
+        var outer = JSON.parse(String(raw || ""));
+        if (!outer || !Array.isArray(outer.data) || outer.data.length !== 1
+                || typeof outer.data[0] !== "string" || !outer.data[0])
+            return null;
+        var id = JSON.parse(outer.data[0]);
+        if (!id || typeof id !== "object"
+                || !Number.isInteger(id.handle) || id.handle <= 0
+                || typeof id.origin !== "string" || !id.origin
+                || typeof id.stream_id !== "string" || !id.stream_id
+                || !Number.isInteger(id.generation) || id.generation <= 0
+                || typeof id.trust_domain_id !== "string" || !id.trust_domain_id
+                || (id.allow_input !== 0 && id.allow_input !== 1))
+            return null;
+        return id;
+    } catch (e) {
+        return null;
+    }
+}
+
 // "#rrggbb" → 0xRRGGBBAA (alpha=ff), matching tier4_chrome.hex_to_rgba /
 // SiloChrome.hexToRgba so qdwin_toplevel_border_rgba() reads consistent bytes.
 // Bad input → 0 (qdwin treats 0 as the neutral default border), never throws.
@@ -129,11 +167,15 @@ if (typeof module !== "undefined") {
     module.exports = {
         MM_PREFIX: MM_PREFIX,
         MM_PALETTE: MM_PALETTE,
+        UNVERIFIED_COLOUR: UNVERIFIED_COLOUR,
         isRemoteMachine: isRemoteMachine,
         isManagedRemote: isManagedRemote,
         originFromSecctx: originFromSecctx,
         streamFromSecctx: streamFromSecctx,
         colourForOrigin: colourForOrigin,
+        colourForTrustDomain: colourForTrustDomain,
+        colourForTrustedOrigin: colourForTrustedOrigin,
+        parseBindIdentity: parseBindIdentity,
         hexToRgba: hexToRgba,
         dim: dim,
         pendingColourForOrigin: pendingColourForOrigin
