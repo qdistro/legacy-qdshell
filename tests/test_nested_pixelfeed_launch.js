@@ -15,10 +15,11 @@ assert.ok(handler, "nested proxy pixel-source handler should exist");
 // the opt-in dmabuf path must not crash the inner compositor underneath it.
 assert.ok(
     handler[0].includes(
-        '["env", "QDWIN_PIXELFEED_NO_DMABUF=1",\n' +
-        '                          "qdistro-nested-pixelfeed", String(handle), pwNode]'
+        '["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",\n' +
+        '                          "/usr/bin/qdistro-nested-pixelfeed",\n' +
+        '                          String(handle), pwNode]'
     ),
-    "nested pixelfeed launch must pin the production path to SHM"
+    "nested pixelfeed launch must pin SHM and use root-installed binaries"
 );
 
 // Ensures: argv stays tokenized; a protocol-provided node string is never

@@ -564,8 +564,9 @@ Singleton {
             // diagnostic path: backend-pipewire can crash the nested Weston
             // after format negotiation. Keep the production path on the SHM
             // fallback until that producer bug has a live reliability gate.
-            const argv = ["env", "QDWIN_PIXELFEED_NO_DMABUF=1",
-                          "qdistro-nested-pixelfeed", String(handle), pwNode];
+            const argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
+                          "/usr/bin/qdistro-nested-pixelfeed",
+                          String(handle), pwNode];
             if (inputSink && inputSink.length > 0) argv.push(inputSink);
             Logger.i("Qdwin", "spawning pixelfeed for handle " + handle
                               + " pw_node=" + pwNode);
