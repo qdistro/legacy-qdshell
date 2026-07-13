@@ -387,6 +387,13 @@ signals:
     void nestedProxyPending(quint32 handle,
                             const QString &appId,
                             quint32 originUid);
+    // v31 protected sidecar. qdwin emits this only after exact executable
+    // verification of the remote viewer helper's immutable identity request.
+    void nestedProxyRemoteIdentity(quint32 handle,
+                                   const QString &sourceMachine,
+                                   const QString &trustDomainId,
+                                   const QString &streamId,
+                                   quint64 generation);
     void activationPending(quint32 handle,
                            quint32 sourceHandle,
                            quint32 targetHandle,

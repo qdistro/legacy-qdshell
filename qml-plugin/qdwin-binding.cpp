@@ -60,7 +60,8 @@ namespace {
 // Bump to 28 for live input config: set_pointer_config (the Mouse tab's
 // libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
-constexpr uint32_t kBindVersion = 28;
+// v31 adds the compositor-authenticated remote nested identity sidecar.
+constexpr uint32_t kBindVersion = 31;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -240,6 +241,18 @@ struct QdwinBindingDispatch {
         emit b->nestedProxyPixelSource(handle,
                                        qstr(pw_node), qstr(input_sink));
     }
+    static void nested_proxy_remote_identity(
+            void *d, qdwin_shell_v1 *, uint32_t handle,
+            const char *source_machine, const char *trust_domain_id,
+            const char *stream_id, uint32_t generation_hi,
+            uint32_t generation_lo) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        const quint64 generation = (quint64(generation_hi) << 32)
+                                   | quint64(generation_lo);
+        emit b->nestedProxyRemoteIdentity(
+            handle, qstr(source_machine), qstr(trust_domain_id),
+            qstr(stream_id), generation);
+    }
     // spec/10 selection_set — forward to QML so ClipboardGate can
     // consult the broker and call clearSelection on a deny verdict.
     static void selection_set(void *d, qdwin_shell_v1 *,
@@ -396,6 +409,8 @@ static const qdwin_shell_v1_listener kShellListener = {
     .chrome_button             = QdwinBindingDispatch::chrome_button,
     .popup_button              = QdwinBindingDispatch::popup_button,
     .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
+    .nested_proxy_remote_identity =
+        QdwinBindingDispatch::nested_proxy_remote_identity,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------

@@ -51,6 +51,12 @@ assert.ok(!qml.includes('Qdwin.requestMinimize(handle)'),
   "authorized remote minimize must not mutate the viewer-local proxy");
 assert.ok(qml.includes('"[mm] neutral chrome handle="'),
   "live evidence must expose the neutral-before-bind boundary");
+assert.ok(qml.includes('const nested = w.remoteNestedAuthorized === true'),
+  "nested remote attribution must require qdwin's protected identity sidecar");
+assert.ok(qml.includes('root._secctxByHandle[w.handle] = identityKey'),
+  "protected nested identity must bind authorization to its exact stream");
+assert.ok(qml.includes('&& row.transport === "rdp"'),
+  "protected nested identities must not be sent to the legacy RDP broker bind");
 
 // Ensures: the old unchecked fire-and-forget bind cannot silently return.
 assert.ok(!qml.includes('"BindHandle", "sssst"'),

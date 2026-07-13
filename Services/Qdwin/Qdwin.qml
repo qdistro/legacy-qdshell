@@ -507,6 +507,11 @@ Singleton {
                 peerUid: 0,
                 peerExe: "",
                 peerSelinuxLabel: "",
+                remoteNestedAuthorized: false,
+                remoteSourceMachine: "",
+                remoteTrustDomainId: "",
+                remoteStreamId: "",
+                remoteGeneration: 0,
             });
             root.windowListChanged();
         }
@@ -539,6 +544,22 @@ Singleton {
                     root.windows.setProperty(i, "peerUid", peerUid >>> 0);
                     root.windows.setProperty(i, "peerExe", peerExe || "");
                     root.windows.setProperty(i, "peerSelinuxLabel", peerSelinuxLabel || "");
+                    return;
+                }
+            }
+        }
+        onNestedProxyRemoteIdentity: (handle, sourceMachine, trustDomainId, streamId, generation) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "remoteSourceMachine", sourceMachine || "");
+                    root.windows.setProperty(i, "remoteTrustDomainId", trustDomainId || "");
+                    root.windows.setProperty(i, "remoteStreamId", streamId || "");
+                    root.windows.setProperty(i, "remoteGeneration", generation);
+                    root.windows.setProperty(i, "remoteNestedAuthorized", true);
+                    Logger.i("Qdwin", "nested_proxy_remote_identity handle=" + handle
+                        + " source=" + sourceMachine + " trust_domain=" + trustDomainId
+                        + " stream=" + streamId + " generation=" + generation);
+                    root.windowListChanged();
                     return;
                 }
             }
