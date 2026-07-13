@@ -560,14 +560,28 @@ Singleton {
                 Logger.w("Qdwin", "nested_proxy_pixel_source: empty pw_node for handle " + handle);
                 return;
             }
-            // The daemon's dmabuf lane is still an explicitly documented
-            // diagnostic path: backend-pipewire can crash the nested Weston
-            // after format negotiation. Keep the production path on the SHM
-            // fallback until that producer bug has a live reliability gate.
-            const argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
+            let argv;
+            if (pwNode.startsWith("qdistro.remote:")) {
+                // R6 remote sources name only a local random rendezvous token.
+                // Reject path/shell syntax before selecting the dedicated
+                // decoder-owned SHM feeder; the token becomes a fixed
+                // XDG_RUNTIME_DIR socket name inside that root-installed binary.
+                if (!/^qdistro\.remote:[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(pwNode)) {
+                    Logger.w("Qdwin", "invalid remote pixel token for handle " + handle);
+                    return;
+                }
+                argv = ["/usr/bin/qdistro-mm-remote-pixelfeed",
+                          String(handle), pwNode];
+            } else {
+                // The daemon's dmabuf lane is still an explicitly documented
+                // diagnostic path: backend-pipewire can crash the nested Weston
+                // after format negotiation. Keep production local nesting on
+                // SHM until that producer bug has a live reliability gate.
+                argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
                           "/usr/bin/qdistro-nested-pixelfeed",
                           String(handle), pwNode];
-            if (inputSink && inputSink.length > 0) argv.push(inputSink);
+                if (inputSink && inputSink.length > 0) argv.push(inputSink);
+            }
             Logger.i("Qdwin", "spawning pixelfeed for handle " + handle
                               + " pw_node=" + pwNode);
             Quickshell.execDetached(argv);

@@ -34,4 +34,24 @@ assert.ok(
     "nested pixelfeed must not route protocol strings through a shell"
 );
 
+// Ensures: an R6 remote proxy selects only the dedicated decoder-owned feeder;
+// a protocol string cannot become a path, executable, or shell fragment.
+assert.ok(
+    handler[0].includes(
+        'if (!/^qdistro\\.remote:[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(pwNode))'
+    ),
+    "remote pixel source must have a strict opaque token"
+);
+assert.ok(
+    handler[0].includes(
+        'argv = ["/usr/bin/qdistro-mm-remote-pixelfeed",\n' +
+        '                          String(handle), pwNode]'
+    ),
+    "remote pixels must use the root-installed remote SHM feeder"
+);
+assert.ok(
+    !handler[0].includes("qdistro-mm-remote-pixelfeed\", inputSink"),
+    "remote pixelfeed must not consume the advertised QDNI Unix path"
+);
+
 console.log("nested-pixelfeed-launch: SHM and tokenized-argv invariants passed");
