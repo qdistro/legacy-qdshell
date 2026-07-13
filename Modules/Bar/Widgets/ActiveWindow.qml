@@ -55,10 +55,21 @@ Item {
   readonly property real barFontSize: Style.getBarFontSizeForScreen(screenName)
   readonly property bool hasFocusedWindow: Qdwin.getFocusedWindow() !== null
   readonly property string windowTitle: Qdwin.getFocusedWindowTitle() || "No active window"
+  // R7 multi-machine secure-origin indicator. This pill is rendered on the
+  // shell's layer-shell bar, outside all client/remote pixel surfaces. The
+  // broker-vouched origin/trust text is separate from the client-owned title.
+  readonly property string protectedOriginBadge: RemoteMachineWindows.badgeForHandle(Qdwin.focusedHandle)
+  readonly property color protectedOriginColour: RemoteMachineWindows.badgeColourForHandle(Qdwin.focusedHandle) || "transparent"
+  readonly property string protectedWindowTitle: protectedOriginBadge !== ""
+    ? protectedOriginBadge + " · " + windowTitle : windowTitle
   readonly property string fallbackIcon: "user-desktop"
 
   readonly property int iconSize: Style.toOdd(capsuleHeight * 0.75)
   readonly property int verticalSize: Style.toOdd(capsuleHeight * 0.85)
+  readonly property real protectedMinimumWidth: protectedOriginBadge !== ""
+    ? originBadge.implicitWidth + (showIcon ? iconSize + Style.marginS : 0)
+      + Style.marginS * 2 + 20
+    : 0
 
   // For horizontal bars, height is always barHeight (no animation needed)
   // For vertical bars, collapse to 0 when hidden
@@ -102,6 +113,8 @@ Item {
 
     // Text width (use the measured width)
     contentWidth += titleContainer.measuredWidth;
+    if (originBadge.visible)
+      contentWidth += originBadge.implicitWidth + Style.marginS;
 
     // Additional small margin for text
     contentWidth += Style.marginXS;
@@ -116,14 +129,15 @@ Item {
   readonly property real dynamicWidth: {
     // If using fixed width mode, always use maxWidth
     if (useFixedWidth) {
-      return maxWidth;
+      return Math.max(maxWidth, protectedMinimumWidth);
     }
     // Otherwise, adapt to content
     if (!hasFocusedWindow) {
       return Math.min(calculateContentWidth(), maxWidth);
     }
     // Use content width but don't exceed user-set maximum width
-    return Math.min(calculateContentWidth(), maxWidth);
+    return Math.max(Math.min(calculateContentWidth(), maxWidth),
+                    protectedMinimumWidth);
   }
 
   function getAppIcon() {
@@ -232,6 +246,29 @@ Item {
           }
         }
 
+        Rectangle {
+          id: originBadge
+          visible: protectedOriginBadge !== ""
+          Layout.preferredWidth: originBadgeText.implicitWidth + Style.marginS * 2
+          Layout.preferredHeight: Math.max(originBadgeText.implicitHeight + 2,
+                                           Math.round(root.capsuleHeight * 0.72))
+          Layout.alignment: Qt.AlignVCenter
+          radius: height / 2
+          color: protectedOriginColour
+          border.color: Color.mOnSurface
+          border.width: 1
+
+          NText {
+            id: originBadgeText
+            anchors.centerIn: parent
+            text: protectedOriginBadge
+            pointSize: Math.max(7, root.barFontSize - 2)
+            applyUiScale: false
+            font.weight: Style.fontWeightBold
+            color: "white"
+          }
+        }
+
         NScrollText {
           id: titleContainer
           text: windowTitle
@@ -239,8 +276,11 @@ Item {
           maxWidth: {
             // Calculate available width based on other elements
             var iconWidth = (showIcon && windowIcon.visible ? (iconSize + Style.marginS) : 0);
+            var badgeWidth = originBadge.visible
+                ? (originBadge.implicitWidth + Style.marginS) : 0;
             var totalMargins = Style.marginXS;
-            var availableWidth = mainContainer.width - iconWidth - totalMargins;
+            var availableWidth = mainContainer.width - iconWidth
+                - badgeWidth - totalMargins;
             return Math.max(20, availableWidth);
           }
           scrollMode: {
@@ -324,7 +364,7 @@ Item {
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     onEntered: {
       if ((windowTitle !== "") && isVerticalBar || (scrollingMode === "never")) {
-        TooltipService.show(root, windowTitle, BarService.getTooltipDirection(root.screen?.name));
+        TooltipService.show(root, protectedWindowTitle, BarService.getTooltipDirection(root.screen?.name));
       }
     }
     onExited: {

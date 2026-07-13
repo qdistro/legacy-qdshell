@@ -104,7 +104,8 @@ Singleton {
                     streamId: row.streamId, secctxAppId: row.secctxAppId,
                     authorized: row.authorized,
                     trustDomainId: row.trustDomainId,
-                    allowInput: row.allowInput, colour: row.colour
+                    allowInput: row.allowInput, colour: row.colour,
+                    protectedBadge: root.badgeForHandle(row.handle)
                 });
             }
             return JSON.stringify(rows);
@@ -137,6 +138,34 @@ Singleton {
         function move(handle: int, x: int, y: int): bool {
             return root._requestShellOperation(handle, "move", x, y);
         }
+    }
+
+    // Protected active-window chrome API. Consumers render this only on
+    // qdshell-owned layer surfaces, never inside remote/client pixels.
+    function badgeForHandle(handle) {
+        for (let i = 0; i < root.remoteWindows.count; i++) {
+            const row = root.remoteWindows.get(i);
+            if (row.handle !== handle) continue;
+            if (!root._authorizedHandle(handle))
+                return RM.UNVERIFIED_BADGE;
+            return RM.badgeForTrustedOrigin(
+                root._originByHandle[handle],
+                root._trustDomainByHandle[handle]);
+        }
+        return "";
+    }
+
+    function badgeColourForHandle(handle) {
+        for (let i = 0; i < root.remoteWindows.count; i++) {
+            const row = root.remoteWindows.get(i);
+            if (row.handle !== handle) continue;
+            if (!root._authorizedHandle(handle))
+                return RM.UNVERIFIED_COLOUR;
+            return RM.colourForTrustedOrigin(
+                root._originByHandle[handle],
+                root._trustDomainByHandle[handle]);
+        }
+        return "";
     }
 
     // ---- chrome paint ---------------------------------------------------

@@ -24,6 +24,8 @@
 
 var MM_PREFIX = "qdistro.mm.";
 var UNVERIFIED_COLOUR = "#616161";
+var UNVERIFIED_BADGE = "REMOTE UNVERIFIED";
+var IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 // Per-origin border palette (distinct, saturated; identity chrome reads at a
 // glance which machine a window belongs to). Deterministic per origin name.
@@ -103,6 +105,17 @@ function colourForTrustedOrigin(origin, trustDomainId) {
     return colourForOrigin(trustDomainId + ":" + origin);
 }
 
+// Readable identity for a shell-owned protected surface. Colour is deliberately
+// not the identity: a finite palette collides. Both strings come from the
+// broker-vouched binding, and strict rendering prevents controls/bidi text from
+// turning the protected pill into attacker-shaped chrome.
+function badgeForTrustedOrigin(origin, trustDomainId) {
+    if (typeof origin !== "string" || typeof trustDomainId !== "string"
+            || !IDENTITY_PART.test(origin) || !IDENTITY_PART.test(trustDomainId))
+        return UNVERIFIED_BADGE;
+    return "REMOTE " + origin + " @ " + trustDomainId;
+}
+
 // Parse `busctl --json=short call ... BindHandleIdentity` output. The outer
 // JSON is busctl's D-Bus envelope; data[0] is the broker's JSON identity.
 // Any malformed/missing field returns null so QML leaves neutral chrome.
@@ -168,6 +181,7 @@ if (typeof module !== "undefined") {
         MM_PREFIX: MM_PREFIX,
         MM_PALETTE: MM_PALETTE,
         UNVERIFIED_COLOUR: UNVERIFIED_COLOUR,
+        UNVERIFIED_BADGE: UNVERIFIED_BADGE,
         isRemoteMachine: isRemoteMachine,
         isManagedRemote: isManagedRemote,
         originFromSecctx: originFromSecctx,
@@ -175,6 +189,7 @@ if (typeof module !== "undefined") {
         colourForOrigin: colourForOrigin,
         colourForTrustDomain: colourForTrustDomain,
         colourForTrustedOrigin: colourForTrustedOrigin,
+        badgeForTrustedOrigin: badgeForTrustedOrigin,
         parseBindIdentity: parseBindIdentity,
         hexToRgba: hexToRgba,
         dim: dim,
