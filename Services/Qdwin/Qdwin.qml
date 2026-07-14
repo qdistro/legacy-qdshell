@@ -203,6 +203,7 @@ Singleton {
     // compositor reverts, and the Display tab re-applies the saved baseline.
     // The async verdict arrives via root.outputLayoutResult.
     signal outputLayoutResult(bool applied, bool ok, bool cancelled)
+    signal outputLayoutTaggedResult(string tag, bool ok, bool cancelled)
     function applyOutputLayout(layout, serial) {
         if (!qdwinBinding || !qdwinBinding.outputManagementAvailable) {
             Logger.w("Qdwin", "applyOutputLayout — no output manager");
@@ -214,6 +215,12 @@ Singleton {
         if (!qdwinBinding || !qdwinBinding.outputManagementAvailable)
             return false;
         return qdwinBinding.testLayout(layout, serial >>> 0);
+    }
+    function applyOutputLayoutTagged(layout, serial, tag) {
+        if (!qdwinBinding || !qdwinBinding.outputManagementAvailable
+                || !tag || tag.length > 128)
+            return false;
+        return qdwinBinding.applyLayoutTagged(layout, serial >>> 0, tag);
     }
 
     function _windowByHandle(handle) {
@@ -469,6 +476,9 @@ Singleton {
         // verdict up to the Display layout tab's confirm-or-revert path.
         onLayoutResult: (applied, ok, cancelled) => {
             root.outputLayoutResult(applied, ok, cancelled);
+        }
+        onLayoutTaggedResult: (tag, ok, cancelled) => {
+            root.outputLayoutTaggedResult(tag, ok, cancelled);
         }
         // Gate CapabilityService.outputManagement on the manager actually
         // being advertised. Fires on bind (manager appears), hotplug, and

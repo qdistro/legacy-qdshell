@@ -202,6 +202,11 @@ public:
     // value. `name` is the only required key. Returns false synchronously if
     // the binding has no live manager (no apply attempted).
     Q_INVOKABLE bool applyLayout(const QVariantList &layout, quint32 serial);
+    // Same atomic apply with an opaque caller tag echoed only on
+    // layoutTaggedResult. Used by the display-lease controller so an
+    // unrelated settings-panel transaction cannot satisfy its acknowledgement.
+    Q_INVOKABLE bool applyLayoutTagged(const QVariantList &layout,
+                                       quint32 serial, const QString &tag);
     Q_INVOKABLE bool testLayout(const QVariantList &layout, quint32 serial);
 
     // spec/10 §"compositor-mediated gating" — once the shell has a
@@ -316,6 +321,7 @@ signals:
     // true = succeeded, false = failed or cancelled. On a failed/cancelled
     // apply the compositor reverted; the shell may re-apply the saved layout.
     void layoutResult(bool applied, bool ok, bool cancelled);
+    void layoutTaggedResult(const QString &tag, bool ok, bool cancelled);
 
     // spec/10 §"selection-set event" — fires whenever a client sets
     // the seat selection. Carries the source toplevel handle, the
@@ -504,6 +510,7 @@ private:
     struct OmConfig {
         zwlr_output_configuration_v1 *proxy = nullptr;
         bool applied = false;
+        QString tag;
     };
     std::vector<OmConfig> omConfigs_;
     void omBindManager(zwlr_output_manager_v1 *mgr);
@@ -513,7 +520,7 @@ private:
     void omRebuild();                     // collapse omHeads_ → outputs_
     void omTeardownState();
     bool omSubmitLayout(const QVariantList &layout, quint32 serial,
-                        bool apply);
+                        bool apply, const QString &tag = QString());
     void omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
                         bool cancelled);
     friend struct QdwinOmDispatch;

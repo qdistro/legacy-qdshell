@@ -193,6 +193,12 @@ ShellRoot {
           // close is silently dropped — codex mm-merge review HIGH-1).
           void RemoteMachineWindows.mmEngine;
 
+          // The authenticated R9 display controller is optional while
+          // undocked. Force its shell-side executor to poll for one-shot slot
+          // actions; the controller authenticates each busctl child as a
+          // direct child of this qdshell process before returning authority.
+          void RemoteDisplayLease.bus;
+
           // Force RemovableMediaService instantiation so its
           // `udisksctl monitor` starts watching for device insert/remove
           // even when no panel is open. Mount/unmount is brokered via

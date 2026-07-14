@@ -1401,9 +1401,11 @@ void QdwinBinding::omTeardownState() {
 void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
                                   bool cancelled) {
     bool applied = false;
+    QString tag;
     for (auto it = omConfigs_.begin(); it != omConfigs_.end(); ++it) {
         if (it->proxy == cfg) {
             applied = it->applied;
+            tag = it->tag;
             omConfigs_.erase(it);
             break;
         }
@@ -1412,7 +1414,10 @@ void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
     // succeeded/failed/cancelled.
     zwlr_output_configuration_v1_destroy(cfg);
     flushAfterRequest(__func__);
-    emit layoutResult(applied, ok, cancelled);
+    if (!tag.isEmpty())
+        emit layoutTaggedResult(tag, ok, cancelled);
+    else
+        emit layoutResult(applied, ok, cancelled);
 }
 
 // Build a configuration for `layout` against `serial` and apply or test it.
@@ -1421,7 +1426,7 @@ void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
 // iterate the enumerated head set and either match it to a layout entry
 // (by name) or carry its current enabled state forward unchanged.
 bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
-                                  bool apply) {
+                                  bool apply, const QString &tag) {
     if (!omManager_)
         return false;
 
@@ -1431,6 +1436,7 @@ bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
     OmConfig rec;
     rec.proxy = cfg;
     rec.applied = apply;
+    rec.tag = tag;
     omConfigs_.push_back(rec);
     zwlr_output_configuration_v1_add_listener(cfg, &kOmConfigListener, this);
 
@@ -1503,6 +1509,13 @@ bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
 
 bool QdwinBinding::applyLayout(const QVariantList &layout, quint32 serial) {
     return omSubmitLayout(layout, serial, true);
+}
+
+bool QdwinBinding::applyLayoutTagged(const QVariantList &layout, quint32 serial,
+                                     const QString &tag) {
+    if (tag.isEmpty() || tag.size() > 128)
+        return false;
+    return omSubmitLayout(layout, serial, true, tag);
 }
 
 bool QdwinBinding::testLayout(const QVariantList &layout, quint32 serial) {
