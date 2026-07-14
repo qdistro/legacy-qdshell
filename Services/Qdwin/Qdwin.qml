@@ -345,6 +345,10 @@ Singleton {
             root.focusWindow(handle);
         }
 
+        function positionWindow(handle: int, x: int, y: int): void {
+            root.requestSetPositionHandle(handle, x, y);
+        }
+
         function lastOverlayKeys(): string {
             return "count=" + (qdwinBinding ? qdwinBinding.overlayKeyCount : 0);
         }
@@ -1047,6 +1051,10 @@ Singleton {
     function requestTileHandle(handle, tileEdge) {
         if (!qdwinBinding || handle <= 0) return;
         qdwinBinding.requestTile(handle, tileEdge);
+    }
+    function requestSetPositionHandle(handle, x, y) {
+        if (!qdwinBinding || handle <= 0) return;
+        qdwinBinding.requestSetPosition(handle, x, y);
     }
     function windowState(handle) {
         const row = _windowByHandle(handle);

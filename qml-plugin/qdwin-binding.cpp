@@ -1170,6 +1170,13 @@ void QdwinBinding::requestTile(quint32 handle, quint32 tileEdge) {
     flushAfterRequest(__func__);
 }
 
+void QdwinBinding::requestSetPosition(quint32 handle, qint32 x, qint32 y) {
+    if (!shell_ || shellVersion_ < 30)
+        return;
+    qdwin_shell_v1_request_set_position(shell_, handle, x, y);
+    flushAfterRequest(__func__);
+}
+
 void QdwinBinding::registerHotkey(quint32 id, quint32 modifiers, quint32 key) {
     // register_hotkey is a v19 request but was never wired; gate at our
     // current bind version so it only fires when the compositor supports it.
