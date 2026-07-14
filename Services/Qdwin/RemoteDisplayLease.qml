@@ -21,6 +21,9 @@ Singleton {
     property bool _serviceSeen: false
     property bool _claimBusy: false
     property bool _ackBusy: false
+    property var _inputPending: null
+    property bool _inputClaimBusy: false
+    property bool _inputAckBusy: false
 
     function _claimCommand() {
         return ["busctl", "--user", "--timeout=2s", "call",
@@ -36,6 +39,30 @@ Singleton {
             _pending.request_id, String(_pending.generation), result
         ];
         _ackProc.running = true;
+    }
+
+    function _inputClaimCommand() {
+        return ["busctl", "--user", "--timeout=2s", "call",
+                bus, path, iface, "ClaimInput"];
+    }
+
+    function _inputAck(result) {
+        if (!_inputPending || _inputAckBusy) return;
+        _inputAckBusy = true;
+        _inputAckProc.command = [
+            "busctl", "--user", "--timeout=2s", "call",
+            bus, path, iface, "AcknowledgeInput", "sts",
+            _inputPending.request_id, String(_inputPending.generation), result
+        ];
+        _inputAckProc.running = true;
+    }
+
+    function _applyInput(request) {
+        _inputPending = request;
+        if (!Qdwin.setRemoteOutputInput(
+                request.slot_name, request.enabled)) {
+            _inputAck("failed");
+        }
     }
 
     function _apply(request) {
@@ -70,10 +97,26 @@ Singleton {
         repeat: true
         running: root._serviceSeen
         onTriggered: {
-            if (root._claimBusy || root._pending || root._ackBusy) return;
+            if (root._claimBusy || root._pending || root._ackBusy
+                    || root._inputPending || root._inputClaimBusy
+                    || root._inputAckBusy) return;
             root._claimBusy = true;
             _claimProc.command = root._claimCommand();
             _claimProc.running = true;
+        }
+    }
+
+    Timer {
+        interval: 100
+        repeat: true
+        running: root._serviceSeen
+        onTriggered: {
+            if (root._claimBusy || root._pending || root._ackBusy
+                    || root._inputPending || root._inputClaimBusy
+                    || root._inputAckBusy) return;
+            root._inputClaimBusy = true;
+            _inputClaimProc.command = root._inputClaimCommand();
+            _inputClaimProc.running = true;
         }
     }
 
@@ -120,11 +163,48 @@ Singleton {
         }
     }
 
+
+    Process {
+        id: _inputClaimProc
+        running: false
+        stdout: StdioCollector { id: _inputClaimStdout }
+        onExited: (exitCode, exitStatus) => {
+            root._inputClaimBusy = false;
+            if (exitCode !== 0) {
+                root._serviceSeen = false;
+                return;
+            }
+            const request = Lease.parseBusctlInput(
+                _inputClaimStdout.text || "");
+            if (request) root._applyInput(request);
+        }
+    }
+
+    Process {
+        id: _inputAckProc
+        running: false
+        stderr: StdioCollector { id: _inputAckStderr }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0)
+                Logger.w("RemoteDisplayLease",
+                    "input acknowledgement failed: "
+                    + String(_inputAckStderr.text || "").trim());
+            root._inputAckBusy = false;
+            root._inputPending = null;
+        }
+    }
+
     Connections {
         target: Qdwin
         function onOutputLayoutTaggedResult(tag, ok, cancelled) {
             if (!root._pending || tag !== root._pending.request_id) return;
             root._ack(ok ? "applied" : (cancelled ? "cancelled" : "failed"));
+        }
+        function onRemoteOutputInputResult(outputName, enabled, applied) {
+            if (!root._inputPending
+                    || outputName !== root._inputPending.slot_name
+                    || enabled !== root._inputPending.enabled) return;
+            root._inputAck(applied ? "applied" : "failed");
         }
     }
 }

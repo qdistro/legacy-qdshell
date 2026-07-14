@@ -23,6 +23,7 @@
 #include <QDebug>
 #include <QMetaType>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
@@ -60,8 +61,8 @@ namespace {
 // Bump to 28 for live input config: set_pointer_config (the Mouse tab's
 // libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
-// v31 adds the compositor-authenticated remote nested identity sidecar.
-constexpr uint32_t kBindVersion = 31;
+// v32 adds the compositor-authoritative remote-output input gate.
+constexpr uint32_t kBindVersion = 32;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -253,6 +254,13 @@ struct QdwinBindingDispatch {
             handle, qstr(source_machine), qstr(trust_domain_id),
             qstr(stream_id), generation);
     }
+    static void remote_output_input_result(
+            void *d, qdwin_shell_v1 *, const char *output_name,
+            uint32_t enabled, uint32_t applied) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->remoteOutputInputResult(
+            qstr(output_name), enabled != 0, applied != 0);
+    }
     // spec/10 selection_set — forward to QML so ClipboardGate can
     // consult the broker and call clearSelection on a deny verdict.
     static void selection_set(void *d, qdwin_shell_v1 *,
@@ -411,6 +419,8 @@ static const qdwin_shell_v1_listener kShellListener = {
     .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
     .nested_proxy_remote_identity =
         QdwinBindingDispatch::nested_proxy_remote_identity,
+    .remote_output_input_result =
+        QdwinBindingDispatch::remote_output_input_result,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------
@@ -1174,6 +1184,18 @@ void QdwinBinding::requestSetPosition(quint32 handle, qint32 x, qint32 y) {
     if (!shell_ || shellVersion_ < 30)
         return;
     qdwin_shell_v1_request_set_position(shell_, handle, x, y);
+    flushAfterRequest(__func__);
+}
+
+void QdwinBinding::setRemoteOutputInput(const QString &outputName,
+                                        bool enabled) {
+    if (!shell_ || shellVersion_ < 32 ||
+        !QRegularExpression(QStringLiteral("^rdp-[0-9]{1,3}$"))
+             .match(outputName).hasMatch())
+        return;
+    const QByteArray encoded = outputName.toUtf8();
+    qdwin_shell_v1_set_remote_output_input(
+        shell_, encoded.constData(), enabled ? 1u : 0u);
     flushAfterRequest(__func__);
 }
 

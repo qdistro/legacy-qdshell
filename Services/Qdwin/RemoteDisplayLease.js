@@ -8,6 +8,10 @@ var FIELDS = [
     "enabled", "logical_x", "logical_y", "width", "height", "scale",
     "expires_at"
 ];
+var INPUT_FIELDS = [
+    "schema", "request_id", "generation", "session_id", "slot_name",
+    "enabled", "expires_at"
+];
 
 function parseBusctlString(stdout) {
     var text = String(stdout || "").trim();
@@ -19,6 +23,19 @@ function parseBusctlString(stdout) {
     var request;
     try { request = JSON.parse(encoded); } catch (_) { return null; }
     return validateRequest(request, Math.floor(Date.now() / 1000))
+        ? request : null;
+}
+
+function parseBusctlInput(stdout) {
+    var text = String(stdout || "").trim();
+    var match = text.match(/^s\s+("(?:[^"\\]|\\.)*")$/);
+    if (!match) return null;
+    var encoded;
+    try { encoded = JSON.parse(match[1]); } catch (_) { return null; }
+    if (encoded === "") return null;
+    var request;
+    try { request = JSON.parse(encoded); } catch (_) { return null; }
+    return validateInputRequest(request, Math.floor(Date.now() / 1000))
         ? request : null;
 }
 
@@ -57,6 +74,25 @@ function validateRequest(request, nowSeconds) {
     return true;
 }
 
+function validateInputRequest(request, nowSeconds) {
+    if (!request || typeof request !== "object" || Array.isArray(request))
+        return false;
+    var keys = Object.keys(request).sort();
+    if (keys.length !== INPUT_FIELDS.length
+            || keys.join("\n") !== INPUT_FIELDS.slice().sort().join("\n"))
+        return false;
+    if (request.schema !== "qdistro-mm-shell-input-v1") return false;
+    if (!/^[0-9a-f]{32}$/.test(request.request_id)) return false;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(request.session_id))
+        return false;
+    if (!/^rdp-[0-9]{1,3}$/.test(request.slot_name)) return false;
+    if (!isInt(request.generation) || request.generation <= 0) return false;
+    if (typeof request.enabled !== "boolean") return false;
+    if (!isInt(request.expires_at) || nowSeconds >= request.expires_at)
+        return false;
+    return true;
+}
+
 function buildSlotLayout(liveLayout, request) {
     if (!validateRequest(request, Math.floor(Date.now() / 1000))) return null;
     var found = 0;
@@ -89,7 +125,9 @@ function buildSlotLayout(liveLayout, request) {
 if (typeof module !== "undefined") {
     module.exports = {
         parseBusctlString: parseBusctlString,
+        parseBusctlInput: parseBusctlInput,
         validateRequest: validateRequest,
+        validateInputRequest: validateInputRequest,
         buildSlotLayout: buildSlotLayout,
     };
 }

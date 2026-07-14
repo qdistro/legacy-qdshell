@@ -149,6 +149,10 @@ public:
     Q_INVOKABLE void requestTile(quint32 handle, quint32 tileEdge);
     // v30 shell-owned floating-window move in global output coordinates.
     Q_INVOKABLE void requestSetPosition(quint32 handle, qint32 x, qint32 y);
+    // v32 compositor-authoritative RDP input gate. Called only by the
+    // authenticated RemoteDisplayLease transaction, never general shell IPC.
+    Q_INVOKABLE void setRemoteOutputInput(const QString &outputName,
+                                          bool enabled);
     // v19 global hotkey registration (wired at v25 for WM shortcuts).
     // modifiers is a bitmask: ctrl=1, alt=2, super=4, shift=8. key is a
     // linux input keycode. hotkeyPressed(id) fires on each press.
@@ -402,6 +406,8 @@ signals:
                                    const QString &trustDomainId,
                                    const QString &streamId,
                                    quint64 generation);
+    void remoteOutputInputResult(const QString &outputName,
+                                 bool enabled, bool applied);
     void activationPending(quint32 handle,
                            quint32 sourceHandle,
                            quint32 targetHandle,
