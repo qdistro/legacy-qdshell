@@ -69,6 +69,8 @@ const binding = fs.readFileSync(path.join(
 assert.ok(!qml.includes("IpcHandler"));
 assert.ok(qml.includes('"ClaimLayout"'));
 assert.ok(qml.includes('"AcknowledgeLayout"'));
+assert.ok(qml.includes('["busctl", "--user", "wait", root.bus]'));
+assert.ok(qml.includes("running: root._serviceSeen"));
 assert.ok(qml.includes("applyOutputLayoutTagged"));
 assert.ok(binding.includes("emit layoutTaggedResult(tag, ok, cancelled)"));
 assert.ok(binding.includes("if (!tag.isEmpty())"));

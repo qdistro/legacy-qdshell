@@ -18,6 +18,7 @@ Singleton {
     readonly property string path: "/org/qdistro/MultiMachineDisplay1"
     readonly property string iface: "org.qdistro.MultiMachineDisplay1"
     property var _pending: null
+    property bool _serviceSeen: false
     property bool _claimBusy: false
     property bool _ackBusy: false
 
@@ -62,14 +63,27 @@ Singleton {
     }
 
     Timer {
-        interval: 500
+        interval: 250
         repeat: true
-        running: true
+        running: root._serviceSeen
         onTriggered: {
             if (root._claimBusy || root._pending || root._ackBusy) return;
             root._claimBusy = true;
             _claimProc.command = root._claimCommand();
             _claimProc.running = true;
+        }
+    }
+
+    // One sleeping process while undocked, rather than periodic process
+    // creation. It exits successfully when the controller owns its bus name;
+    // a later failed ClaimLayout re-arms the waiter.
+    Process {
+        id: _serviceWaitProc
+        command: ["busctl", "--user", "wait", root.bus]
+        running: !root._serviceSeen
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0)
+                root._serviceSeen = true;
         }
     }
 
@@ -80,7 +94,10 @@ Singleton {
         stderr: StdioCollector { id: _claimStderr }
         onExited: (exitCode, exitStatus) => {
             root._claimBusy = false;
-            if (exitCode !== 0) return; // service absent while undocked is normal
+            if (exitCode !== 0) {
+                root._serviceSeen = false;
+                return;
+            }
             const request = Lease.parseBusctlString(_claimStdout.text || "");
             if (request) root._apply(request);
         }
