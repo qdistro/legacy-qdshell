@@ -62,7 +62,7 @@ namespace {
 // libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
 // v32 adds the compositor-authoritative remote-output input gate.
-constexpr uint32_t kBindVersion = 32;
+constexpr uint32_t kBindVersion = 33;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -261,6 +261,12 @@ struct QdwinBindingDispatch {
         emit b->remoteOutputInputResult(
             qstr(output_name), enabled != 0, applied != 0);
     }
+    static void remote_output_drain_result(
+            void *d, qdwin_shell_v1 *, const char *output_name,
+            uint32_t applied) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->remoteOutputDrainResult(qstr(output_name), applied != 0);
+    }
     // spec/10 selection_set — forward to QML so ClipboardGate can
     // consult the broker and call clearSelection on a deny verdict.
     static void selection_set(void *d, qdwin_shell_v1 *,
@@ -421,6 +427,8 @@ static const qdwin_shell_v1_listener kShellListener = {
         QdwinBindingDispatch::nested_proxy_remote_identity,
     .remote_output_input_result =
         QdwinBindingDispatch::remote_output_input_result,
+    .remote_output_drain_result =
+        QdwinBindingDispatch::remote_output_drain_result,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------
@@ -1196,6 +1204,16 @@ void QdwinBinding::setRemoteOutputInput(const QString &outputName,
     const QByteArray encoded = outputName.toUtf8();
     qdwin_shell_v1_set_remote_output_input(
         shell_, encoded.constData(), enabled ? 1u : 0u);
+    flushAfterRequest(__func__);
+}
+
+void QdwinBinding::drainRemoteOutputState(const QString &outputName) {
+    if (!shell_ || shellVersion_ < 33 ||
+        !QRegularExpression(QStringLiteral("^rdp-[0-9]{1,3}$"))
+             .match(outputName).hasMatch())
+        return;
+    const QByteArray encoded = outputName.toUtf8();
+    qdwin_shell_v1_drain_remote_output_state(shell_, encoded.constData());
     flushAfterRequest(__func__);
 }
 

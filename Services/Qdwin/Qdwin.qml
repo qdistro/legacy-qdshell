@@ -205,6 +205,7 @@ Singleton {
     signal outputLayoutResult(bool applied, bool ok, bool cancelled)
     signal outputLayoutTaggedResult(string tag, bool ok, bool cancelled)
     signal remoteOutputInputResult(string outputName, bool enabled, bool applied)
+    signal remoteOutputDrainResult(string outputName, bool applied)
     function applyOutputLayout(layout, serial) {
         if (!qdwinBinding || !qdwinBinding.outputManagementAvailable) {
             Logger.w("Qdwin", "applyOutputLayout — no output manager");
@@ -487,6 +488,9 @@ Singleton {
         }
         onRemoteOutputInputResult: (outputName, enabled, applied) => {
             root.remoteOutputInputResult(outputName, enabled, applied);
+        }
+        onRemoteOutputDrainResult: (outputName, applied) => {
+            root.remoteOutputDrainResult(outputName, applied);
         }
         // Gate CapabilityService.outputManagement on the manager actually
         // being advertised. Fires on bind (manager appears), hotplug, and
@@ -1063,6 +1067,11 @@ Singleton {
     function setRemoteOutputInput(slotName, enabled) {
         if (!qdwinBinding || qdwinBinding.shellVersion < 32) return false;
         qdwinBinding.setRemoteOutputInput(slotName, !!enabled);
+        return true;
+    }
+    function drainRemoteOutputState(slotName) {
+        if (!qdwinBinding || qdwinBinding.shellVersion < 33) return false;
+        qdwinBinding.drainRemoteOutputState(slotName);
         return true;
     }
     function windowState(handle) {

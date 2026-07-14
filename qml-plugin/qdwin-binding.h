@@ -153,6 +153,7 @@ public:
     // authenticated RemoteDisplayLease transaction, never general shell IPC.
     Q_INVOKABLE void setRemoteOutputInput(const QString &outputName,
                                           bool enabled);
+    Q_INVOKABLE void drainRemoteOutputState(const QString &outputName);
     // v19 global hotkey registration (wired at v25 for WM shortcuts).
     // modifiers is a bitmask: ctrl=1, alt=2, super=4, shift=8. key is a
     // linux input keycode. hotkeyPressed(id) fires on each press.
@@ -408,6 +409,7 @@ signals:
                                    quint64 generation);
     void remoteOutputInputResult(const QString &outputName,
                                  bool enabled, bool applied);
+    void remoteOutputDrainResult(const QString &outputName, bool applied);
     void activationPending(quint32 handle,
                            quint32 sourceHandle,
                            quint32 targetHandle,

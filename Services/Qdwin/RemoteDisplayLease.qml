@@ -24,6 +24,7 @@ Singleton {
     property var _inputPending: null
     property bool _inputClaimBusy: false
     property bool _inputAckBusy: false
+    property bool _inputDrainPending: false
 
     function _claimCommand() {
         return ["busctl", "--user", "--timeout=2s", "call",
@@ -99,7 +100,7 @@ Singleton {
         onTriggered: {
             if (root._claimBusy || root._pending || root._ackBusy
                     || root._inputPending || root._inputClaimBusy
-                    || root._inputAckBusy) return;
+                    || root._inputAckBusy || root._inputDrainPending) return;
             root._claimBusy = true;
             _claimProc.command = root._claimCommand();
             _claimProc.running = true;
@@ -113,10 +114,28 @@ Singleton {
         onTriggered: {
             if (root._claimBusy || root._pending || root._ackBusy
                     || root._inputPending || root._inputClaimBusy
-                    || root._inputAckBusy) return;
+                    || root._inputAckBusy || root._inputDrainPending) return;
             root._inputClaimBusy = true;
             _inputClaimProc.command = root._inputClaimCommand();
             _inputClaimProc.running = true;
+        }
+    }
+
+    // A lost compositor result must not wedge the controller mailbox. The
+    // request has already expired at this point, so clear it without an
+    // acknowledgement; the controller will fail the transaction and retain
+    // the input-disabled safe state.
+    Timer {
+        interval: 250
+        repeat: true
+        running: root._inputPending !== null && !root._inputAckBusy
+        onTriggered: {
+            if (Math.floor(Date.now() / 1000)
+                    < Number(root._inputPending.expires_at)) return;
+            Logger.w("RemoteDisplayLease",
+                "input transaction expired before compositor result");
+            root._inputPending = null;
+            root._inputDrainPending = false;
         }
     }
 
@@ -191,6 +210,7 @@ Singleton {
                     + String(_inputAckStderr.text || "").trim());
             root._inputAckBusy = false;
             root._inputPending = null;
+            root._inputDrainPending = false;
         }
     }
 
@@ -204,6 +224,20 @@ Singleton {
             if (!root._inputPending
                     || outputName !== root._inputPending.slot_name
                     || enabled !== root._inputPending.enabled) return;
+            if (!applied || enabled) {
+                root._inputAck(applied ? "applied" : "failed");
+                return;
+            }
+            root._inputDrainPending = true;
+            if (!Qdwin.drainRemoteOutputState(outputName)) {
+                root._inputDrainPending = false;
+                root._inputAck("failed");
+            }
+        }
+        function onRemoteOutputDrainResult(outputName, applied) {
+            if (!root._inputPending || !root._inputDrainPending
+                    || outputName !== root._inputPending.slot_name) return;
+            root._inputDrainPending = false;
             root._inputAck(applied ? "applied" : "failed");
         }
     }

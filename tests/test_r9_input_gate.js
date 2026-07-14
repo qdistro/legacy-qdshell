@@ -17,10 +17,12 @@ const executor = fs.readFileSync(
   path.join(root, "Services/Qdwin/RemoteDisplayLease.qml"), "utf8");
 
 assert.ok(header.includes("setRemoteOutputInput(const QString &outputName"));
-assert.ok(source.includes("constexpr uint32_t kBindVersion = 32;"));
+assert.ok(source.includes("constexpr uint32_t kBindVersion = 33;"));
 assert.ok(source.includes("qdwin_shell_v1_set_remote_output_input("));
 assert.ok(source.includes("shellVersion_ < 32"));
 assert.ok(source.includes("remote_output_input_result"));
+assert.ok(source.includes("qdwin_shell_v1_drain_remote_output_state("));
+assert.ok(source.includes("remote_output_drain_result"));
 assert.ok(qdwin.includes("signal remoteOutputInputResult("));
 assert.ok(!qdwin.includes("function setRemoteInput(handle"),
   "input gate must not be added to general qdwin IPC");
@@ -28,6 +30,10 @@ assert.ok(executor.includes('"ClaimInput"'));
 assert.ok(executor.includes('"AcknowledgeInput"'));
 assert.ok(executor.includes("Qdwin.setRemoteOutputInput("));
 assert.ok(executor.includes("onRemoteOutputInputResult"));
+assert.ok(executor.includes("onRemoteOutputDrainResult"));
+assert.ok(executor.includes("Qdwin.drainRemoteOutputState("));
+assert.ok(executor.includes("input transaction expired before compositor result"));
+assert.ok(executor.includes("root._inputDrainPending = false"));
 
 const now = Math.floor(Date.now() / 1000);
 const request = {
