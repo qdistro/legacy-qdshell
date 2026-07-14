@@ -57,7 +57,10 @@ Singleton {
         if (!verdict.ok || !Qdwin.applyOutputLayoutTagged(
                 layout, Qdwin.outputSerial, request.request_id)) {
             Logger.w("RemoteDisplayLease",
-                "slot apply rejected before qdwin: " + verdict.errors.join(","));
+                "slot apply rejected before qdwin: " + verdict.errors.join(",")
+                + "; requested=" + request.width + "x" + request.height
+                + "; advertised="
+                + JSON.stringify(modes[request.slot_name] || []));
             _ack("failed");
         }
     }
@@ -79,7 +82,7 @@ Singleton {
     // a later failed ClaimLayout re-arms the waiter.
     Process {
         id: _serviceWaitProc
-        command: ["busctl", "--user", "wait", root.bus]
+        command: ["gdbus", "wait", "--session", root.bus]
         running: !root._serviceSeen
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0)
