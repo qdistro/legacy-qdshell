@@ -85,6 +85,32 @@ Singleton {
         _rebuildWorkspaces();
     }
 
+    // Settings.data is a nested JS object.  Mutating workspaces.count from a
+    // settings control persists the value, but it does not reliably notify a
+    // QML binding that reads the nested member.  Keep this explicit entry
+    // point at the UI boundary so a user count change reaches qdwin
+    // immediately instead of waiting for a shell restart/rebind.
+    function applyWorkspaceCount(count) {
+        var desired = Math.max(1, Math.min(Math.round(Number(count)), 32));
+        var names = (Settings.data.workspaces.names || []).slice();
+        while (names.length < desired)
+            names.push(String(names.length + 1));
+        if (names.length > desired)
+            names = names.slice(0, desired);
+
+        Settings.data.workspaces.count = desired;
+        Settings.data.workspaces.names = names;
+        _settingsWorkspaceNames = names;
+        _settingsWorkspaceCount = desired;
+
+        // Assigning the same value does not fire the property handler.  Make
+        // the live update idempotent so every explicit UI action is applied.
+        if (qdwinBinding && qdwinBinding.bound)
+            qdwinBinding.setWorkspaceCount(desired);
+        _pushWorkspaceNames();
+        _rebuildWorkspaces();
+    }
+
     // v27: push every workspace's custom display name down to the compositor
     // via qdwin_shell_v1.set_workspace_name, so qdwin re-advertises them on
     // the standard ext_workspace_handle_v1.name event. An index with no

@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Services.Qdwin
 import qs.Widgets
 import "../../../../../Services/Theming/GtkSettings.js" as GtkSettings
 
@@ -29,18 +30,8 @@ ColumnLayout {
     value: Settings.data.workspaces.count
     defaultValue: Settings.getDefaultValue("workspaces.count")
     onValueChanged: {
-      if (value !== Settings.data.workspaces.count) {
-        Settings.data.workspaces.count = value;
-        // Resize workspace names array to match new count
-        var names = (Settings.data.workspaces.names || []).slice();
-        while (names.length < value) {
-          names.push(String(names.length + 1));
-        }
-        if (names.length > value) {
-          names = names.slice(0, value);
-        }
-        Settings.data.workspaces.names = names;
-      }
+      if (value !== Settings.data.workspaces.count)
+        Qdwin.applyWorkspaceCount(value);
     }
   }
 

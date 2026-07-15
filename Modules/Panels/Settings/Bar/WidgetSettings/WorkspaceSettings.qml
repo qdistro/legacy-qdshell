@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
+import qs.Services.Qdwin
 import qs.Widgets
 
 ColumnLayout {
@@ -63,17 +64,8 @@ ColumnLayout {
     to: 32
     value: Settings.data.workspaces.count
     onValueChanged: {
-      if (value !== Settings.data.workspaces.count) {
-        Settings.data.workspaces.count = value;
-        var names = (Settings.data.workspaces.names || []).slice();
-        while (names.length < value) {
-          names.push(String(names.length + 1));
-        }
-        if (names.length > value) {
-          names = names.slice(0, value);
-        }
-        Settings.data.workspaces.names = names;
-      }
+      if (value !== Settings.data.workspaces.count)
+        Qdwin.applyWorkspaceCount(value);
     }
   }
 
