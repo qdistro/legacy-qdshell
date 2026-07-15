@@ -627,6 +627,17 @@ Singleton {
                 }
             }
         }
+        onToplevelAppId: (handle, appId) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "appId", appId || "");
+                    if (i === root.focusedWindowIndex)
+                        root.activeWindowChanged();
+                    root.windowListChanged();
+                    return;
+                }
+            }
+        }
         onSeatFocusChanged: (seat, handle) => {
             // Match on handle; UINT32_MAX (=4294967295) means "no focus".
             let next = -1;

@@ -60,7 +60,9 @@ namespace {
 // Bump to 28 for live input config: set_pointer_config (the Mouse tab's
 // libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
-constexpr uint32_t kBindVersion = 28;
+// Bump to 31 for toplevel_app_id, allowing the window model to receive an
+// XWayland WM_CLASS that becomes available after toplevel_added.
+constexpr uint32_t kBindVersion = 31;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -201,6 +203,11 @@ struct QdwinBindingDispatch {
                                uint32_t handle, const char *title) {
         auto *b = static_cast<QdwinBinding *>(d);
         emit b->toplevelTitle(handle, qstr(title));
+    }
+    static void toplevel_app_id(void *d, qdwin_shell_v1 *,
+                                uint32_t handle, const char *app_id) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->toplevelAppId(handle, qstr(app_id));
     }
     static void toplevel_removed(void *d, qdwin_shell_v1 *, uint32_t handle) {
         auto *b = static_cast<QdwinBinding *>(d);
@@ -396,6 +403,7 @@ static const qdwin_shell_v1_listener kShellListener = {
     .chrome_button             = QdwinBindingDispatch::chrome_button,
     .popup_button              = QdwinBindingDispatch::popup_button,
     .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
+    .toplevel_app_id           = QdwinBindingDispatch::toplevel_app_id,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------

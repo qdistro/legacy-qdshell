@@ -284,6 +284,7 @@ signals:
                        const QString &title, bool isXwayland);
     void toplevelRemoved(quint32 handle);
     void toplevelTitle(quint32 handle, const QString &title);
+    void toplevelAppId(quint32 handle, const QString &appId);
     void toplevelGeometry(quint32 handle, int x, int y, quint32 width, quint32 height);
     void toplevelState(quint32 handle, quint32 state);
     void seatFocusChanged(const QString &seat, quint32 handle);
