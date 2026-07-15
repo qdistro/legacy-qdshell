@@ -12,12 +12,10 @@ import qs.Services.Qdistro
 // placeholder; qdshell's PodApps service resolves the placeholder
 // when toplevel_security_context arrives with a matching instance_id.
 //
-// Visual note: the launcher's standard entry delegate renders the
-// entry's name + icon + description. Until the badge convention from
-// doc/ui.md is implemented as a delegate-side overlay, this provider
-// prefixes the description with the silo identifier so the user can
-// tell same-app-different-silo entries apart. The badge ring/glyph
-// is tracked as follow-up in doc/containers.md "Future work".
+// Visual note: the launcher's standard entry delegate renders badgeIcon as a
+// bottom-right overlay. Tier-2 uses the container glyph on the class's bright
+// magenta background; the description keeps the silo identifier as a
+// redundant text cue for monochrome/low-resolution surfaces.
 Item {
   id: root
 
@@ -37,6 +35,18 @@ Item {
   function onOpened() {
     PodApps.refresh();
     PodApps.refreshContainerStates();
+  }
+
+  // PodApps.refresh() is asynchronous and clears the model before starting
+  // its cache reader. LauncherCore's first updateResults() therefore often
+  // sees zero podapps. Recompute when the reader appends rows so an already
+  // open launcher gains the entries without a close/reopen cycle.
+  Connections {
+    target: PodApps.apps
+    function onCountChanged() {
+      if (root.launcher && root.launcher.isOpen)
+        root.launcher.updateResults();
+    }
   }
 
   function getResults(query) {
@@ -60,6 +70,9 @@ Item {
       "description": "[" + row.silo + "] " + (row.comment || ""),
       "icon":        row.iconName || "application-x-executable",
       "isImage":     false,
+      "badgeIcon":   "container",
+      "badgeColor":  "#ce93d8",
+      "badgeIconColor": "#0e0e43",
       "_score":      0,
       "provider":    root,
       "onActivate":  function () {

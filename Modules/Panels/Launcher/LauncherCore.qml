@@ -782,7 +782,7 @@ Rectangle {
                 Rectangle {
                   anchors.fill: parent
                   radius: Style.radiusXS
-                  color: Color.mSurfaceVariant
+                  color: modelData.badgeColor || Color.mSurfaceVariant
                   visible: LauncherSettings.showIconBackground && !modelData.isImage
                 }
 
@@ -898,7 +898,7 @@ Rectangle {
                       return parts[0] || "IMG";
                     }
                     pointSize: Style.fontSizeXXS
-                    color: Color.mOnSurfaceVariant
+                    color: modelData.badgeIconColor || Color.mOnSurfaceVariant
                   }
                 }
 
@@ -910,13 +910,13 @@ Rectangle {
                   anchors.margins: 2
                   width: height
                   height: Style.fontSizeM + Style.marginXS
-                  color: Color.mSurfaceVariant
+                  color: modelData.badgeColor || Color.mSurfaceVariant
                   radius: Style.radiusXXS
                   NIcon {
                     anchors.centerIn: parent
                     icon: modelData.badgeIcon || ""
                     pointSize: Style.fontSizeS
-                    color: Color.mOnSurfaceVariant
+                    color: modelData.badgeIconColor || Color.mOnSurfaceVariant
                   }
                 }
               }
