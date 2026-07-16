@@ -37,13 +37,12 @@ Item {
     PodApps.refreshContainerStates();
   }
 
-  // PodApps.refresh() is asynchronous and clears the model before starting
-  // its cache reader. LauncherCore's first updateResults() therefore often
-  // sees zero podapps. Recompute when the reader appends rows so an already
-  // open launcher gains the entries without a close/reopen cycle.
+  // PodApps.refresh() is asynchronous. Recompute at its atomic completion
+  // boundary so an already-open launcher gains the new entries without
+  // rendering a transient partly-built model.
   Connections {
-    target: PodApps.apps
-    function onCountChanged() {
+    target: PodApps
+    function onRefreshed() {
       if (root.launcher && root.launcher.isOpen)
         root.launcher.updateResults();
     }

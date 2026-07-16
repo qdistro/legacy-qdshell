@@ -13,9 +13,19 @@ const core = fs.readFileSync(
 );
 
 // Ensures: an async apps.json scan updates a launcher that is already open.
-assert.ok(provider.includes("target: PodApps.apps"));
-assert.ok(provider.includes("function onCountChanged()"));
+assert.ok(provider.includes("target: PodApps"));
+assert.ok(provider.includes("function onRefreshed()"));
 assert.ok(provider.includes("root.launcher.updateResults();"));
+
+const service = fs.readFileSync(
+    path.join(repo, "Services/Qdistro/PodApps.qml"),
+    "utf8"
+);
+assert.ok(service.includes("_scanProcess.running = false;"),
+    "overlapping refreshes must restart the cache reader");
+assert.ok(service.includes("signal refreshed()"));
+assert.ok(service.indexOf("root.apps.clear();") > service.indexOf("onStreamFinished:"),
+    "the published model must not clear until scan completion");
 
 // Ensures: tier-2 entries retain a non-text silo signal even when their app
 // icon is absent from the host theme.

@@ -34,6 +34,10 @@ Singleton {
     //             execArgv (string), silo, containerState }
     // containerState ∈ { "running", "off", "starting", "unknown" }
     property ListModel apps: ListModel {}
+    // Emitted after an entire cache scan has replaced `apps`. Consumers use
+    // this completion boundary instead of reacting to transient clear/append
+    // count changes while a scan is still being assembled.
+    signal refreshed()
 
     // ---- Cold-start placeholders -----------------------------------------
     // Each entry: { launchToken, appId, name, iconName, silo, since }
@@ -57,7 +61,13 @@ Singleton {
     // Re-scan the cache directory. Cheap — reads ~one JSON file per
     // container. Triggered periodically + on Container state change.
     function refresh() {
-        apps.clear();
+        // refresh() is called by service startup, the periodic timer, provider
+        // initialization and launcher open. If a scan is already running,
+        // assigning true again is a no-op; the old implementation had already
+        // cleared `apps`, so a late overlapping call could leave the launcher
+        // empty forever. Cancel/restart deterministically and replace the model
+        // only after the new collector has completed.
+        _scanProcess.running = false;
         _scanProcess.command = ["sh", "-c",
             "shopt -s nullglob; " +
             "for d in " + cacheRoot + "/*/; do " +
@@ -75,7 +85,7 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const raw = this.text || "";
-                if (!raw) return;
+                const next = [];
                 // Sections: "=== <container>\n[<json>]\n"
                 const sections = raw.split(/^=== /m).filter(s => s.length > 0);
                 for (const sec of sections) {
@@ -91,7 +101,7 @@ Singleton {
                     }
                     const state = root._containerStates[container] || "off";
                     for (const e of entries) {
-                        root.apps.append({
+                        next.push({
                             appId:          e.appId          || "",
                             container:      e.container      || container,
                             workload:       e.workload       || "",
@@ -104,6 +114,11 @@ Singleton {
                         });
                     }
                 }
+                root.apps.clear();
+                for (const row of next)
+                    root.apps.append(row);
+                Logger.i("PodApps", "cache refresh loaded " + next.length + " apps");
+                root.refreshed();
             }
         }
     }
