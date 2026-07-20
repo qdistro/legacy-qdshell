@@ -423,10 +423,12 @@ def ipc(q: Qdshell, *args: str, timeout: float = 5.0) -> subprocess.CompletedPro
 #     as the admin user against the live qdshell quickshell instance on
 #     wayland-1. We use `qs ipc -p /usr/share/quickshell/qdshell call ...`,
 #     matching the deployed qdshell.service ExecStart.
-#   * Screenshots are captured from the HOST with `virsh screenshot`, which
-#     grabs the VM's framebuffer (the qdwin/weston output) — the validated
-#     pattern from qdwin/tests/gui (qdwin_screenshot). No in-VM screenshot
-#     tool (grim/weston-screenshooter) is required.
+#   * Screenshots come from qdwin's in-compositor shell-authorized capture
+#     (qdshell's root-only `capture` ctrl verb → weston_capture_v1 on
+#     Virtual-1), copied out through the guest agent with size/sha + full
+#     PNG validation — the validated pattern from qdwin/tests/gui
+#     (qdwin_screenshot). `virsh screenshot` only sees the tty console on
+#     the headless test VMs and is never used for content assertions.
 #   * Codex describe/judge still run on the HOST against the pulled-back PNG.
 #
 # SECURITY: every argument that reaches the VM's `/bin/sh -c` (via
@@ -634,17 +636,26 @@ def ctrl_socket_vm(session: VMSession, command: str, *, timeout: float = 30.0) -
     allowed = {
         "launcher", "launcher-toggle", "launcher-activate",
         "switcher", "switcher-next", "switcher-commit",
-        "list", "tray", "panel", "locker",
+        "list", "tray", "panel", "locker", "capture",
     }
     base = command.split(" ", 1)[0]
     if base not in allowed:
         raise ValueError(f"refusing ctrl-socket command {command!r} (base {base!r} not allowlisted)")
     b64 = base64.b64encode((command + "\n").encode()).decode("ascii")
-    script = (
-        f"set -eu\n"
-        f"runuser -u {VM_USER} -- bash -c "
-        f"'echo {b64} | base64 -d | socat -t 2 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock'\n"
-    )
+    if base == "capture":
+        # Capture is deliberately root-peer-only (SO_PEERCRED) so qdshell
+        # cannot be used as a same-uid screenshot confused deputy.
+        script = (
+            f"set -eu\n"
+            f"echo {b64} | base64 -d | "
+            f"socat -T 10 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock\n"
+        )
+    else:
+        script = (
+            f"set -eu\n"
+            f"runuser -u {VM_USER} -- bash -c "
+            f"'echo {b64} | base64 -d | socat -t 2 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock'\n"
+        )
     res = _vm_run_script(session, script, timeout=timeout)
     if res.returncode != 0:
         raise RuntimeError(
@@ -795,31 +806,73 @@ def _convert_ppm_to_png(ppm_path: Path, png_path: Path) -> None:
 
 
 def screenshot_vm(session: VMSession, out_path: Path) -> Path:
-    """Capture the VM's framebuffer (the live qdwin session) to a PNG.
+    """Capture qdwin's real Virtual-1 framebuffer to a PNG.
 
-    Uses host-side `virsh screenshot`, which writes a PPM; we convert to PNG.
-    This is the same mechanism qdwin/tests/gui uses (qdwin_screenshot).
+    Drives qdshell's root-only `capture` ctrl verb (the in-compositor
+    shell-authorized weston capture path — same mechanism as
+    qdwin_screenshot in qdwin/tests/gui/qdwin-helpers.sh) and copies the
+    result out through the guest agent, verifying guest/host size + sha256
+    and fully decoding the PNG. `virsh screenshot` is deliberately NOT used:
+    on the headless test VMs (video model=none) it can only see the tty
+    console, never qdwin's output, and must not back a content assertion.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    ppm_path = out_path.with_suffix(".ppm")
-    res = subprocess.run(
-        session.virsh + ["screenshot", session.vm, str(ppm_path)],
-        capture_output=True, text=True, timeout=30,
-    )
-    if res.returncode != 0 or not ppm_path.exists():
-        raise RuntimeError(
-            f"virsh screenshot {session.vm} failed (rc={res.returncode}): "
-            f"{res.stderr.strip() or res.stdout.strip()}"
-        )
-    _convert_ppm_to_png(ppm_path, out_path)
-    with contextlib.suppress(OSError):
-        ppm_path.unlink()
+    guest = (f"{VM_XDG_RUNTIME_DIR}/qdshell-ui-capture-"
+             f"{os.getpid()}-{time.monotonic_ns()}.png")
+    try:
+        reply = ctrl_socket_vm(session, f"capture Virtual-1 {guest}",
+                               timeout=30.0)
+        m = re.fullmatch(
+            r"ok output=Virtual-1 width=(\d+) height=(\d+) path=(\S+)", reply)
+        if not m or m.group(3) != guest:
+            raise RuntimeError(f"shell capture failed: {reply!r}")
+        reply_w, reply_h = int(m.group(1)), int(m.group(2))
+
+        meta = _vm_run_script(
+            session,
+            f"set -eu\nstat -c %s '{guest}'\nsha256sum '{guest}' | cut -d' ' -f1\n",
+            timeout=15.0)
+        if meta.returncode != 0:
+            raise RuntimeError(
+                f"could not stat/hash guest capture: {meta.stderr.strip()}")
+        guest_size, guest_sha = meta.stdout.split()
+
+        b64 = _vm_run_script(session, f"set -eu\nbase64 -w0 '{guest}'\n",
+                             timeout=30.0)
+        if b64.returncode != 0:
+            raise RuntimeError(
+                f"could not read guest capture: {b64.stderr.strip()}")
+        data = base64.b64decode(b64.stdout.strip(), validate=True)
+        # Guest-agent stdout can be silently truncated, and base64 cut on a
+        # 4-char quantum still decodes — require exact size + hash agreement.
+        import hashlib
+        if len(data) != int(guest_size) or \
+                hashlib.sha256(data).hexdigest() != guest_sha:
+            raise RuntimeError(
+                f"guest/host capture mismatch (size {guest_size} vs "
+                f"{len(data)}, sha {guest_sha})")
+
+        tmp_path = out_path.with_suffix(".partial")
+        tmp_path.write_bytes(data)
+        from PIL import Image
+        with Image.open(tmp_path) as im:
+            im.verify()
+        with Image.open(tmp_path) as im:
+            im.load()
+            if (im.width, im.height) != (reply_w, reply_h):
+                raise RuntimeError(
+                    f"decoded {im.width}x{im.height} != reported "
+                    f"{reply_w}x{reply_h}")
+        tmp_path.replace(out_path)
+    finally:
+        with contextlib.suppress(Exception):
+            _vm_run_script(session, f"rm -f '{guest}'\n", timeout=10.0)
     return out_path
 
 
 def capture_surface_vm(session: VMSession, surface, *, settle: float = 1.2
                        ) -> tuple[Path, str]:
-    """VM analogue of capture_surface: open via in-VM IPC, virsh-screenshot, describe."""
+    """VM analogue of capture_surface: open via in-VM IPC, shell-capture, describe."""
     from .manifests import NO_IPC
 
     png_path = ARTIFACTS_DIR / f"{surface.id}.png"

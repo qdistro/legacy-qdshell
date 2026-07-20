@@ -16,8 +16,10 @@ The harness supports two ways to reach a running qdshell:
   `QDSHELL_UI_VM=<libvirt-domain>` is set, the harness drives the LIVE
   qdshell session already running inside a qdwin VM: IPC over wayland-1
   via `scripts/vm/vm-exec` (run as `admin`, targeting the deployed
-  `qs -p /usr/share/quickshell/qdshell`), and screenshots the VM
-  framebuffer from the host with `virsh screenshot`. codex describe/judge
+  `qs -p /usr/share/quickshell/qdshell`), and screenshots qdwin's
+  Virtual-1 output via the in-compositor shell-authorized capture
+  (qdshell's root-only `capture` ctrl verb — `virsh screenshot` only sees
+  the tty console on the headless VMs). codex describe/judge
   still run on the host against the pulled-back PNGs. This is the
   validated path: qdshell renders fine in a real qdwin session.
 
@@ -176,7 +178,7 @@ regressions (a section heading disappeared, a slider lost its label).
 
 ## Files
 
-* `runner.py` — primitives: VM-session transport (IPC + virsh-screenshot)
+* `runner.py` — primitives: VM-session transport (IPC + shell-capture)
   and the legacy host Weston/Qdshell lifecycle, plus IPC, screenshot,
   describe, judge. Also the stateful-interaction transport: settings.json
   read/write, qdshell restart, ctrl-socket, and real keyboard/mouse via QMP

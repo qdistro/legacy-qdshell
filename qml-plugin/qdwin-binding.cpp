@@ -13,6 +13,7 @@
 
 #include <wayland-client.h>
 #include "qdwin-shell-v1-client-protocol.h"
+#include "weston-output-capture-client-protocol.h"
 #include "ext-workspace-v1-client-protocol.h"
 #include "wlr-output-management-unstable-v1-client-protocol.h"
 #include "ext-idle-notify-v1-client-protocol.h"
@@ -21,14 +22,27 @@
 #include <initializer_list>
 
 #include <QDebug>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
 #include <QMetaType>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
+#include <QTemporaryFile>
 #include <QVariantMap>
 
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
+#include <fcntl.h>
+#include <limits>
+#include <poll.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace {
 // Bump to 23 to pick up `selection_set_source_identity` — the v23 sidecar
@@ -62,7 +76,10 @@ namespace {
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
 // Bump to 31 for toplevel_app_id, allowing the window model to receive an
 // XWayland WM_CLASS that becomes available after toplevel_added.
-constexpr uint32_t kBindVersion = 31;
+// Bump to 32 for prepare_output_capture, the full-damage half of the
+// shell-authorized framebuffer capture path.
+constexpr uint32_t kBindVersion = 32;
+constexpr int kCaptureTimeoutMs = 8000;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
 constexpr int kBrokerDefaultTimeoutMs = 200;
@@ -72,6 +89,16 @@ constexpr auto kBrokerDefaultBusctlTimeout = "--timeout=200ms";
 inline QString qstr(const char *s) {
     return s ? QString::fromUtf8(s) : QString();
 }
+
+constexpr uint32_t fourcc(char a, char b, char c, char d) {
+    return static_cast<uint32_t>(a) |
+           (static_cast<uint32_t>(b) << 8) |
+           (static_cast<uint32_t>(c) << 16) |
+           (static_cast<uint32_t>(d) << 24);
+}
+
+constexpr uint32_t kDrmArgb8888 = fourcc('A', 'R', '2', '4');
+constexpr uint32_t kDrmXrgb8888 = fourcc('X', 'R', '2', '4');
 
 // F5: wire-sourced identity strings (app_id, instance_id, selinux label, exe,
 // sandbox engine, mime types) are relayed from possibly-malicious silo clients
@@ -669,6 +696,167 @@ static const ext_idle_notification_v1_listener kIdleListener = {
     QdwinIdleDispatch::resumed,
 };
 
+// ---- shell-authorized output capture discovery (v32) -------------------
+
+struct QdwinBinding::CaptureOutput {
+    QdwinBinding *binding = nullptr;
+    uint32_t globalName = 0;
+    wl_output *proxy = nullptr;
+    QString name;
+};
+
+struct QdwinCaptureOutputDispatch {
+    static void geometry(void *, wl_output *, int32_t, int32_t, int32_t,
+                         int32_t, int32_t, const char *, const char *,
+                         int32_t) {}
+    static void mode(void *, wl_output *, uint32_t, int32_t, int32_t,
+                     int32_t) {}
+    static void done(void *, wl_output *) {}
+    static void scale(void *, wl_output *, int32_t) {}
+    static void name(void *data, wl_output *, const char *name) {
+        auto *output = static_cast<QdwinBinding::CaptureOutput *>(data);
+        output->name = qstr(name);
+    }
+    static void description(void *, wl_output *, const char *) {}
+};
+
+static const wl_output_listener kCaptureOutputListener = {
+    QdwinCaptureOutputDispatch::geometry,
+    QdwinCaptureOutputDispatch::mode,
+    QdwinCaptureOutputDispatch::done,
+    QdwinCaptureOutputDispatch::scale,
+    QdwinCaptureOutputDispatch::name,
+    QdwinCaptureOutputDispatch::description,
+};
+
+struct QdwinCaptureRegistry {
+    static void global(void *data, wl_registry *registry, uint32_t name,
+                       const char *interface, uint32_t version) {
+        auto *binding = static_cast<QdwinBinding *>(data);
+        if (std::strcmp(interface, weston_capture_v1_interface.name) == 0) {
+            if (!binding->capture_ && version >= 2) {
+                binding->capture_ = static_cast<weston_capture_v1 *>(
+                    wl_registry_bind(registry, name,
+                                     &weston_capture_v1_interface, 2));
+                binding->captureGlobalName_ = name;
+            }
+            return;
+        }
+        if (std::strcmp(interface, wl_shm_interface.name) == 0) {
+            if (!binding->captureShm_) {
+                binding->captureShm_ = static_cast<wl_shm *>(
+                    wl_registry_bind(registry, name, &wl_shm_interface, 1));
+                binding->captureShmGlobalName_ = name;
+            }
+            return;
+        }
+        if (std::strcmp(interface, wl_output_interface.name) == 0) {
+            // wl_output.name is a v4 event; unnamed older outputs cannot be
+            // safely selected and are intentionally not bound for capture.
+            if (version < 4)
+                return;
+            auto output = std::make_unique<QdwinBinding::CaptureOutput>();
+            output->binding = binding;
+            output->globalName = name;
+            output->proxy = static_cast<wl_output *>(
+                wl_registry_bind(registry, name, &wl_output_interface, 4));
+            wl_output_add_listener(output->proxy, &kCaptureOutputListener,
+                                   output.get());
+            binding->captureOutputs_.push_back(std::move(output));
+        }
+    }
+
+    static void global_remove(void *data, wl_registry *, uint32_t name) {
+        auto *binding = static_cast<QdwinBinding *>(data);
+        if (name == binding->captureGlobalName_) {
+            if (binding->capture_)
+                weston_capture_v1_destroy(binding->capture_);
+            binding->capture_ = nullptr;
+            binding->captureGlobalName_ = 0;
+        }
+        if (name == binding->captureShmGlobalName_) {
+            if (binding->captureShm_)
+                // Proxy-only destroy: wl_shm is bound at v1 and the
+                // release request only exists since v2.
+                wl_shm_destroy(binding->captureShm_);
+            binding->captureShm_ = nullptr;
+            binding->captureShmGlobalName_ = 0;
+        }
+        auto it = std::remove_if(
+            binding->captureOutputs_.begin(), binding->captureOutputs_.end(),
+            [name](const std::unique_ptr<QdwinBinding::CaptureOutput> &output) {
+                if (output->globalName != name)
+                    return false;
+                if (output->proxy)
+                    wl_output_release(output->proxy);
+                return true;
+            });
+        binding->captureOutputs_.erase(it, binding->captureOutputs_.end());
+    }
+};
+
+static const wl_registry_listener kCaptureRegistryListener = {
+    QdwinCaptureRegistry::global,
+    QdwinCaptureRegistry::global_remove,
+};
+
+struct CaptureJob {
+    std::vector<uint32_t> formats;
+    int width = 0;
+    int height = 0;
+    bool formatsDone = false;
+    bool complete = false;
+    bool retry = false;
+    bool failed = false;
+    QString error;
+};
+
+struct CaptureJobDispatch {
+    static void format(void *data, weston_capture_source_v1 *,
+                       uint32_t drmFormat) {
+        auto *job = static_cast<CaptureJob *>(data);
+        // A new format batch after formats_done supersedes the old one.
+        if (job->formatsDone) {
+            job->formats.clear();
+            job->formatsDone = false;
+        }
+        if (std::find(job->formats.begin(), job->formats.end(), drmFormat) ==
+            job->formats.end())
+            job->formats.push_back(drmFormat);
+    }
+    static void size(void *data, weston_capture_source_v1 *, int32_t width,
+                     int32_t height) {
+        auto *job = static_cast<CaptureJob *>(data);
+        job->width = width;
+        job->height = height;
+    }
+    static void complete(void *data, weston_capture_source_v1 *) {
+        static_cast<CaptureJob *>(data)->complete = true;
+    }
+    static void retry(void *data, weston_capture_source_v1 *) {
+        static_cast<CaptureJob *>(data)->retry = true;
+    }
+    static void failed(void *data, weston_capture_source_v1 *,
+                       const char *message) {
+        auto *job = static_cast<CaptureJob *>(data);
+        job->failed = true;
+        job->error = message ? qstr(message)
+                             : QStringLiteral("capture failed without reason");
+    }
+    static void formats_done(void *data, weston_capture_source_v1 *) {
+        static_cast<CaptureJob *>(data)->formatsDone = true;
+    }
+};
+
+static const weston_capture_source_v1_listener kCaptureSourceListener = {
+    CaptureJobDispatch::format,
+    CaptureJobDispatch::size,
+    CaptureJobDispatch::complete,
+    CaptureJobDispatch::retry,
+    CaptureJobDispatch::failed,
+    CaptureJobDispatch::formats_done,
+};
+
 // wl_registry global handler — looks for qdwin_shell_v1 specifically.
 // QdwinBindingDispatch is already a friend of QdwinBinding so it can
 // write shell_ / shellVersion_ directly. We piggyback the registry
@@ -753,7 +941,17 @@ QdwinBinding::QdwinBinding(QObject *parent) : QObject(parent) {
     connect(&stableTimer_, &QTimer::timeout, this, [this]() {
         if (bound_) reconnectAttempts_ = 0;
     });
-    connectAndBind();
+    // Defer the initial connect to the live event loop. connectAndBind()
+    // now performs synchronous roundtrips that dispatch hello and qdwin's
+    // bind replay; QML attaches onBoundChanged / protocol handlers only
+    // after this constructor returns, so a synchronous connect here would
+    // emit those signals into the void (ClipboardGate, WM policy, replay
+    // state would never initialize). Queued invocation runs once the QML
+    // object is complete — the same ordering the pre-capture async-hello
+    // implementation guaranteed.
+    QMetaObject::invokeMethod(this, [this]() {
+        if (!destroying_) connectAndBind();
+    }, Qt::QueuedConnection);
 
     ctrlServer_ = new CtrlServer(*this, this);
 }
@@ -797,13 +995,36 @@ void QdwinBinding::connectAndBind() {
     qdwin_shell_v1_add_listener(shell_, &kShellListener, this);
     qdwin_shell_v1_bind_as_shell(shell_);
 
-    // Bind initiated. The hello event arrives on the next dispatch and
-    // sets bound_ = true via QdwinBindingDispatch::hello. Flush so the
-    // bind_as_shell write actually hits the socket.
-    if (wl_display_flush(display_) == -1) {
-        setLastError(QStringLiteral("wl_display_flush after bind_as_shell failed"));
+    // Complete bind_as_shell first. The synchronous roundtrip dispatches
+    // hello and therefore changes this exact wl_client's qdwin credential to
+    // SHELL before we ask for a fresh registry enumeration.
+    if (wl_display_roundtrip(display_) == -1 || !bound_) {
+        setLastError(QStringLiteral(
+            "roundtrip after bind_as_shell failed or hello was not received"));
         teardown(lastError_);
         return;
+    }
+
+    // A second registry is mandatory: the first enumeration happened while
+    // this connection was still ordinary, so qdwin's global filter omitted
+    // weston_capture_v1. Credential changes do not replay old globals. The
+    // first roundtrip below records/binds all globals; the second receives
+    // wl_output.name and other events caused by those binds, ensuring output
+    // selection is complete before any capture source can be created.
+    captureRegistry_ = wl_display_get_registry(display_);
+    wl_registry_add_listener(captureRegistry_, &kCaptureRegistryListener, this);
+    if (wl_display_roundtrip(display_) == -1 ||
+        wl_display_roundtrip(display_) == -1) {
+        setLastError(QStringLiteral(
+            "shell capture registry enumeration failed"));
+        teardown(lastError_);
+        return;
+    }
+    if (!capture_ || !captureShm_) {
+        qWarning().noquote()
+            << "qdwin-binding: shell capture unavailable:"
+            << (!capture_ ? "weston_capture_v1 missing or older than v2" : "")
+            << (!captureShm_ ? "wl_shm missing" : "");
     }
 
     readNotifier_ = new QSocketNotifier(wl_display_get_fd(display_),
@@ -846,6 +1067,7 @@ void QdwinBinding::teardown(const QString &reason) {
     }
     registry_ = nullptr;
     shell_ = nullptr;
+    captureTeardownState();
     wsTeardownState();
     omTeardownState();
     idleTeardownState();
@@ -858,6 +1080,19 @@ void QdwinBinding::teardown(const QString &reason) {
     // socket, and bind-time failures (display not yet up). The
     // destructor sets destroying_ so we don't fire after delete.
     if (!destroying_) scheduleReconnect();
+}
+
+void QdwinBinding::captureTeardownState() {
+    // Called only after wl_display_disconnect(), so the connection has
+    // already destroyed every proxy. Drop raw pointers without marshaling
+    // destructor requests onto the dead display.
+    captureRegistry_ = nullptr;
+    capture_ = nullptr;
+    captureShm_ = nullptr;
+    captureGlobalName_ = 0;
+    captureShmGlobalName_ = 0;
+    captureOutputs_.clear();
+    captureBusy_ = false;
 }
 
 void QdwinBinding::scheduleReconnect() {
@@ -942,6 +1177,406 @@ bool QdwinBinding::flushAfterRequest(const char *requestName) {
                      .arg(qstr(std::strerror(errno))));
     teardown(lastError_);
     return false;
+}
+
+QVariantMap QdwinBinding::captureOutput(const QString &outputName,
+                                        const QString &destPath) {
+    auto failure = [](const QString &error) {
+        qWarning().noquote() << "qdwin-binding: capture failed:" << error;
+        return QVariantMap{
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("error"), error},
+        };
+    };
+
+    if (captureBusy_)
+        return failure(QStringLiteral("capture already in progress"));
+    captureBusy_ = true;
+    struct BusyReset {
+        bool &busy;
+        ~BusyReset() { busy = false; }
+    } busyReset{captureBusy_};
+
+    if (!display_ || !bound_ || !shell_)
+        return failure(QStringLiteral("qdshell is not bound to qdwin"));
+    if (shellVersion_ < 32)
+        return failure(QStringLiteral(
+            "qdwin_shell_v1 v32 prepare_output_capture is unavailable"));
+    if (!capture_ || !captureShm_)
+        return failure(QStringLiteral(
+            "weston_capture_v1 v2 or wl_shm is unavailable"));
+    if (outputName.isEmpty())
+        return failure(QStringLiteral("output name is empty"));
+    // Mirror the compositor authority's exact-output pin (Virtual-1, the
+    // main head of the headless test VMs). Not a security boundary here —
+    // qdwin enforces it independently — but it keeps refusal local and the
+    // contract visible: this facility captures one designated output only.
+    if (outputName != QStringLiteral("Virtual-1"))
+        return failure(QStringLiteral(
+            "refusing capture of non-designated output %1 (only Virtual-1)")
+                           .arg(outputName));
+    if (!QDir::isAbsolutePath(destPath))
+        return failure(QStringLiteral("destination path must be absolute"));
+
+    QByteArray destBytes = QFile::encodeName(destPath);
+    struct stat destStat;
+    if (::lstat(destBytes.constData(), &destStat) == 0)
+        return failure(QStringLiteral(
+            "destination already exists (refusing stale capture): %1")
+                           .arg(destPath));
+    if (errno != ENOENT)
+        return failure(QStringLiteral("cannot inspect destination %1: %2")
+                           .arg(destPath, qstr(std::strerror(errno))));
+
+    QString runtimeDir = qstr(std::getenv("XDG_RUNTIME_DIR"));
+    if (runtimeDir.isEmpty() || !QDir::isAbsolutePath(runtimeDir))
+        return failure(QStringLiteral("XDG_RUNTIME_DIR is missing or invalid"));
+    QFileInfo parentInfo(destPath);
+    QString destDir = parentInfo.absoluteDir().absolutePath();
+    struct stat runtimeStat;
+    struct stat destDirStat;
+    QByteArray runtimeBytes = QFile::encodeName(runtimeDir);
+    QByteArray destDirBytes = QFile::encodeName(destDir);
+    if (::stat(runtimeBytes.constData(), &runtimeStat) != 0 ||
+        ::stat(destDirBytes.constData(), &destDirStat) != 0)
+        return failure(QStringLiteral(
+            "capture runtime or destination directory is unavailable"));
+    if (runtimeStat.st_dev != destDirStat.st_dev)
+        return failure(QStringLiteral(
+            "destination must share a filesystem with XDG_RUNTIME_DIR for atomic rename"));
+
+    wl_output *targetOutput = nullptr;
+    int matches = 0;
+    for (const auto &output : captureOutputs_) {
+        if (output->name == outputName) {
+            targetOutput = output->proxy;
+            ++matches;
+        }
+    }
+    if (matches == 0)
+        return failure(QStringLiteral("output not found: %1").arg(outputName));
+    if (matches != 1)
+        return failure(QStringLiteral("output name is ambiguous: %1")
+                           .arg(outputName));
+
+    QByteArray outputUtf8 = outputName.toUtf8();
+    qInfo().noquote() << "qdwin-binding: capture starting output="
+                      << outputName << "path=" << destPath;
+    qdwin_shell_v1_prepare_output_capture(shell_, outputUtf8.constData());
+    if (!flushAfterRequest(__func__))
+        return failure(QStringLiteral("failed to queue output damage"));
+
+    CaptureJob job;
+    weston_capture_source_v1 *source = weston_capture_v1_create(
+        capture_, targetOutput, WESTON_CAPTURE_V1_SOURCE_FRAMEBUFFER);
+    if (!source)
+        return failure(QStringLiteral("failed to create capture source"));
+    weston_capture_source_v1_add_listener(source, &kCaptureSourceListener,
+                                          &job);
+
+    // On an idle DRM output libweston may not have populated framebuffer
+    // source requirements yet. The first preparation request is deliberately
+    // ordered before source creation; damage once more now that the source is
+    // on libweston's capture_source_list so the repaint publishes its
+    // format/size events. This remains before the actual capture(buffer)
+    // request and is harmless when source info was already available.
+    qdwin_shell_v1_prepare_output_capture(shell_, outputUtf8.constData());
+    if (!flushAfterRequest(__func__)) {
+        if (display_ && wl_display_get_error(display_) == 0)
+            weston_capture_source_v1_destroy(source);
+        return failure(QStringLiteral(
+            "failed to queue source-discovery output damage"));
+    }
+
+    struct CaptureBuffer {
+        std::unique_ptr<QTemporaryFile> backing;
+        wl_buffer *proxy = nullptr;
+        void *pixels = MAP_FAILED;
+        size_t size = 0;
+        int stride = 0;
+        uint32_t drmFormat = 0;
+        QImage::Format imageFormat = QImage::Format_Invalid;
+    } buffer;
+
+    bool displayFailed = false;
+    auto destroyBuffer = [&]() {
+        if (buffer.proxy && display_ && wl_display_get_error(display_) == 0)
+            wl_buffer_destroy(buffer.proxy);
+        buffer.proxy = nullptr;
+        if (buffer.pixels != MAP_FAILED)
+            ::munmap(buffer.pixels, buffer.size);
+        buffer.pixels = MAP_FAILED;
+        buffer.size = 0;
+        buffer.backing.reset();
+    };
+    auto destroySource = [&]() {
+        destroyBuffer();
+        if (source && display_ && wl_display_get_error(display_) == 0) {
+            weston_capture_source_v1_destroy(source);
+            wl_display_flush(display_);
+        }
+        source = nullptr;
+    };
+
+    QElapsedTimer deadline;
+    deadline.start();
+    QString pumpError;
+    auto pumpUntil = [&](auto done) {
+        while (!done()) {
+            if (wl_display_dispatch_pending(display_) == -1) {
+                pumpError = QStringLiteral(
+                    "Wayland dispatch failed while capturing: %1")
+                                .arg(qstr(std::strerror(errno)));
+                displayFailed = true;
+                return false;
+            }
+            if (done())
+                return true;
+
+            short events = POLLIN;
+            if (wl_display_flush(display_) == -1) {
+                if (errno != EAGAIN) {
+                    pumpError = QStringLiteral(
+                        "Wayland flush failed while capturing: %1")
+                                    .arg(qstr(std::strerror(errno)));
+                    displayFailed = true;
+                    return false;
+                }
+                events |= POLLOUT;
+            }
+
+            qint64 remaining = kCaptureTimeoutMs - deadline.elapsed();
+            if (remaining <= 0) {
+                pumpError = QStringLiteral("capture timed out after %1 ms")
+                                .arg(kCaptureTimeoutMs);
+                return false;
+            }
+            pollfd pfd{wl_display_get_fd(display_), events, 0};
+            int rc;
+            do {
+                rc = ::poll(&pfd, 1, static_cast<int>(remaining));
+            } while (rc < 0 && errno == EINTR);
+            if (rc == 0) {
+                pumpError = QStringLiteral("capture timed out after %1 ms")
+                                .arg(kCaptureTimeoutMs);
+                return false;
+            }
+            if (rc < 0) {
+                pumpError = QStringLiteral("poll failed while capturing: %1")
+                                .arg(qstr(std::strerror(errno)));
+                return false;
+            }
+            if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                pumpError = QStringLiteral(
+                    "Wayland connection closed while capturing");
+                displayFailed = true;
+                return false;
+            }
+            if ((pfd.revents & POLLIN) && wl_display_dispatch(display_) == -1) {
+                pumpError = QStringLiteral(
+                    "Wayland dispatch failed while capturing: %1")
+                                .arg(qstr(std::strerror(errno)));
+                displayFailed = true;
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!pumpUntil([&]() {
+            return job.failed ||
+                   (job.formatsDone && job.width > 0 && job.height > 0);
+        })) {
+        destroySource();
+        if (displayFailed)
+            teardown(pumpError);
+        return failure(pumpError);
+    }
+    if (job.failed) {
+        QString error = QStringLiteral("capture source failed: %1")
+                            .arg(job.error);
+        destroySource();
+        return failure(error);
+    }
+
+    auto allocateBuffer = [&]() {
+        uint32_t wlFormat = 0;
+        buffer.imageFormat = QImage::Format_Invalid;
+        // Prefer opaque XRGB. Both ARGB/XRGB are mandatory wl_shm formats;
+        // their little-endian byte layout maps directly to Qt's native
+        // RGB32/ARGB32 representations.
+        if (std::find(job.formats.begin(), job.formats.end(),
+                      kDrmXrgb8888) != job.formats.end()) {
+            buffer.drmFormat = kDrmXrgb8888;
+            wlFormat = WL_SHM_FORMAT_XRGB8888;
+            buffer.imageFormat = QImage::Format_RGB32;
+        } else if (std::find(job.formats.begin(), job.formats.end(),
+                             kDrmArgb8888) != job.formats.end()) {
+            buffer.drmFormat = kDrmArgb8888;
+            wlFormat = WL_SHM_FORMAT_ARGB8888;
+            buffer.imageFormat = QImage::Format_ARGB32;
+        } else {
+            pumpError = QStringLiteral(
+                "capture source offers no supported XRGB8888/ARGB8888 format");
+            return false;
+        }
+        if (job.width <= 0 || job.height <= 0 ||
+            job.width > std::numeric_limits<int>::max() / 4) {
+            pumpError = QStringLiteral("invalid capture dimensions %1x%2")
+                            .arg(job.width).arg(job.height);
+            return false;
+        }
+        buffer.stride = job.width * 4;
+        if (static_cast<quint64>(buffer.stride) *
+                static_cast<quint64>(job.height) >
+            static_cast<quint64>(std::numeric_limits<int>::max())) {
+            pumpError = QStringLiteral("capture buffer is too large");
+            return false;
+        }
+        buffer.size = static_cast<size_t>(buffer.stride) * job.height;
+        buffer.backing = std::make_unique<QTemporaryFile>(
+            runtimeDir + QStringLiteral("/.qdshell-capture-shm-XXXXXX"));
+        if (!buffer.backing->open() ||
+            !buffer.backing->setPermissions(QFileDevice::ReadOwner |
+                                            QFileDevice::WriteOwner) ||
+            !buffer.backing->resize(static_cast<qint64>(buffer.size))) {
+            pumpError = QStringLiteral("failed to allocate capture shm file: %1")
+                            .arg(buffer.backing->errorString());
+            return false;
+        }
+        buffer.pixels = ::mmap(nullptr, buffer.size, PROT_READ | PROT_WRITE,
+                               MAP_SHARED, buffer.backing->handle(), 0);
+        if (buffer.pixels == MAP_FAILED) {
+            pumpError = QStringLiteral("mmap capture buffer failed: %1")
+                            .arg(qstr(std::strerror(errno)));
+            return false;
+        }
+        wl_shm_pool *pool = wl_shm_create_pool(
+            captureShm_, buffer.backing->handle(),
+            static_cast<int32_t>(buffer.size));
+        if (!pool) {
+            pumpError = QStringLiteral("wl_shm_create_pool failed");
+            return false;
+        }
+        buffer.proxy = wl_shm_pool_create_buffer(
+            pool, 0, job.width, job.height, buffer.stride, wlFormat);
+        wl_shm_pool_destroy(pool);
+        if (!buffer.proxy) {
+            pumpError = QStringLiteral("wl_shm_pool_create_buffer failed");
+            return false;
+        }
+        return true;
+    };
+
+    int retries = 0;
+    for (;;) {
+        if (!allocateBuffer()) {
+            destroySource();
+            return failure(pumpError);
+        }
+        job.complete = false;
+        job.retry = false;
+        job.failed = false;
+        job.error.clear();
+        weston_capture_source_v1_capture(source, buffer.proxy);
+        // The capture request itself only schedule_repaint()s. On this idle
+        // DRM VM the earlier full damage can already have been consumed while
+        // we waited for source format/size. Queue another v32 preparation
+        // immediately AFTER capture(buffer) on the same connection: server
+        // request order guarantees the capture task exists before full damage
+        // starts the servicing repaint.
+        qdwin_shell_v1_prepare_output_capture(shell_, outputUtf8.constData());
+        if (wl_display_flush(display_) == -1 && errno != EAGAIN) {
+            pumpError = QStringLiteral("failed to flush capture request: %1")
+                            .arg(qstr(std::strerror(errno)));
+            displayFailed = true;
+            destroySource();
+            teardown(pumpError);
+            return failure(pumpError);
+        }
+        if (!pumpUntil([&]() {
+                return job.complete || job.retry || job.failed;
+            })) {
+            destroySource();
+            if (displayFailed)
+                teardown(pumpError);
+            return failure(pumpError);
+        }
+        if (job.failed) {
+            QString error = QStringLiteral("capture failed: %1").arg(job.error);
+            destroySource();
+            return failure(error);
+        }
+        if (!job.retry)
+            break;
+        if (retries++ >= 1) {
+            destroySource();
+            return failure(QStringLiteral(
+                "capture requirements changed more than once"));
+        }
+        destroyBuffer();
+        qdwin_shell_v1_prepare_output_capture(shell_, outputUtf8.constData());
+        if (!flushAfterRequest(__func__)) {
+            destroySource();
+            return failure(QStringLiteral(
+                "failed to queue output damage for capture retry"));
+        }
+    }
+
+    QImage image(static_cast<uchar *>(buffer.pixels), job.width, job.height,
+                 buffer.stride, buffer.imageFormat);
+    if (image.isNull()) {
+        destroySource();
+        return failure(QStringLiteral("QImage rejected captured pixels"));
+    }
+
+    QTemporaryFile pngFile(
+        runtimeDir + QStringLiteral("/.qdshell-capture-XXXXXX.png"));
+    pngFile.setAutoRemove(true);
+    if (!pngFile.open() ||
+        !pngFile.setPermissions(QFileDevice::ReadOwner |
+                                QFileDevice::WriteOwner) ||
+        !image.save(&pngFile, "PNG") || !pngFile.flush() ||
+        ::fsync(pngFile.handle()) != 0) {
+        QString error = QStringLiteral("failed to encode capture PNG: %1")
+                            .arg(pngFile.errorString());
+        destroySource();
+        return failure(error);
+    }
+    const QString tmpPath = pngFile.fileName();
+    pngFile.setAutoRemove(false);
+    pngFile.close();
+
+    QByteArray tmpBytes = QFile::encodeName(tmpPath);
+    // RENAME_NOREPLACE makes the earlier lstat(dest)==ENOENT check exact:
+    // a file created at dest between the check and the publish fails the
+    // capture instead of being silently replaced.
+    if (::renameat2(AT_FDCWD, tmpBytes.constData(),
+                    AT_FDCWD, destBytes.constData(),
+                    RENAME_NOREPLACE) != 0) {
+        QString error = QStringLiteral("atomic no-replace rename to %1 failed: %2")
+                            .arg(destPath, qstr(std::strerror(errno)));
+        QFile::remove(tmpPath);
+        destroySource();
+        return failure(error);
+    }
+    int dirFd = ::open(destDirBytes.constData(), O_RDONLY | O_DIRECTORY);
+    if (dirFd >= 0) {
+        ::fsync(dirFd);
+        ::close(dirFd);
+    }
+
+    destroySource();
+    qInfo().noquote() << "qdwin-binding: capture complete output="
+                      << outputName << "size=" << job.width << "x"
+                      << job.height << "path=" << destPath;
+    return {
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("width"), job.width},
+        {QStringLiteral("height"), job.height},
+        {QStringLiteral("output"), outputName},
+        {QStringLiteral("path"), destPath},
+    };
 }
 
 void QdwinBinding::focusWindow(quint32 handle, const QString &seat) {

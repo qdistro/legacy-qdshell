@@ -22,6 +22,7 @@
 qt6 = import('qt6')
 
 dep_qt6_core           = dependency('Qt6Core')
+dep_qt6_gui            = dependency('Qt6Gui')
 dep_qt6_qml            = dependency('Qt6Qml')
 dep_qt6_qmlintegration = dependency('Qt6QmlIntegration', required: false)
 dep_wayland_client     = dependency('wayland-client')
@@ -50,6 +51,24 @@ qdwin_shell_protocol_code = custom_target(
   'qdwin-shell-v1-private-code',
   input: proto_xml,
   output: 'qdwin-shell-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
+# Weston framebuffer capture protocol. This is an upstream libweston protocol,
+# not a qdistro-private one; keep a verbatim vendored copy beside the sole
+# client so qdistro-protocols remains single-directory-safe in both installed
+# and Meson-uninstalled builds.
+weston_output_capture_xml = files('weston-output-capture.xml')
+weston_output_capture_client_header = custom_target(
+  'weston-output-capture-client-header',
+  input: weston_output_capture_xml,
+  output: 'weston-output-capture-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+weston_output_capture_protocol_code = custom_target(
+  'weston-output-capture-private-code',
+  input: weston_output_capture_xml,
+  output: 'weston-output-capture-protocol.c',
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
@@ -133,6 +152,8 @@ shared_library(
     moc_files,
     qdwin_shell_client_header,
     qdwin_shell_protocol_code,
+    weston_output_capture_client_header,
+    weston_output_capture_protocol_code,
     ext_workspace_client_header,
     ext_workspace_protocol_code,
     wlr_output_mgmt_client_header,
@@ -143,6 +164,7 @@ shared_library(
   dependencies: [
     dep_wayland_client,
     dep_qt6_core,
+    dep_qt6_gui,
     dep_qt6_qml,
     dep_qt6_network,
   ],

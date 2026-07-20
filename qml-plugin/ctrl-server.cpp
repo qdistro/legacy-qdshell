@@ -12,6 +12,7 @@
 
 #include <cstdlib>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 namespace {
@@ -179,6 +180,27 @@ void CtrlServer::handleConnection(QLocalSocket *sock) {
 
     QString line = QString::fromUtf8(data).trimmed();
 
+    const QString cmd = line.section(QLatin1Char(' '), 0, 0);
+    if (cmd == QLatin1String("capture")) {
+        // The shell is an authorized compositor capture client, so its IPC
+        // must not become a same-uid confused deputy. The QGA harness reaches
+        // this socket as root; ordinary/admin peers remain denied even though
+        // the socket's existing 0600 DAC mode permits its owner to connect.
+        struct ucred cred {};
+        socklen_t credLen = sizeof(cred);
+        qintptr fd = sock->socketDescriptor();
+        if (fd < 0 ||
+            ::getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_PEERCRED,
+                         &cred, &credLen) != 0 ||
+            credLen != sizeof(cred) || cred.uid != 0) {
+            sock->write(QByteArrayLiteral(
+                "error: capture requires authenticated root peer\n"));
+            sock->flush();
+            sock->disconnectFromServer();
+            return;
+        }
+    }
+
     QString reply = handleCommand(line);
 
     sock->write((reply + QStringLiteral("\n")).toUtf8());
@@ -203,6 +225,23 @@ QString CtrlServer::handleCommand(const QString &line) {
 
     if (cmd == QLatin1String("status")) {
         return QStringLiteral("ok");
+    }
+
+    if (cmd == QLatin1String("capture")) {
+        const QStringList args = line.split(QLatin1Char(' '),
+                                            Qt::SkipEmptyParts);
+        if (args.size() != 3)
+            return QStringLiteral(
+                "error: usage: capture <output> <absolute-path>");
+        QVariantMap result = binding_.captureOutput(args.at(1), args.at(2));
+        if (!result.value(QStringLiteral("ok")).toBool())
+            return QStringLiteral("error: %1")
+                .arg(result.value(QStringLiteral("error")).toString());
+        return QStringLiteral("ok output=%1 width=%2 height=%3 path=%4")
+            .arg(result.value(QStringLiteral("output")).toString())
+            .arg(result.value(QStringLiteral("width")).toInt())
+            .arg(result.value(QStringLiteral("height")).toInt())
+            .arg(result.value(QStringLiteral("path")).toString());
     }
 
     return QStringLiteral("error: unknown command '%1'").arg(cmd);

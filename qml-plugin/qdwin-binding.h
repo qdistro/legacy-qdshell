@@ -28,6 +28,7 @@
 #include <QVariantMap>
 #include <QVariantList>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -35,7 +36,10 @@ class CtrlServer;
 
 struct wl_display;
 struct wl_registry;
+struct wl_shm;
+struct wl_output;
 struct qdwin_shell_v1;
+struct weston_capture_v1;
 struct ext_workspace_manager_v1;
 struct ext_workspace_group_handle_v1;
 struct ext_workspace_handle_v1;
@@ -273,6 +277,13 @@ public:
         uint sourcePid = 0,
         qulonglong sourceStarttime = 0);
 
+    // v32 dev/test screenshot path. Invoked only by CtrlServer after it has
+    // authenticated a root peer. Returns {ok,width,height,output,path} on
+    // success or {ok:false,error} on failure. The compositor independently
+    // authorizes this exact shell wl_client at capture-task execution time.
+    QVariantMap captureOutput(const QString &outputName,
+                              const QString &destPath);
+
 signals:
     void boundChanged();
     void lastErrorChanged();
@@ -426,11 +437,28 @@ private:
     friend struct QdwinBindingDispatch;
     friend struct QdwinRegistry;
     friend struct QdwinWsDispatch;
+    friend struct QdwinCaptureRegistry;
+    friend struct QdwinCaptureOutputDispatch;
 
     wl_display *display_ = nullptr;
     wl_registry *registry_ = nullptr;
     qdwin_shell_v1 *shell_ = nullptr;
     QSocketNotifier *readNotifier_ = nullptr;
+
+    // Shell-only capture globals. These are discovered through a SECOND
+    // wl_registry created only after bind_as_shell/hello: qdwin's global
+    // filter hid weston_capture_v1 from the initial ordinary-client
+    // enumeration, and Wayland does not replay globals when credentials
+    // change. wl_output v4 supplies stable-per-instance output names.
+    struct CaptureOutput;
+    wl_registry *captureRegistry_ = nullptr;
+    weston_capture_v1 *capture_ = nullptr;
+    wl_shm *captureShm_ = nullptr;
+    uint32_t captureGlobalName_ = 0;
+    uint32_t captureShmGlobalName_ = 0;
+    std::vector<std::unique_ptr<CaptureOutput>> captureOutputs_;
+    bool captureBusy_ = false;
+    void captureTeardownState();
 
     bool bound_ = false;
     QString lastError_;

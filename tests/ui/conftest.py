@@ -4,8 +4,10 @@ Two transports are supported, selected at collection time:
 
   * VM transport (preferred, the qci `gui` gate path): when QDSHELL_UI_VM is
     set, the harness drives the LIVE qdshell session inside an already-running
-    qdwin VM via IPC over wayland-1 and screenshots the VM framebuffer with
-    `virsh screenshot`. This is the validated path — qdshell renders fine in a
+    qdwin VM via IPC over wayland-1 and screenshots qdwin's Virtual-1 output
+    via the in-compositor shell-authorized capture (qdshell's root-only
+    `capture` ctrl verb; `virsh screenshot` only sees the tty console on the
+    headless VMs). This is the validated path — qdshell renders fine in a
     real qdwin session (the headless host nested-compositor SIGSEGVs during
     early FileView load; see
     todo/qdwin-vm/agent-ui-harness-headless-quickshell-crash.md).
