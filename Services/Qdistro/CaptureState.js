@@ -12,8 +12,12 @@
 // PipeWire lands in the one graph qdshell can already read with `pw-dump`.
 //
 // FAIL VISIBLE, NOT FAIL SILENT: what PipeWire gives us is a *positive*
-// signal — a running capture stream in the graph is real capture, attributed
-// to a real client. The *negative* is not trustworthy for ANY kind today:
+// signal — selected running nodes are evidence of capture activity. Where the
+// node is a client stream the client is named; where it is only a running
+// source *device* node the activity is real but the client is NOT
+// established. (qdlocker's copy labels that difference in the UI; this one
+// does not — see the experimental note below.) The *negative* is not
+// trustworthy for ANY kind today:
 //
 //   - camera: a policy-approved fullscreen session can hold a direct device
 //     grant (doc/devices.md) and open `/dev/videoN` without PipeWire.
@@ -37,9 +41,16 @@
 // capture/virtual-input event, or a device-grant registry) — flipping the flag
 // without one is how this becomes a lie. tests/test_capture_state.js pins it.
 //
-// See doc/sessions.md in the qdistro repo for the shipped contract, and
-// qdlocker/qdlocker/indicators.py for the copy that runs on the REAL lock
-// surface (qdshell's own lock screen is the deprecated path).
+// STATUS: EXPERIMENTAL, NOT A LOCK GUARANTEE. The real lock surface is
+// qdlocker (qdlocker/qdlocker/indicators.py); qdshell's own lock screen is the
+// deprecated WlSessionLock path qdwin does not implement, so nothing
+// instantiates this today. It is NOT equivalent to qdlocker's copy: that one
+// streams stdout under a hard byte cap, binds every scan callback to the exact
+// process object, labels device-only evidence as unattributed, and counts
+// `Stopping` silos as live egress. Reconcile the two before any consumer
+// (e.g. an unlocked-session bar indicator) instantiates this service.
+//
+// See doc/sessions.md in the qdistro repo for the contract.
 "use strict";
 
 // Ordered for display; also the iteration order of every returned map.

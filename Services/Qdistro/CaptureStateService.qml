@@ -16,12 +16,19 @@ import "CaptureState.js" as CaptureState
 // Services/Qdistro/CaptureState.js first — it documents exactly what this can
 // and cannot see, and why no kind is ever reported as "clear".
 //
-// NOTE ON SURFACES: qdshell's own WlSessionLock lock screen is the DEPRECATED
-// path (qdwin does not implement ext-session-lock; the runtime lock surface is
-// qdlocker, which carries its own copy of this observer in
-// qdlocker/qdlocker/indicators.py). This service exists for that legacy panel
-// and as the reusable feed for an unlocked-session indicator; keep the two
-// derivations in step.
+// STATUS: EXPERIMENTAL. qdshell's own WlSessionLock lock screen is the
+// DEPRECATED path (qdwin does not implement ext-session-lock; the runtime lock
+// surface is qdlocker, which carries the maintained copy of this observer in
+// qdlocker/qdlocker/indicators.py). Nothing instantiates this singleton today.
+// Known gaps versus qdlocker's copy, to fix before any consumer arrives:
+//   * stdout is buffered whole and only then size-checked, instead of being
+//     streamed under the cap;
+//   * the completion handlers read the CURRENT _launchGen rather than the
+//     generation their own process was launched with, so a late exit from a
+//     killed scan can pair with the next scan's stdout (a truncated pair fails
+//     the parse, which is why this is a defect and not a live hole);
+//   * device-only evidence is not labelled as unattributed in the UI;
+//   * `Stopping` silos are not counted as live egress by SiloEgress.js.
 Singleton {
   id: root
 
@@ -142,8 +149,8 @@ Singleton {
     _derive();
   }
 
-  // A failed scan does NOT refresh the reading; the previous one keeps ageing
-  // out into "unverified" on its own clock.
+  // A failed scan drops the reading outright: the state goes to "unverified"
+  // immediately rather than letting a previous reading stand.
   function _fail() {
     parsed = { ok: false, nodes: [] };
     hasReading = false;
