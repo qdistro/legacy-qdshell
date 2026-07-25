@@ -6,29 +6,54 @@ import Quickshell.Io
 import qs.Commons
 import "CaptureState.js" as CaptureState
 
-// Live-capture observer feeding the non-suppressible lock-screen indicators
-// (J28). Same shape as SiloEgressService: one poll process, one monitor
-// process that coalesces into a refresh, one slow safety timer.
+// Live-capture observer for the lock-screen indicators (J28). Same shape as
+// SiloEgressService: one scan process, one monitor process that coalesces into
+// a scan, one slow safety timer.
 //
-// The graph is read with `pw-dump` because PipeWire is the only place qdistro
-// can see capture across silos today (silos get a bind-mounted view of admin's
-// pipewire socket). Read Services/Qdistro/CaptureState.js before changing any
-// of this — it documents exactly which negatives are trustworthy and which
-// must stay "unverified".
+// The graph is read with `pw-dump` because PipeWire is the widest capture
+// observation point qdistro has today (silos get a bind-mounted view of
+// admin's pipewire socket and per-session daemons link upward into it). Read
+// Services/Qdistro/CaptureState.js first — it documents exactly what this can
+// and cannot see, and why no kind is ever reported as "clear".
+//
+// NOTE ON SURFACES: qdshell's own WlSessionLock lock screen is the DEPRECATED
+// path (qdwin does not implement ext-session-lock; the runtime lock surface is
+// qdlocker, which carries its own copy of this observer in
+// qdlocker/qdlocker/indicators.py). This service exists for that legacy panel
+// and as the reusable feed for an unlocked-session indicator; keep the two
+// derivations in step.
 Singleton {
   id: root
 
-  // A scan older than this is not evidence of anything; every kind falls back
-  // to "unverified" so a wedged observer can never read as a quiet machine.
+  // A reading older than this is not evidence of anything: every kind falls
+  // back to "unverified" so a wedged observer cannot read as a quiet machine.
   readonly property int staleAfterMs: 15000
   readonly property int pollIntervalMs: 5000
+  // A scan that has not finished by then is presumed wedged and killed.
+  readonly property int scanTimeoutMs: 4000
+  // pw-dump on a sane graph is well under a megabyte; anything past this is
+  // treated as a failed observation rather than parsed on the UI thread.
+  readonly property int maxDumpBytes: 8000000
 
   property bool refreshInFlight: false
-  property double lastOkMs: 0
-  property double nowMs: Date.now()
-  readonly property bool fresh: lastOkMs > 0 && (nowMs - lastOkMs) <= staleAfterMs
+  // Age is counted in timer ticks, not wall clock, so a clock correction
+  // cannot make a dead observer look fresh (a backwards jump would otherwise
+  // extend the trusted window indefinitely).
+  property int ageMs: 0
+  property bool hasReading: false
+  readonly property bool fresh: hasReading && ageMs <= staleAfterMs
 
-  // Last parse result, kept so a freshness expiry can re-derive without a scan.
+  // Bumped on every scan launch and on every markStale(). A scan's output is
+  // only accepted while its launch generation is still current, so output from
+  // a scan that started before the lock (or before a kill) is discarded rather
+  // than stamped as the current reading.
+  property int generation: 0
+  property int _launchGen: -1
+  property var _pendingText: null
+  property var _pendingExit: null
+
+  // Last accepted parse result, kept so a freshness expiry can re-derive
+  // without a scan.
   property var parsed: ({ ok: false, nodes: [] })
 
   // Derived state (see CaptureState.summarise).
@@ -52,21 +77,77 @@ Singleton {
     _monitor.running = true;
   }
 
-  // Drop the trust in the last scan. Callers that must not inherit pre-lock
-  // state (the lock surface) call this before refresh() so the indicator reads
-  // "unverified" until a scan taken AFTER the lock lands.
+  // Drop trust in the last reading AND in any scan already in flight. Callers
+  // that must not inherit pre-lock state (the lock surface) call this before
+  // refresh(), so the indicator reads "unverified" until a scan that started
+  // after the lock has landed.
   function markStale() {
-    lastOkMs = 0;
+    generation++;
+    hasReading = false;
+    ageMs = 0;
+    _pendingText = null;
+    _pendingExit = null;
+    parsed = { ok: false, nodes: [] };
     _derive();
   }
 
   function refresh() {
+    generation++;
+    _launchGen = generation;
+    _pendingText = null;
+    _pendingExit = null;
     _scan.running = false;
+    // `exec` so the kill on timeout reaches pw-dump itself and cannot leave an
+    // orphan holding the pipe. No `|| true`: a nonzero exit must stay visible
+    // to the exit handler.
     _scan.command = ["sh", "-c",
-      "command -v pw-dump >/dev/null 2>&1 || exit 0; " +
-      "pw-dump 2>/dev/null || true"];
+      "command -v pw-dump >/dev/null 2>&1 || exit 127; exec pw-dump"];
     refreshInFlight = true;
+    _scanTimeout.restart();
     _scan.running = true;
+  }
+
+  // Accept a completed scan only once BOTH its stdout and its exit status are
+  // in, and only while its generation is still current.
+  function _tryAccept(gen) {
+    if (gen !== generation || gen !== _launchGen)
+      return;
+    if (_pendingText === null || _pendingExit === null)
+      return;
+    refreshInFlight = false;
+    _scanTimeout.stop();
+    const exitCode = _pendingExit;
+    const raw = _pendingText;
+    _pendingText = null;
+    _pendingExit = null;
+    if (exitCode !== 0) {
+      Logger.w("CaptureStateService", "pw-dump exited", exitCode);
+      _fail();
+      return;
+    }
+    if (raw.length > maxDumpBytes) {
+      Logger.w("CaptureStateService", "pw-dump output too large", raw.length);
+      _fail();
+      return;
+    }
+    const next = CaptureState.parsePwDump(raw);
+    if (!next.ok) {
+      Logger.w("CaptureStateService", "pw-dump produced no usable graph");
+      _fail();
+      return;
+    }
+    parsed = next;
+    hasReading = true;
+    ageMs = 0;
+    _derive();
+  }
+
+  // A failed scan does NOT refresh the reading; the previous one keeps ageing
+  // out into "unverified" on its own clock.
+  function _fail() {
+    parsed = { ok: false, nodes: [] };
+    hasReading = false;
+    _derive();
   }
 
   function _derive() {
@@ -85,37 +166,45 @@ Singleton {
     indicatorVisible = s.visible;
   }
 
-  // Freshness is time-dependent, so re-derive on every tick of the clock we
-  // keep for it rather than only when a scan completes.
   onFreshChanged: _derive()
 
   Process {
     id: _scan
     stdout: StdioCollector {
       onStreamFinished: {
-        const raw = (this.text || "").trim();
-        root.refreshInFlight = false;
-        const next = CaptureState.parsePwDump(raw);
-        root.parsed = next;
-        // Only a usable graph refreshes the freshness clock; a failed scan
-        // leaves the old timestamp to expire into "unverified".
-        if (next.ok)
-          root.lastOkMs = Date.now();
-        else
-          Logger.w("CaptureStateService", "pw-dump produced no usable graph");
-        root.nowMs = Date.now();
-        root._derive();
+        root._pendingText = String(this.text || "");
+        root._tryAccept(root._launchGen);
       }
     }
     stderr: StdioCollector {}
-    onExited: function () {
-      root.refreshInFlight = false;
+    onExited: function (exitCode) {
+      root._pendingExit = Number(exitCode);
+      root._tryAccept(root._launchGen);
     }
   }
 
-  // pw-mon prints a line per graph change (node added/removed/state change), so
-  // a capture starting while locked is picked up in well under a second instead
-  // of waiting for the poll. Output is chatty, hence the coalescing timer.
+  // A scan that never finishes must not hold the indicator in a "last good
+  // reading" state: kill it and let the reading age out.
+  Timer {
+    id: _scanTimeout
+    interval: root.scanTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.refreshInFlight)
+        return;
+      Logger.w("CaptureStateService", "pw-dump timed out; killing scan");
+      root.generation++;
+      root.refreshInFlight = false;
+      root._pendingText = null;
+      root._pendingExit = null;
+      _scan.running = false;
+      root._fail();
+    }
+  }
+
+  // pw-mon prints on graph changes (node added/removed/state change), so a
+  // capture starting while locked is picked up without waiting for the poll.
+  // Output is chatty, hence the coalescing timer.
   Process {
     id: _monitor
     running: false
@@ -148,13 +237,16 @@ Singleton {
     onTriggered: root.refresh()
   }
 
-  // Drives the freshness computation between scans.
+  // Drives the (tick-counted) age used for freshness.
   Timer {
-    id: _freshTick
+    id: _ageTick
     interval: 1000
     repeat: true
     running: true
-    onTriggered: root.nowMs = Date.now()
+    onTriggered: {
+      if (root.hasReading)
+        root.ageMs += interval;
+    }
   }
 
   Timer {

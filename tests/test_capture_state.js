@@ -25,8 +25,14 @@ assert.strictEqual(C.parsePwDump(null).ok, false);
 assert.strictEqual(C.parsePwDump(undefined).ok, false);
 assert.strictEqual(C.parsePwDump("not json").ok, false);
 assert.strictEqual(C.parsePwDump('{"id":1}').ok, false, "a non-array dump is not a graph");
-assert.strictEqual(C.parsePwDump("[]").ok, true, "an empty array IS a successful observation");
-assert.deepStrictEqual(C.parsePwDump("[]").nodes, []);
+// A real dump always carries PipeWire objects. An empty array, an array of
+// empty objects, or unrelated JSON is a FAILED observation, not a quiet graph —
+// otherwise a redacted/truncated/mocked dump could stand in for one.
+assert.strictEqual(C.parsePwDump("[]").ok, false, "an empty array is not a graph");
+assert.strictEqual(C.parsePwDump("[{}]").ok, false);
+assert.strictEqual(C.parsePwDump('[{"type":"something-else"}]').ok, false);
+assert.strictEqual(C.parsePwDump('[{"type":"PipeWire:Interface:Core","id":0}]').ok, true,
+  "a graph with no nodes but real PipeWire objects IS an observation");
 
 const mixed = C.parsePwDump(dump([
   { type: "PipeWire:Interface:Link", id: 7 },
@@ -88,6 +94,30 @@ assert.strictEqual(
 assert.strictEqual(
   C.classifyNode({ state: "running", props: { "media.class": "Audio/Sink" } }), null);
 
+// Capture that reaches admin's graph without a recognisable stream node: a
+// running source device is itself evidence (per-session PipeWire daemons link
+// upward into admin's graph, so the client-side node may not be visible here).
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.class": "Audio/Source", "node.description": "Built-in Mic" } }).kind,
+  "microphone");
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.class": "Video/Source", "node.name": "cam0" } }).kind,
+  "camera");
+// Capture-shaped but unclassifiable nodes are still reported, never dropped.
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.class": "Stream/Input", "application.name": "mystery" } }).kind,
+  "unattributed");
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.category": "Capture", "application.name": "mystery" } }).kind,
+  "unattributed");
+// media.type disambiguates a class-less capture node.
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.category": "Capture", "media.type": "Audio" } }).kind,
+  "microphone");
+assert.strictEqual(
+  C.classifyNode({ state: "running", props: { "media.category": "Capture", "media.type": "Video" } }).kind,
+  "screencast");
+
 // ─── entries: dedupe + ordering ─────────────────────────────────────────────
 const entries = C.captureEntries(C.parsePwDump(dump([
   node("running", { "media.class": "Stream/Input/Video", "application.name": "obs" }),
@@ -122,17 +152,23 @@ assert.strictEqual(stale.anyActive, false, "stale evidence is not live evidence"
 assert.deepStrictEqual(stale.unverifiedKinds, C.KINDS);
 assert.strictEqual(stale.visible, true);
 
-// 3. Healthy observer, quiet graph → only the kinds with an authoritative
-//    negative may go clear; the blind-spot kinds stay unverified.
-const quiet = C.summarise(C.parsePwDump("[]"), { fresh: true });
+// 3. Healthy observer, quiet graph → still no all-clear. No kind has an
+//    authoritative negative today (direct /dev/snd and /dev/video grants,
+//    weston_capture_v1 grabs, per-session PipeWire daemons linking upward, and
+//    virtual input with no observer at all), so a quiet graph reads
+//    "unverified" everywhere rather than "nothing is capturing".
+const quiet = C.summarise(C.parsePwDump('[{"type":"PipeWire:Interface:Core","id":0}]'), { fresh: true });
 assert.strictEqual(quiet.observerOk, true);
 assert.strictEqual(quiet.anyActive, false);
-assert.strictEqual(quiet.kinds.microphone.state, "clear");
-assert.strictEqual(quiet.kinds.systemAudio.state, "clear");
-assert.deepStrictEqual(quiet.unverifiedKinds, ["camera", "screencast", "virtualInput"]);
-assert.strictEqual(quiet.unverifiedLabel, "camera, screen, virtual input");
+assert.deepStrictEqual(quiet.unverifiedKinds, C.KINDS);
+assert.strictEqual(quiet.unverifiedLabel,
+  "mic, camera, screen, system audio, virtual input, capture");
 assert.strictEqual(quiet.visible, true,
-  "virtual input has no observer at all, so the cluster is never suppressed");
+  "the cluster is never suppressed while anything is unverified");
+C.KINDS.forEach(function (k) {
+  assert.notStrictEqual(quiet.kinds[k].state, "clear",
+    k + " must not claim an all-clear it cannot observe");
+});
 
 // 4. Live capture → active kinds, counts, and a truncated label.
 const live = C.summarise(C.parsePwDump(dump([
@@ -149,10 +185,10 @@ assert.strictEqual(live.activeDetail, "mic:zoom, camera:zoom, screen:weston");
 assert.strictEqual(live.kinds.microphone.state, "active");
 assert.strictEqual(live.kinds.microphone.count, 1);
 assert.strictEqual(live.kinds.camera.detail, "camera:zoom");
-// systemAudio saw nothing but has an authoritative negative; virtualInput never
-// does, so the "?" row is still shown alongside the active rows.
-assert.strictEqual(live.kinds.systemAudio.state, "clear");
-assert.deepStrictEqual(live.unverifiedKinds, ["virtualInput"]);
+// The kinds with no evidence stay unverified alongside the active rows: an
+// active mic does not license an implicit "and nothing else is capturing".
+assert.strictEqual(live.kinds.systemAudio.state, "unverified");
+assert.deepStrictEqual(live.unverifiedKinds, ["systemAudio", "virtualInput", "unattributed"]);
 assert.strictEqual(live.anyUnverified, true);
 
 // 5. A kind that IS active is never simultaneously reported unverified.
@@ -168,17 +204,18 @@ C.KINDS.forEach(function (k) {
   assert.ok(quiet.kinds[k].icon === C.KIND_ICONS[k]);
   assert.ok(typeof C.NEGATIVE_AUTHORITATIVE[k] === "boolean");
 });
-// The blind spots are a deliberate, pinned set — flipping one to "authoritative
-// negative" silently turns a "?" into a silent all-clear, so it must fail here.
-assert.deepStrictEqual(
-  C.KINDS.filter(k => !C.NEGATIVE_AUTHORITATIVE[k]),
-  ["camera", "screencast", "virtualInput"]);
+// Pinned: NO kind may claim an authoritative negative. Flipping one turns a
+// visible "?" into a silent all-clear, which needs a real authoritative feed
+// (a qdwin capture/virtual-input event, or a device-grant registry) first.
+assert.deepStrictEqual(C.KINDS.filter(k => C.NEGATIVE_AUTHORITATIVE[k]), []);
 
 // 7. Defaults: summarise() with no opts treats the reading as fresh, and a
 //    missing/garbage parse result still fails visible.
 assert.strictEqual(C.summarise(null).observerOk, false);
 assert.deepStrictEqual(C.summarise(undefined).unverifiedKinds, C.KINDS);
-assert.strictEqual(C.summarise(C.parsePwDump("[]")).kinds.microphone.state, "clear");
+assert.strictEqual(
+  C.summarise(C.parsePwDump('[{"type":"PipeWire:Interface:Core","id":0}]')).kinds.microphone.state,
+  "unverified");
 
 // ─── lock-panel wiring ──────────────────────────────────────────────────────
 // Host qmllint cannot resolve the `qs.*` module imports (that needs a GUI VM),
@@ -212,12 +249,35 @@ captureVisibility.forEach(function (line) {
     "capture indicators must not be gated by a settings toggle: " + line.trim());
 });
 
-// The service must never let a failed scan refresh the freshness clock, and
-// must have a stale horizon at all.
-assert.ok(/if \(next\.ok\)\s*\n\s*root\.lastOkMs = Date\.now\(\);/.test(service),
-  "only a usable graph may refresh the freshness clock");
-assert.ok(/readonly property bool fresh: lastOkMs > 0 &&/.test(service),
-  "freshness must require a successful scan to have happened");
+// A blanked output (lockScreenMonitors excludes it) must still carry the
+// indicators — otherwise a cosmetic setting suppresses a security signal.
+const lockScreen = fs.readFileSync(
+  path.join(ROOT, "Modules", "LockScreen", "LockScreen.qml"), "utf8");
+const blackComponent = lockScreen.slice(lockScreen.indexOf("id: blackScreenComponent"));
+assert.ok(blackComponent.includes("LockSecurityIndicators"),
+  "the blacked-out lock output must still render the security indicators");
+assert.ok(fs.existsSync(path.join(ROOT, "Modules", "LockScreen", "LockSecurityIndicators.qml")));
+
+// Observer invariants that keep the indicator honest across scans:
+assert.ok(/readonly property bool fresh: hasReading && ageMs <= staleAfterMs/.test(service),
+  "freshness must require a reading that has not aged out");
+assert.ok(/root\.ageMs \+= interval;/.test(service) && !/Date\.now\(\)/.test(service),
+  "age must be counted in timer ticks, not wall clock (a clock jump must not " +
+  "extend the trusted window)");
+assert.ok(/if \(gen !== generation \|\| gen !== _launchGen\)\s*\n\s*return;/.test(service),
+  "a scan launched before the last markStale()/refresh() must be discarded");
+assert.ok(/if \(exitCode !== 0\)/.test(service) &&
+          /_pendingText === null \|\| _pendingExit === null/.test(service),
+  "a scan is accepted only on a zero exit AND complete stdout");
+assert.ok(/raw\.length > maxDumpBytes/.test(service),
+  "oversized output must be rejected, not parsed on the UI thread");
+assert.ok(/exec pw-dump/.test(service) && !/pw-dump \|\| true/.test(service),
+  "the scanner must be the direct child (so a kill reaches it) and must not " +
+  "mask its exit status");
+assert.ok(/id: _scanTimeout/.test(service) && /_scan\.running = false;/.test(service),
+  "a wedged scan must be killed rather than left holding the reading");
+assert.ok(/function markStale\(\) \{\s*\n\s*generation\+\+;/.test(service),
+  "markStale must invalidate in-flight scans, not just the stored reading");
 
 console.log("capture-state: all assertions passed");
 process.exit(0);
