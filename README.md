@@ -1,8 +1,8 @@
 # qdshell
 
-A Wayland desktop shell for [qdistro](https://codeberg.org/qdistro/qdistro)
+A Wayland desktop shell for [qdistro](https://github.com/qdistro/qdistro)
 — bar, panels, launcher, notifications, OSD, and settings — running on
-top of the [qdwin](https://codeberg.org/qdistro/qdwin) compositor.
+top of the [qdwin](https://github.com/qdistro/qdwin) compositor.
 
 ## Role in qdistro
 
@@ -47,7 +47,7 @@ qdistro-org/
 └── qdshell/     ← this repo
 ```
 
-See the [qdistro umbrella README](https://codeberg.org/qdistro/qdistro)
+See the [qdistro umbrella README](https://github.com/qdistro/qdistro)
 for the full clone sequence.
 
 ## Build & run
