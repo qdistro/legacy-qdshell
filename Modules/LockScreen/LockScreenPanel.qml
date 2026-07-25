@@ -26,6 +26,14 @@ Item {
   readonly property bool animationsEnabled: Settings.data.general.lockScreenAnimations || false
 
   Component.onCompleted: {
+    // The lock surface must re-observe capture state AFTER the lock rather
+    // than inherit a reading taken while the machine was still unlocked
+    // (sessions.md). markStale() forces the indicators to "unverified" until a
+    // post-lock scan lands, so a capture that stopped/started across the lock
+    // edge can never be shown as settled state from the wrong side of it.
+    CaptureStateService.markStale();
+    CaptureStateService.refresh();
+
     if (Settings.data.general.autoStartAuth) {
       doUnlock();
     }
@@ -114,19 +122,18 @@ Item {
   // Compact status indicators container (compact mode only)
   Rectangle {
     width: {
-      var hasBattery = batteryIndicator.isReady;
-      var hasKeyboard = keyboardLayout.currentLayout !== "Unknown";
-      var hasEgress = SiloEgressService.active;
-
-      if (hasBattery && hasKeyboard && hasEgress) {
-        return 360;
-      } else if ((hasBattery && hasKeyboard) || (hasBattery && hasEgress) || (hasKeyboard && hasEgress)) {
-        return 260;
-      } else if (hasBattery || hasKeyboard || hasEgress) {
-        return 150;
-      } else {
-        return 0;
-      }
+      // Same 150 / +105-per-extra ladder as before, generalised so the
+      // live-capture cluster can join battery / keyboard / egress.
+      var slots = 0;
+      if (batteryIndicator.isReady)
+        slots++;
+      if (keyboardLayout.currentLayout !== "Unknown")
+        slots++;
+      if (SiloEgressService.active)
+        slots++;
+      if (CaptureStateService.indicatorVisible)
+        slots++;
+      return slots === 0 ? 0 : 150 + (slots - 1) * 105;
     }
     height: 40
     anchors.horizontalCenter: parent.horizontalCenter
@@ -135,7 +142,7 @@ Item {
     topLeftRadius: Style.radiusL
     topRightRadius: Style.radiusL
     color: Color.mSurface
-    visible: Settings.data.general.compactLockScreen && ((batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown" || SiloEgressService.active)
+    visible: Settings.data.general.compactLockScreen && ((batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown" || SiloEgressService.active || CaptureStateService.indicatorVisible)
 
     RowLayout {
       anchors.centerIn: parent
@@ -192,6 +199,28 @@ Item {
         NText {
           text: SiloEgressService.activeCount + " net"
           color: Color.mOnSurfaceVariant
+          pointSize: Style.fontSizeM
+          elide: Text.ElideRight
+        }
+      }
+
+      // Live-capture indicator (mic / camera / screencast / system audio /
+      // virtual input). Non-suppressible: no Settings flag gates it, and it
+      // stays on screen while any kind is merely UNVERIFIED, so a blind spot
+      // reads as a visible "?" rather than as silence.
+      RowLayout {
+        spacing: 6
+        visible: CaptureStateService.indicatorVisible
+
+        NIcon {
+          icon: CaptureStateService.anyActive ? "alert-triangle" : "question-mark"
+          pointSize: Style.fontSizeM
+          color: CaptureStateService.anyActive ? Color.mError : Color.mOnSurfaceVariant
+        }
+
+        NText {
+          text: (CaptureStateService.anyActive ? CaptureStateService.activeCount + " cap" : "cap") + (CaptureStateService.anyUnverified ? " ?" : "")
+          color: CaptureStateService.anyActive ? Color.mError : Color.mOnSurfaceVariant
           pointSize: Style.fontSizeM
           elide: Text.ElideRight
         }
@@ -483,7 +512,10 @@ Item {
         ColumnLayout {
           Layout.alignment: (batteryIndicator.isReady) ? (Qt.AlignRight | Qt.AlignVCenter) : Qt.AlignVCenter
           spacing: Style.marginM
-          visible: (batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown"
+          // Egress and capture must be able to carry this column on their own:
+          // a locked machine with no battery and a single keyboard layout still
+          // has to show what is live.
+          visible: (batteryIndicator.isReady) || keyboardLayout.currentLayout !== "Unknown" || SiloEgressService.active || CaptureStateService.indicatorVisible
 
           // Battery
           RowLayout {
@@ -535,6 +567,55 @@ Item {
 
             NText {
               text: SiloEgressService.label
+              color: Color.mOnSurfaceVariant
+              pointSize: Style.fontSizeM
+              elide: Text.ElideRight
+              Layout.maximumWidth: 220
+            }
+          }
+
+          // Live capture, one labelled row per ACTIVE kind (mic, camera,
+          // screencast, system audio, virtual input).
+          Repeater {
+            model: CaptureStateService.activeKinds
+
+            RowLayout {
+              readonly property var entry: CaptureStateService.kinds[modelData] || ({})
+              spacing: Style.marginXS
+
+              NIcon {
+                icon: entry.icon || "alert-triangle"
+                pointSize: Style.fontSizeM
+                color: Color.mError
+              }
+
+              NText {
+                text: entry.detail || entry.label || ""
+                color: Color.mError
+                pointSize: Style.fontSizeM
+                elide: Text.ElideRight
+                Layout.maximumWidth: 220
+              }
+            }
+          }
+
+          // Blind spots, stated out loud. A kind lands here when qdistro has no
+          // authoritative feed for its NEGATIVE case (camera opened straight on
+          // /dev/videoN, a weston_capture_v1 grab, virtual input — which has no
+          // observer at all) or when the observer itself is dead/stale. Showing
+          // "?" is the whole point: an unobserved machine must not look quiet.
+          RowLayout {
+            spacing: Style.marginXS
+            visible: CaptureStateService.anyUnverified
+
+            NIcon {
+              icon: "question-mark"
+              pointSize: Style.fontSizeM
+              color: Color.mOnSurfaceVariant
+            }
+
+            NText {
+              text: "unverified: " + CaptureStateService.unverifiedLabel
               color: Color.mOnSurfaceVariant
               pointSize: Style.fontSizeM
               elide: Text.ElideRight
