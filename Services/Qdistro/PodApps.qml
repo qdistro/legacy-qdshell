@@ -25,9 +25,10 @@ Singleton {
 
     // ---- Configuration ----------------------------------------------------
     readonly property string cacheRoot: "/var/lib/qdistro/podapps"
-    // Spawn helper path. Resolved at runtime; if the user runs from a
-    // dev tree, qdistro/tier2/spawn-tier2.sh works too — we shell out.
-    readonly property string spawnHelper: "qdistro-tier2-spawn"
+    // The session manager owns pod-app launches (see launch() below).
+    readonly property string sessionBus: "org.qdistro.SessionManager1"
+    readonly property string sessionPath: "/org/qdistro/SessionManager1"
+    readonly property string sessionIface: "org.qdistro.SessionManager1"
 
     // ---- Public model -----------------------------------------------------
     // Each row: { appId, container, workload, name, iconName, comment,
@@ -246,10 +247,22 @@ Singleton {
     }
 
     // ---- Launch -----------------------------------------------------------
-    // Called from Launcher / Taskbar click handlers. Forks spawn-tier2.sh
-    // with the right args; the helper emits LAUNCH_TOKEN= on its
-    // stdout. We add a placeholder immediately keyed on that token, then
-    // resolve it on toplevel_security_context.
+    // Called from Launcher / Taskbar click handlers.
+    //
+    // We do NOT fork spawn-tier2 ourselves. qdshell is the unprivileged admin
+    // session, so a spawn forked from here has no root launcher parent — which
+    // is exactly what qdistro-secctx-exec needs in order to stamp the app's
+    // identity on the Wayland wire. Forked from here, spawn-tier2 took its
+    // un-tagged branch (window arrives with no wp_security_context_v1 at all,
+    // so nothing can tell the compositor which silo/app it is) and on a
+    // hardened profile it refused the launch outright — clicking a pod app did
+    // nothing. Instead we ask the session manager (root), which starts
+    // qdistro-podapp@<token>.service and hands spawn-tier2 the root-launcher
+    // topology. See qdistro/session_manager/qdistro-podapp@.service.
+    //
+    // The D-Bus reply carries the launch token — the secctx instance-id the
+    // window will arrive with — so placeholder resolution needs no access to
+    // spawn-tier2's stdout (under a unit that is the journal, not our pipe).
     function launch(row) {
         if (!row || !row.appId) return;
         let argv = [];
@@ -258,12 +271,15 @@ Singleton {
             Logger.w("PodApps", "launch: empty execArgv for " + row.appId);
             return;
         }
-        // Build: spawn-tier2.sh <container> <workload> -- <argv...>
-        const cmd = [root.spawnHelper, row.container,
-                     row.workload || "weston-terminal", "--"].concat(argv);
 
         const proc = launchProcessComp.createObject(root, {
-            "command": cmd,
+            "command": ["gdbus", "call", "--system",
+                        "--dest", root.sessionBus,
+                        "--object-path", root.sessionPath,
+                        "--method", root.sessionIface + ".LaunchPodApp",
+                        row.container,
+                        row.workload || "weston-terminal",
+                        JSON.stringify(argv)],
             "_appId":    row.appId,
             "_name":     row.name,
             "_iconName": row.iconName || "",
@@ -274,14 +290,11 @@ Singleton {
 
     // Internal helper Process component. One per launch.
     //
-    // Lifecycle subtlety: spawn-tier2.sh stays in the foreground for
-    // the container's lifetime (per its own header comment — backgrounding
-    // the helper would tear down the wp_security_context_v1 tag before
-    // the inner weston connects). That means stdout stays open the whole
-    // time, so we cannot wait for streamFinished to read LAUNCH_TOKEN.
-    // SplitParser delivers lines as they arrive; we register the
-    // placeholder on the first LAUNCH_TOKEN line, then leave the Process
-    // alive until the container exits (onExited destroys it).
+    // Unlike the old direct spawn (which stayed in the foreground for the
+    // container's lifetime, so its stdout never closed and the token had to be
+    // read line-by-line), this is a short D-Bus call that exits as soon as the
+    // unit has been started — so we can collect stdout whole. gdbus prints a
+    // GVariant tuple, `('<32 hex>',)`.
     Component {
         id: launchProcessComp
         Process {
@@ -290,30 +303,33 @@ Singleton {
             property string _name
             property string _iconName
             property string _silo
-            property bool   _tokenSeen: false
-            stdout: SplitParser {
-                onRead: data => {
-                    const m = String(data).match(/^LAUNCH_TOKEN=([0-9a-fA-F]+)/);
-                    if (m && !launchProc._tokenSeen) {
-                        launchProc._tokenSeen = true;
-                        root._registerPlaceholder(m[1], launchProc._appId,
-                                                  launchProc._name,
-                                                  launchProc._iconName,
-                                                  launchProc._silo);
-                    }
+            stdout: StdioCollector { id: launchOut }
+            stderr: StdioCollector { id: launchErr }
+            onExited: (code, status) => {
+                const err = String(launchErr.text || "").trim();
+                if (code !== 0) {
+                    Logger.w("PodApps", "launch: LaunchPodApp failed for "
+                                        + launchProc._appId + " (exit " + code
+                                        + ")" + (err ? ": " + err : ""));
+                    launchProc.destroy();
+                    return;
                 }
-            }
-            stderr: SplitParser {
-                onRead: data => {
-                    if (data && String(data).length > 0)
-                        Logger.w("PodApps", "spawn stderr (" + launchProc._appId
-                                            + "): " + data);
+                if (err)
+                    Logger.w("PodApps", "launch stderr (" + launchProc._appId
+                                        + "): " + err);
+                // Anchor on the tuple so a stray log line cannot be mistaken
+                // for the reply; the token shape is the daemon's contract.
+                const m = String(launchOut.text || "").match(/\('([0-9a-f]{32})',\)/);
+                if (!m) {
+                    Logger.w("PodApps", "launch: no launch token in LaunchPodApp "
+                                        + "reply for " + launchProc._appId);
+                    launchProc.destroy();
+                    return;
                 }
-            }
-            onExited: {
-                if (!launchProc._tokenSeen)
-                    Logger.w("PodApps", "launch: no LAUNCH_TOKEN before spawn exit for "
-                                        + launchProc._appId);
+                root._registerPlaceholder(m[1], launchProc._appId,
+                                          launchProc._name,
+                                          launchProc._iconName,
+                                          launchProc._silo);
                 launchProc.destroy();
             }
         }
