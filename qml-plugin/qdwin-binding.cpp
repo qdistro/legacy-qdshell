@@ -78,7 +78,10 @@ namespace {
 // XWayland WM_CLASS that becomes available after toplevel_added.
 // Bump to 32 for prepare_output_capture, the full-damage half of the
 // shell-authorized framebuffer capture path.
-constexpr uint32_t kBindVersion = 32;
+// Bump to 33 for capture_served_stale, the retained-frame stale-serve
+// notification (the delivered capture pixels are the last composited frame,
+// not a fresh repaint).
+constexpr uint32_t kBindVersion = 33;
 constexpr int kCaptureTimeoutMs = 8000;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
@@ -235,6 +238,17 @@ struct QdwinBindingDispatch {
                                 uint32_t handle, const char *app_id) {
         auto *b = static_cast<QdwinBinding *>(d);
         emit b->toplevelAppId(handle, qstr(app_id));
+    }
+    static void capture_served_stale(void *d, qdwin_shell_v1 *,
+                                     const char *output_name, uint32_t age_ms,
+                                     uint32_t msc) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        b->captureStaleServed_ = true;
+        b->captureStaleAgeMs_ = age_ms;
+        b->captureStaleMsc_ = msc;
+        qWarning().noquote()
+            << "qdwin-binding: capture served STALE retained frame output="
+            << qstr(output_name) << "age_ms=" << age_ms << "msc=" << msc;
     }
     static void toplevel_removed(void *d, qdwin_shell_v1 *, uint32_t handle) {
         auto *b = static_cast<QdwinBinding *>(d);
@@ -431,6 +445,7 @@ static const qdwin_shell_v1_listener kShellListener = {
     .popup_button              = QdwinBindingDispatch::popup_button,
     .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
     .toplevel_app_id           = QdwinBindingDispatch::toplevel_app_id,
+    .capture_served_stale      = QdwinBindingDispatch::capture_served_stale,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------
@@ -1180,7 +1195,10 @@ bool QdwinBinding::flushAfterRequest(const char *requestName) {
 }
 
 QVariantMap QdwinBinding::captureOutput(const QString &outputName,
-                                        const QString &destPath) {
+                                        const QString &destPath,
+                                        int timeoutMs) {
+    const int captureTimeoutMs =
+        (timeoutMs > 0) ? timeoutMs : kCaptureTimeoutMs;
     auto failure = [](const QString &error) {
         qWarning().noquote() << "qdwin-binding: capture failed:" << error;
         return QVariantMap{
@@ -1192,6 +1210,9 @@ QVariantMap QdwinBinding::captureOutput(const QString &outputName,
     if (captureBusy_)
         return failure(QStringLiteral("capture already in progress"));
     captureBusy_ = true;
+    captureStaleServed_ = false;
+    captureStaleAgeMs_ = 0;
+    captureStaleMsc_ = 0;
     struct BusyReset {
         bool &busy;
         ~BusyReset() { busy = false; }
@@ -1345,10 +1366,10 @@ QVariantMap QdwinBinding::captureOutput(const QString &outputName,
                 events |= POLLOUT;
             }
 
-            qint64 remaining = kCaptureTimeoutMs - deadline.elapsed();
+            qint64 remaining = captureTimeoutMs - deadline.elapsed();
             if (remaining <= 0) {
                 pumpError = QStringLiteral("capture timed out after %1 ms")
-                                .arg(kCaptureTimeoutMs);
+                                .arg(captureTimeoutMs);
                 return false;
             }
             pollfd pfd{wl_display_get_fd(display_), events, 0};
@@ -1358,7 +1379,7 @@ QVariantMap QdwinBinding::captureOutput(const QString &outputName,
             } while (rc < 0 && errno == EINTR);
             if (rc == 0) {
                 pumpError = QStringLiteral("capture timed out after %1 ms")
-                                .arg(kCaptureTimeoutMs);
+                                .arg(captureTimeoutMs);
                 return false;
             }
             if (rc < 0) {
@@ -1569,13 +1590,19 @@ QVariantMap QdwinBinding::captureOutput(const QString &outputName,
     destroySource();
     qInfo().noquote() << "qdwin-binding: capture complete output="
                       << outputName << "size=" << job.width << "x"
-                      << job.height << "path=" << destPath;
+                      << job.height << "path=" << destPath
+                      << (captureStaleServed_ ? "STALE" : "live");
     return {
         {QStringLiteral("ok"), true},
         {QStringLiteral("width"), job.width},
         {QStringLiteral("height"), job.height},
         {QStringLiteral("output"), outputName},
         {QStringLiteral("path"), destPath},
+        {QStringLiteral("live"), !captureStaleServed_},
+        {QStringLiteral("staleAgeMs"),
+         static_cast<qulonglong>(captureStaleAgeMs_)},
+        {QStringLiteral("staleMsc"),
+         static_cast<qulonglong>(captureStaleMsc_)},
     };
 }
 

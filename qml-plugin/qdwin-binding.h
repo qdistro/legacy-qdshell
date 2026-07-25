@@ -281,8 +281,12 @@ public:
     // authenticated a root peer. Returns {ok,width,height,output,path} on
     // success or {ok:false,error} on failure. The compositor independently
     // authorizes this exact shell wl_client at capture-task execution time.
+    // timeoutMs <= 0 selects the built-in default; the ctrl caller may pass
+    // a larger deadline on a loaded host where 8s of Wayland pump is the
+    // binding constraint the host-side knobs cannot stretch.
     QVariantMap captureOutput(const QString &outputName,
-                              const QString &destPath);
+                              const QString &destPath,
+                              int timeoutMs = 0);
 
 signals:
     void boundChanged();
@@ -458,6 +462,13 @@ private:
     uint32_t captureShmGlobalName_ = 0;
     std::vector<std::unique_ptr<CaptureOutput>> captureOutputs_;
     bool captureBusy_ = false;
+    // v33 capture_served_stale bookkeeping for the in-flight capture: set by
+    // the event handler, consumed by captureOutput()'s reply. A stale serve
+    // means the delivered pixels are the compositor's retained last frame,
+    // not a fresh repaint — the ctrl reply marks them live=0.
+    bool captureStaleServed_ = false;
+    uint32_t captureStaleAgeMs_ = 0;
+    uint32_t captureStaleMsc_ = 0;
     void captureTeardownState();
 
     bool bound_ = false;

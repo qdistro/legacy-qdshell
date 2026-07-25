@@ -230,18 +230,41 @@ QString CtrlServer::handleCommand(const QString &line) {
     if (cmd == QLatin1String("capture")) {
         const QStringList args = line.split(QLatin1Char(' '),
                                             Qt::SkipEmptyParts);
-        if (args.size() != 3)
+        if (args.size() != 3 && args.size() != 4)
             return QStringLiteral(
-                "error: usage: capture <output> <absolute-path>");
-        QVariantMap result = binding_.captureOutput(args.at(1), args.at(2));
+                "error: usage: capture <output> <absolute-path> [timeout-ms]");
+        int timeoutMs = 0;
+        if (args.size() == 4) {
+            bool ok = false;
+            timeoutMs = args.at(3).toInt(&ok);
+            // Bounded so a harness typo cannot park the shell in the capture
+            // pump for minutes; 0 would silently mean "default", so refuse it.
+            if (!ok || timeoutMs < 1000 || timeoutMs > 120000)
+                return QStringLiteral(
+                    "error: timeout-ms must be an integer in [1000, 120000]");
+        }
+        QVariantMap result = binding_.captureOutput(args.at(1), args.at(2),
+                                                    timeoutMs);
         if (!result.value(QStringLiteral("ok")).toBool())
             return QStringLiteral("error: %1")
                 .arg(result.value(QStringLiteral("error")).toString());
-        return QStringLiteral("ok output=%1 width=%2 height=%3 path=%4")
-            .arg(result.value(QStringLiteral("output")).toString())
-            .arg(result.value(QStringLiteral("width")).toInt())
-            .arg(result.value(QStringLiteral("height")).toInt())
-            .arg(result.value(QStringLiteral("path")).toString());
+        QString reply =
+            QStringLiteral("ok output=%1 width=%2 height=%3 path=%4")
+                .arg(result.value(QStringLiteral("output")).toString())
+                .arg(result.value(QStringLiteral("width")).toInt())
+                .arg(result.value(QStringLiteral("height")).toInt())
+                .arg(result.value(QStringLiteral("path")).toString());
+        // Stale-served captures (compositor retained-frame fallback) are
+        // flagged explicitly; the live reply stays byte-identical so older
+        // harness parsers keep working.
+        if (result.contains(QStringLiteral("live")) &&
+            !result.value(QStringLiteral("live")).toBool())
+            reply += QStringLiteral(" live=0 age_ms=%1 msc=%2")
+                         .arg(result.value(QStringLiteral("staleAgeMs"))
+                                  .toULongLong())
+                         .arg(result.value(QStringLiteral("staleMsc"))
+                                  .toULongLong());
+        return reply;
     }
 
     return QStringLiteral("error: unknown command '%1'").arg(cmd);
