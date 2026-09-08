@@ -151,6 +151,13 @@ public:
     // 0=none(restore), 1=left, 2=right.
     Q_INVOKABLE void requestFullscreen(quint32 handle, bool fullscreen);
     Q_INVOKABLE void requestTile(quint32 handle, quint32 tileEdge);
+    // v30 shell-owned floating-window move in global output coordinates.
+    Q_INVOKABLE void requestSetPosition(quint32 handle, qint32 x, qint32 y);
+    // v32 compositor-authoritative RDP input gate. Called only by the
+    // authenticated RemoteDisplayLease transaction, never general shell IPC.
+    Q_INVOKABLE void setRemoteOutputInput(const QString &outputName,
+                                          bool enabled);
+    Q_INVOKABLE void drainRemoteOutputState(const QString &outputName);
     // v19 global hotkey registration (wired at v25 for WM shortcuts).
     // modifiers is a bitmask: ctrl=1, alt=2, super=4, shift=8. key is a
     // linux input keycode. hotkeyPressed(id) fires on each press.
@@ -206,6 +213,11 @@ public:
     // value. `name` is the only required key. Returns false synchronously if
     // the binding has no live manager (no apply attempted).
     Q_INVOKABLE bool applyLayout(const QVariantList &layout, quint32 serial);
+    // Same atomic apply with an opaque caller tag echoed only on
+    // layoutTaggedResult. Used by the display-lease controller so an
+    // unrelated settings-panel transaction cannot satisfy its acknowledgement.
+    Q_INVOKABLE bool applyLayoutTagged(const QVariantList &layout,
+                                       quint32 serial, const QString &tag);
     Q_INVOKABLE bool testLayout(const QVariantList &layout, quint32 serial);
 
     // spec/10 §"compositor-mediated gating" — once the shell has a
@@ -332,6 +344,7 @@ signals:
     // true = succeeded, false = failed or cancelled. On a failed/cancelled
     // apply the compositor reverted; the shell may re-apply the saved layout.
     void layoutResult(bool applied, bool ok, bool cancelled);
+    void layoutTaggedResult(const QString &tag, bool ok, bool cancelled);
 
     // spec/10 §"selection-set event" — fires whenever a client sets
     // the seat selection. Carries the source toplevel handle, the
@@ -403,6 +416,16 @@ signals:
     void nestedProxyPending(quint32 handle,
                             const QString &appId,
                             quint32 originUid);
+    // v31 protected sidecar. qdwin emits this only after exact executable
+    // verification of the remote viewer helper's immutable identity request.
+    void nestedProxyRemoteIdentity(quint32 handle,
+                                   const QString &sourceMachine,
+                                   const QString &trustDomainId,
+                                   const QString &streamId,
+                                   quint64 generation);
+    void remoteOutputInputResult(const QString &outputName,
+                                 bool enabled, bool applied);
+    void remoteOutputDrainResult(const QString &outputName, bool applied);
     void activationPending(quint32 handle,
                            quint32 sourceHandle,
                            quint32 targetHandle,
@@ -537,6 +560,7 @@ private:
     struct OmConfig {
         zwlr_output_configuration_v1 *proxy = nullptr;
         bool applied = false;
+        QString tag;
     };
     std::vector<OmConfig> omConfigs_;
     void omBindManager(zwlr_output_manager_v1 *mgr);
@@ -546,7 +570,7 @@ private:
     void omRebuild();                     // collapse omHeads_ → outputs_
     void omTeardownState();
     bool omSubmitLayout(const QVariantList &layout, quint32 serial,
-                        bool apply);
+                        bool apply, const QString &tag = QString());
     void omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
                         bool cancelled);
     friend struct QdwinOmDispatch;

@@ -53,6 +53,8 @@ if node.found()
   test('desktop-icons', node, args: files('tests/test_desktop_icons.js'))
   test('removable-media', node, args: files('tests/test_removable_media.js'))
   test('output-layout', node, args: files('tests/test_output_layout.js'))
+  test('remote-display-lease', node, args: files('tests/test_remote_display_lease.js'))
+  test('r9-input-gate', node, args: files('tests/test_r9_input_gate.js'))
   test('qdwin-only-guard', node, args: files('tests/test_qdwin_only_guard.js'))
   # Mirror/logic + misc tests that existed on disk but were never wired into
   # `meson test` (they passed locally but never ran in CI). The drift guard is

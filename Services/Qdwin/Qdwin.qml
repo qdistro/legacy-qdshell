@@ -229,6 +229,9 @@ Singleton {
     // compositor reverts, and the Display tab re-applies the saved baseline.
     // The async verdict arrives via root.outputLayoutResult.
     signal outputLayoutResult(bool applied, bool ok, bool cancelled)
+    signal outputLayoutTaggedResult(string tag, bool ok, bool cancelled)
+    signal remoteOutputInputResult(string outputName, bool enabled, bool applied)
+    signal remoteOutputDrainResult(string outputName, bool applied)
     function applyOutputLayout(layout, serial) {
         if (!qdwinBinding || !qdwinBinding.outputManagementAvailable) {
             Logger.w("Qdwin", "applyOutputLayout — no output manager");
@@ -240,6 +243,12 @@ Singleton {
         if (!qdwinBinding || !qdwinBinding.outputManagementAvailable)
             return false;
         return qdwinBinding.testLayout(layout, serial >>> 0);
+    }
+    function applyOutputLayoutTagged(layout, serial, tag) {
+        if (!qdwinBinding || !qdwinBinding.outputManagementAvailable
+                || !tag || tag.length > 128)
+            return false;
+        return qdwinBinding.applyLayoutTagged(layout, serial >>> 0, tag);
     }
 
     function _windowByHandle(handle) {
@@ -362,6 +371,10 @@ Singleton {
 
         function focusWindow(handle: int): void {
             root.focusWindow(handle);
+        }
+
+        function positionWindow(handle: int, x: int, y: int): void {
+            root.requestSetPositionHandle(handle, x, y);
         }
 
         function lastOverlayKeys(): string {
@@ -496,6 +509,15 @@ Singleton {
         onLayoutResult: (applied, ok, cancelled) => {
             root.outputLayoutResult(applied, ok, cancelled);
         }
+        onLayoutTaggedResult: (tag, ok, cancelled) => {
+            root.outputLayoutTaggedResult(tag, ok, cancelled);
+        }
+        onRemoteOutputInputResult: (outputName, enabled, applied) => {
+            root.remoteOutputInputResult(outputName, enabled, applied);
+        }
+        onRemoteOutputDrainResult: (outputName, applied) => {
+            root.remoteOutputDrainResult(outputName, applied);
+        }
         // Gate CapabilityService.outputManagement on the manager actually
         // being advertised. Fires on bind (manager appears), hotplug, and
         // disconnect (manager gone → false).
@@ -533,6 +555,11 @@ Singleton {
                 peerUid: 0,
                 peerExe: "",
                 peerSelinuxLabel: "",
+                remoteNestedAuthorized: false,
+                remoteSourceMachine: "",
+                remoteTrustDomainId: "",
+                remoteStreamId: "",
+                remoteGeneration: 0,
             });
             root.windowListChanged();
         }
@@ -569,6 +596,22 @@ Singleton {
                 }
             }
         }
+        onNestedProxyRemoteIdentity: (handle, sourceMachine, trustDomainId, streamId, generation) => {
+            for (let i = 0; i < root.windows.count; i++) {
+                if (root.windows.get(i).handle === handle) {
+                    root.windows.setProperty(i, "remoteSourceMachine", sourceMachine || "");
+                    root.windows.setProperty(i, "remoteTrustDomainId", trustDomainId || "");
+                    root.windows.setProperty(i, "remoteStreamId", streamId || "");
+                    root.windows.setProperty(i, "remoteGeneration", generation);
+                    root.windows.setProperty(i, "remoteNestedAuthorized", true);
+                    Logger.i("Qdwin", "nested_proxy_remote_identity handle=" + handle
+                        + " source=" + sourceMachine + " trust_domain=" + trustDomainId
+                        + " stream=" + streamId + " generation=" + generation);
+                    root.windowListChanged();
+                    return;
+                }
+            }
+        }
         onNestedProxyPending: (handle, appId, originUid) => {
             root._decideNestedProxy(handle, appId, originUid);
         }
@@ -586,14 +629,28 @@ Singleton {
                 Logger.w("Qdwin", "nested_proxy_pixel_source: empty pw_node for handle " + handle);
                 return;
             }
-            // The daemon's dmabuf lane is still an explicitly documented
-            // diagnostic path: backend-pipewire can crash the nested Weston
-            // after format negotiation. Keep the production path on the SHM
-            // fallback until that producer bug has a live reliability gate.
-            const argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
+            let argv;
+            if (pwNode.startsWith("qdistro.remote:")) {
+                // R6 remote sources name only a local random rendezvous token.
+                // Reject path/shell syntax before selecting the dedicated
+                // decoder-owned SHM feeder; the token becomes a fixed
+                // XDG_RUNTIME_DIR socket name inside that root-installed binary.
+                if (!/^qdistro\.remote:[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(pwNode)) {
+                    Logger.w("Qdwin", "invalid remote pixel token for handle " + handle);
+                    return;
+                }
+                argv = ["/usr/bin/qdistro-mm-remote-pixelfeed",
+                          String(handle), pwNode];
+            } else {
+                // The daemon's dmabuf lane is still an explicitly documented
+                // diagnostic path: backend-pipewire can crash the nested Weston
+                // after format negotiation. Keep production local nesting on
+                // SHM until that producer bug has a live reliability gate.
+                argv = ["/usr/bin/env", "QDWIN_PIXELFEED_NO_DMABUF=1",
                           "/usr/bin/qdistro-nested-pixelfeed",
                           String(handle), pwNode];
-            if (inputSink && inputSink.length > 0) argv.push(inputSink);
+                if (inputSink && inputSink.length > 0) argv.push(inputSink);
+            }
             Logger.i("Qdwin", "spawning pixelfeed for handle " + handle
                               + " pw_node=" + pwNode);
             Quickshell.execDetached(argv);
@@ -1039,6 +1096,20 @@ Singleton {
     function requestTileHandle(handle, tileEdge) {
         if (!qdwinBinding || handle <= 0) return;
         qdwinBinding.requestTile(handle, tileEdge);
+    }
+    function requestSetPositionHandle(handle, x, y) {
+        if (!qdwinBinding || handle <= 0) return;
+        qdwinBinding.requestSetPosition(handle, x, y);
+    }
+    function setRemoteOutputInput(slotName, enabled) {
+        if (!qdwinBinding || qdwinBinding.shellVersion < 32) return false;
+        qdwinBinding.setRemoteOutputInput(slotName, !!enabled);
+        return true;
+    }
+    function drainRemoteOutputState(slotName) {
+        if (!qdwinBinding || qdwinBinding.shellVersion < 33) return false;
+        qdwinBinding.drainRemoteOutputState(slotName);
+        return true;
     }
     function windowState(handle) {
         const row = _windowByHandle(handle);

@@ -1,4 +1,6 @@
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const RM = require("../Services/Qdwin/RemoteMachine.js");
 
 // Tests for the multi-machine remote-window identity/chrome logic
@@ -18,6 +20,23 @@ const RM = require("../Services/Qdwin/RemoteMachine.js");
   assert.strictEqual(RM.isRemoteMachine(""), false);
   assert.strictEqual(RM.isRemoteMachine(null), false);
   assert.strictEqual(RM.isRemoteMachine(undefined), false);
+})();
+
+// ── protected surface wiring: identity is visibly separate from title ──
+(function () {
+  const active = fs.readFileSync(path.join(
+    __dirname, "../Modules/Bar/Widgets/ActiveWindow.qml"), "utf8");
+  const service = fs.readFileSync(path.join(
+    __dirname, "../Services/Qdwin/RemoteMachineWindows.qml"), "utf8");
+  assert.ok(active.includes(
+    "RemoteMachineWindows.badgeForHandle(Qdwin.focusedHandle)"));
+  assert.ok(active.includes("id: originBadge"));
+  assert.ok(active.includes("text: protectedOriginBadge"));
+  assert.ok(!active.includes("text: windowTitle + protectedOriginBadge"),
+    "client title cannot precede or redefine the trusted badge");
+  assert.ok(service.includes("function badgeForHandle(handle)"));
+  assert.ok(service.includes("RM.UNVERIFIED_BADGE"),
+    "unpaired remote-shaped windows retain explicit neutral chrome");
 })();
 
 // ── originFromSecctx ──
@@ -91,6 +110,15 @@ const RM = require("../Services/Qdwin/RemoteMachine.js");
     RM.colourForTrustedOrigin("vm-a", "owner-machines"),
     RM.colourForTrustedOrigin("vm-b", "owner-machines"),
     "two origins in one trust domain retain distinct chrome");
+  assert.strictEqual(
+    RM.badgeForTrustedOrigin("vm-a", "owner-machines"),
+    "REMOTE vm-a @ owner-machines");
+  assert.strictEqual(RM.badgeForTrustedOrigin("vm-a", ""),
+    RM.UNVERIFIED_BADGE);
+  assert.strictEqual(RM.badgeForTrustedOrigin("vm-a\u202e", "owner-machines"),
+    RM.UNVERIFIED_BADGE, "bidi/control-shaped origin cannot enter protected chrome");
+  assert.strictEqual(RM.badgeForTrustedOrigin("vm-a", "owner machines"),
+    RM.UNVERIFIED_BADGE, "unstructured trust text cannot enter protected chrome");
 
   var identity = {
     handle: 42, origin: "vm-a", stream_id: "source-minted-a", generation: 51,

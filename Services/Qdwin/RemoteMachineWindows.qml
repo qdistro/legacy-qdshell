@@ -104,7 +104,8 @@ Singleton {
                     streamId: row.streamId, secctxAppId: row.secctxAppId,
                     authorized: row.authorized,
                     trustDomainId: row.trustDomainId,
-                    allowInput: row.allowInput, colour: row.colour
+                    allowInput: row.allowInput, colour: row.colour,
+                    protectedBadge: root.badgeForHandle(row.handle)
                 });
             }
             return JSON.stringify(rows);
@@ -137,6 +138,34 @@ Singleton {
         function move(handle: int, x: int, y: int): bool {
             return root._requestShellOperation(handle, "move", x, y);
         }
+    }
+
+    // Protected active-window chrome API. Consumers render this only on
+    // qdshell-owned layer surfaces, never inside remote/client pixels.
+    function badgeForHandle(handle) {
+        for (let i = 0; i < root.remoteWindows.count; i++) {
+            const row = root.remoteWindows.get(i);
+            if (row.handle !== handle) continue;
+            if (!root._authorizedHandle(handle))
+                return RM.UNVERIFIED_BADGE;
+            return RM.badgeForTrustedOrigin(
+                root._originByHandle[handle],
+                root._trustDomainByHandle[handle]);
+        }
+        return "";
+    }
+
+    function badgeColourForHandle(handle) {
+        for (let i = 0; i < root.remoteWindows.count; i++) {
+            const row = root.remoteWindows.get(i);
+            if (row.handle !== handle) continue;
+            if (!root._authorizedHandle(handle))
+                return RM.UNVERIFIED_COLOUR;
+            return RM.colourForTrustedOrigin(
+                root._originByHandle[handle],
+                root._trustDomainByHandle[handle]);
+        }
+        return "";
     }
 
     // ---- chrome paint ---------------------------------------------------
@@ -294,15 +323,28 @@ Singleton {
         const seen = new Set();
         for (let i = 0; i < wm.count; i++) {
             const w = wm.get(i);
-            const origin = RM.originFromSecctx(w.secctxAppId);
-            const streamId = RM.streamFromSecctx(w.secctxAppId);
+            const nested = w.remoteNestedAuthorized === true;
+            const origin = nested ? (w.remoteSourceMachine || "")
+                                  : RM.originFromSecctx(w.secctxAppId);
+            const streamId = nested ? (w.remoteStreamId || "")
+                                    : RM.streamFromSecctx(w.secctxAppId);
             if (!origin || !streamId) continue;   // fail closed — unattributable
+            const identityKey = nested ? ("nested:" + streamId)
+                                       : w.secctxAppId;
+            if (nested) {
+                root._originByHandle[w.handle] = origin;
+                root._trustDomainByHandle[w.handle] = w.remoteTrustDomainId || "";
+                root._allowInputByHandle[w.handle] = 0;
+                root._secctxByHandle[w.handle] = identityKey;
+            }
             const authorized = root._originByHandle[w.handle] !== undefined
-                && root._secctxByHandle[w.handle] === w.secctxAppId;
+                && root._secctxByHandle[w.handle] === identityKey;
             fresh.push({
                 handle: w.handle, ownerUid: w.ownerUid, appId: w.appId,
                 title: w.title, secctxAppId: w.secctxAppId,
                 instanceId: w.instanceId, origin: origin, streamId: streamId,
+                transport: nested ? "nested" : "rdp",
+                generation: nested ? w.remoteGeneration : 0,
                 authorized: authorized,
                 trustDomainId: authorized
                     ? (root._trustDomainByHandle[w.handle] || "") : "",
@@ -324,6 +366,7 @@ Singleton {
             root.remoteWindows.append(row);
             const isNew = !prev.has(row.handle);
             const needsBind = !row.authorized
+                && row.transport === "rdp"
                 && root._bindAttemptByHandle[row.handle] !== row.secctxAppId;
             if (isNew || needsBind) {
                 if (isNew) {

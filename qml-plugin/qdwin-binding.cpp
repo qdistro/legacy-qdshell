@@ -29,6 +29,7 @@
 #include <QImage>
 #include <QMetaType>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryFile>
@@ -74,14 +75,10 @@ namespace {
 // Bump to 28 for live input config: set_pointer_config (the Mouse tab's
 // libinput pointer/touchpad policy) and set_key_repeat (the Keyboard tab's
 // xkb repeat rate/delay). Before v28 those tabs were persist-only.
-// Bump to 31 for toplevel_app_id, allowing the window model to receive an
-// XWayland WM_CLASS that becomes available after toplevel_added.
-// Bump to 32 for prepare_output_capture, the full-damage half of the
-// shell-authorized framebuffer capture path.
-// Bump to 33 for capture_served_stale, the retained-frame stale-serve
-// notification (the delivered capture pixels are the last composited frame,
-// not a fresh repaint).
-constexpr uint32_t kBindVersion = 33;
+// Versions 31–33 carry mainline app-id updates and framebuffer capture.
+// Version 34 appends remote display identity/input/drain without changing
+// the already shipped request and event opcodes.
+constexpr uint32_t kBindVersion = 34;
 constexpr int kCaptureTimeoutMs = 8000;
 constexpr int kBrokerStartTimeoutMs = 250;
 constexpr int kBrokerGateTimeoutMs = 2000;
@@ -288,6 +285,31 @@ struct QdwinBindingDispatch {
         emit b->nestedProxyPixelSource(handle,
                                        qstr(pw_node), qstr(input_sink));
     }
+    static void nested_proxy_remote_identity(
+            void *d, qdwin_shell_v1 *, uint32_t handle,
+            const char *source_machine, const char *trust_domain_id,
+            const char *stream_id, uint32_t generation_hi,
+            uint32_t generation_lo) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        const quint64 generation = (quint64(generation_hi) << 32)
+                                   | quint64(generation_lo);
+        emit b->nestedProxyRemoteIdentity(
+            handle, qstr(source_machine), qstr(trust_domain_id),
+            qstr(stream_id), generation);
+    }
+    static void remote_output_input_result(
+            void *d, qdwin_shell_v1 *, const char *output_name,
+            uint32_t enabled, uint32_t applied) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->remoteOutputInputResult(
+            qstr(output_name), enabled != 0, applied != 0);
+    }
+    static void remote_output_drain_result(
+            void *d, qdwin_shell_v1 *, const char *output_name,
+            uint32_t applied) {
+        auto *b = static_cast<QdwinBinding *>(d);
+        emit b->remoteOutputDrainResult(qstr(output_name), applied != 0);
+    }
     // spec/10 selection_set — forward to QML so ClipboardGate can
     // consult the broker and call clearSelection on a deny verdict.
     static void selection_set(void *d, qdwin_shell_v1 *,
@@ -446,6 +468,12 @@ static const qdwin_shell_v1_listener kShellListener = {
     .toplevel_workspace        = QdwinBindingDispatch::toplevel_workspace,
     .toplevel_app_id           = QdwinBindingDispatch::toplevel_app_id,
     .capture_served_stale      = QdwinBindingDispatch::capture_served_stale,
+    .nested_proxy_remote_identity =
+        QdwinBindingDispatch::nested_proxy_remote_identity,
+    .remote_output_input_result =
+        QdwinBindingDispatch::remote_output_input_result,
+    .remote_output_drain_result =
+        QdwinBindingDispatch::remote_output_drain_result,
 };
 
 // -------------------- ext-workspace-v1 client trampolines --------------------
@@ -1825,6 +1853,35 @@ void QdwinBinding::requestTile(quint32 handle, quint32 tileEdge) {
     flushAfterRequest(__func__);
 }
 
+void QdwinBinding::requestSetPosition(quint32 handle, qint32 x, qint32 y) {
+    if (!shell_ || shellVersion_ < 30)
+        return;
+    qdwin_shell_v1_request_set_position(shell_, handle, x, y);
+    flushAfterRequest(__func__);
+}
+
+void QdwinBinding::setRemoteOutputInput(const QString &outputName,
+                                        bool enabled) {
+    if (!shell_ || shellVersion_ < 34 ||
+        !QRegularExpression(QStringLiteral("^rdp-[0-9]{1,3}$"))
+             .match(outputName).hasMatch())
+        return;
+    const QByteArray encoded = outputName.toUtf8();
+    qdwin_shell_v1_set_remote_output_input(
+        shell_, encoded.constData(), enabled ? 1u : 0u);
+    flushAfterRequest(__func__);
+}
+
+void QdwinBinding::drainRemoteOutputState(const QString &outputName) {
+    if (!shell_ || shellVersion_ < 34 ||
+        !QRegularExpression(QStringLiteral("^rdp-[0-9]{1,3}$"))
+             .match(outputName).hasMatch())
+        return;
+    const QByteArray encoded = outputName.toUtf8();
+    qdwin_shell_v1_drain_remote_output_state(shell_, encoded.constData());
+    flushAfterRequest(__func__);
+}
+
 void QdwinBinding::registerHotkey(quint32 id, quint32 modifiers, quint32 key) {
     // register_hotkey is a v19 request but was never wired; gate at our
     // current bind version so it only fires when the compositor supports it.
@@ -2056,9 +2113,11 @@ void QdwinBinding::omTeardownState() {
 void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
                                   bool cancelled) {
     bool applied = false;
+    QString tag;
     for (auto it = omConfigs_.begin(); it != omConfigs_.end(); ++it) {
         if (it->proxy == cfg) {
             applied = it->applied;
+            tag = it->tag;
             omConfigs_.erase(it);
             break;
         }
@@ -2067,7 +2126,10 @@ void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
     // succeeded/failed/cancelled.
     zwlr_output_configuration_v1_destroy(cfg);
     flushAfterRequest(__func__);
-    emit layoutResult(applied, ok, cancelled);
+    if (!tag.isEmpty())
+        emit layoutTaggedResult(tag, ok, cancelled);
+    else
+        emit layoutResult(applied, ok, cancelled);
 }
 
 // Build a configuration for `layout` against `serial` and apply or test it.
@@ -2076,7 +2138,7 @@ void QdwinBinding::omConfigResult(zwlr_output_configuration_v1 *cfg, bool ok,
 // iterate the enumerated head set and either match it to a layout entry
 // (by name) or carry its current enabled state forward unchanged.
 bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
-                                  bool apply) {
+                                  bool apply, const QString &tag) {
     if (!omManager_)
         return false;
 
@@ -2086,6 +2148,7 @@ bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
     OmConfig rec;
     rec.proxy = cfg;
     rec.applied = apply;
+    rec.tag = tag;
     omConfigs_.push_back(rec);
     zwlr_output_configuration_v1_add_listener(cfg, &kOmConfigListener, this);
 
@@ -2158,6 +2221,13 @@ bool QdwinBinding::omSubmitLayout(const QVariantList &layout, quint32 serial,
 
 bool QdwinBinding::applyLayout(const QVariantList &layout, quint32 serial) {
     return omSubmitLayout(layout, serial, true);
+}
+
+bool QdwinBinding::applyLayoutTagged(const QVariantList &layout, quint32 serial,
+                                     const QString &tag) {
+    if (tag.isEmpty() || tag.size() > 128)
+        return false;
+    return omSubmitLayout(layout, serial, true, tag);
 }
 
 bool QdwinBinding::testLayout(const QVariantList &layout, quint32 serial) {
