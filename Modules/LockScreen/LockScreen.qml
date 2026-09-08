@@ -309,6 +309,16 @@ Loader {
             Rectangle {
               anchors.fill: parent
               color: "black"
+
+              // Blanking an output is a cosmetic choice; it must not also hide
+              // the capture/egress state the owner is entitled to see while
+              // locked (sessions.md). Same state as LockScreenPanel, minimal
+              // rendering.
+              LockSecurityIndicators {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 96
+              }
             }
           }
         }
