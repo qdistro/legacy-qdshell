@@ -581,9 +581,10 @@ def write_settings_vm(session: VMSession, content: str, *, timeout: float = 30.0
     b64 = base64.b64encode(content.encode()).decode("ascii")
     script = (
         f"set -eu\n"
-        f"install -d -o {VM_USER} -g {VM_USER} -m 700 $(dirname {VM_SETTINGS_PATH})\n"
+        f"user_group=$(id -gn {VM_USER})\n"
+        f"install -d -o {VM_USER} -g \"$user_group\" -m 700 $(dirname {VM_SETTINGS_PATH})\n"
         f"echo {b64} | base64 -d > {VM_SETTINGS_PATH}\n"
-        f"chown {VM_USER}:{VM_USER} {VM_SETTINGS_PATH}\n"
+        f"chown {VM_USER}:\"$user_group\" {VM_SETTINGS_PATH}\n"
     )
     res = _vm_run_script(session, script, timeout=timeout)
     if res.returncode != 0:
