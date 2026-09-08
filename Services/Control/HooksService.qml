@@ -283,7 +283,7 @@ Singleton {
     HooksGate.gate("session", command, () => {
       Logger.i("HooksService", `Executing session hook for ${safeAction}`);
       runPowerHook(command, callback);
-    });
+    }, callback); // Denying an optional script must not swallow the session action.
   }
 
   // Execute startup hook

@@ -110,6 +110,10 @@ Singleton {
         if (binding.seatFocusChanged !== undefined) {
             binding.seatFocusChanged.connect(root._onSeatFocusChanged);
         }
+        binding.boundChanged.connect(() => {
+            if (!binding.bound)
+                root._onBindingLost();
+        });
         root._wired = true;
         ClipboardPolicy.load();
         Logger.i("ClipboardGate", "wired to qdwin_shell_v1; broker default=deny");
@@ -128,12 +132,15 @@ Singleton {
     // Option-B identity bookkeeping (todo/decisions/secctx-identity-contract.md):
     //   _handleToIdentity[handle] = { pid, starttime, uid, exe, label,
     //                                 sandboxEngine, appId, instanceId }
-    //   _verifyCache[verifyKey]   = bool   (true = broker said OK)
+    //   _verifyCache[verifyKey]   = { verified, expires }
     //   _verifyInFlight[verifyKey] = bool  (suppress duplicate calls)
-    // verifyKey = pid + ":" + starttime — anti-PID-reuse.
+    // verifyKey covers the complete attested tuple, including PID start time.
     property var _handleToIdentity: ({})
     property var _verifyCache: ({})
     property var _verifyInFlight: ({})
+    property var _verifyQueue: []
+    property var _verifyActive: null
+    property int _verifyGeneration: 0
 
     // v23 sidecar — selection_set_source_identity. The compositor fires
     // this IMMEDIATELY BEFORE the matching selectionSet for tagged
@@ -169,6 +176,20 @@ Singleton {
     property int _denyClearCoalesceMs: 500
 
     // -- handle/silo tracking -------------------------------------------
+    function _onBindingLost() {
+        root._verifyGeneration++;
+        root._verifyQueue = [];
+        root._verifyCache = ({});
+        root._verifyInFlight = ({});
+        root._handleToIdentity = ({});
+        root._handleToSilo = ({});
+        root._handleToAppId = ({});
+        root._handleToSandboxEngine = ({});
+        root._selectionSourceSilo = ({});
+        root._pendingSrcIdentity = null;
+        root._lastDenyClearByKey = ({});
+    }
+
     function _onToplevelAdded(handle, ownerUid, appId, title, isXwayland) {
         // Until the security_context event arrives (it may, or may not —
         // qdwin only emits it for clients that bound wp_security_context_v1
@@ -185,6 +206,9 @@ Singleton {
         delete root._handleToSilo[handle];
         delete root._handleToAppId[handle];
         delete root._handleToSandboxEngine[handle];
+        const identity = root._handleToIdentity[handle];
+        if (identity)
+            delete root._verifyCache[root._verifyKey(identity)];
         delete root._handleToIdentity[handle];
     }
 
@@ -207,59 +231,79 @@ Singleton {
     }
 
     function _verifyKey(identity) {
-        return (identity.pid >>> 0) + ":" + identity.starttime;
+        return JSON.stringify([identity.pid >>> 0, String(identity.starttime), identity.uid >>> 0, identity.exe || "", identity.label || "", identity.sandboxEngine || "", identity.appId || "", identity.instanceId || ""]);
     }
 
-    // Issue (or reuse) a broker VerifyClientIdentity call. Async-fire-and-
-    // forget: the result lands in _verifyCache and gates future
-    // selection_set decisions for that (pid, starttime). The very first
-    // transfer from a given client racing the verify still falls through
-    // to the cross-silo path (default-deny), which is exactly the
-    // conservative posture the decision doc calls for.
+    // A Process has one active invocation: never change its request metadata
+    // while it runs. Cache the complete attested tuple, with bounded retry for
+    // unavailable brokers and bounded lifetime for successful attestations.
     function _ensureVerified(handle) {
         const id = root._handleToIdentity[handle];
         if (!id || !id.pid)
             return false;
         const key = root._verifyKey(id);
-        if (root._verifyCache.hasOwnProperty(key))
-            return root._verifyCache[key];
-        if (root._verifyInFlight[key])
+        const cached = root._verifyCache[key];
+        if (cached && cached.expires > Date.now())
+            return cached.verified;
+        delete root._verifyCache[key];
+        if (root._verifyInFlight[key] || root._verifyQueue.length >= 128)
             return false;
         root._verifyInFlight[key] = true;
-        _verifyProc.command = ["busctl", "--system", "--no-pager", "call", "org.qdistro.AdminBroker1", "/org/qdistro/AdminBroker1", "org.qdistro.AdminBroker1", "VerifyClientIdentity", "utusssss", String(id.pid >>> 0), String(id.starttime), String(id.uid >>> 0), String(id.exe || ""), String(id.label || ""), String(id.sandboxEngine || ""), String(id.appId || ""), String(id.instanceId || ""),];
-        _verifyProc._pendingKey = key;
-        _verifyProc.running = true;
+        root._verifyQueue.push({
+            key: key,
+            handle: handle,
+            identity: Object.assign({}, id),
+            generation: root._verifyGeneration
+        });
+        root._startNextVerification();
         return false;
+    }
+
+    function _startNextVerification() {
+        if (root._verifyActive)
+            return;
+        while (root._verifyQueue.length) {
+            const entry = root._verifyQueue.shift();
+            const current = root._handleToIdentity[entry.handle];
+            if (!current || root._verifyKey(current) !== entry.key) {
+                delete root._verifyInFlight[entry.key];
+                continue;
+            }
+            const id = entry.identity;
+            root._verifyActive = entry;
+            _verifyProc.command = ["busctl", "--system", "--no-pager", "--timeout=200ms", "call", "org.qdistro.AdminBroker1", "/org/qdistro/AdminBroker1", "org.qdistro.AdminBroker1", "VerifyClientIdentity", "utusssss", String(id.pid >>> 0), String(id.starttime), String(id.uid >>> 0), String(id.exe || ""), String(id.label || ""), String(id.sandboxEngine || ""), String(id.appId || ""), String(id.instanceId || "")];
+            _verifyProc.running = true;
+            return;
+        }
+    }
+
+    function _finishVerification(exitCode, output) {
+        const entry = root._verifyActive;
+        root._verifyActive = null;
+        if (entry && entry.generation === root._verifyGeneration) {
+            delete root._verifyInFlight[entry.key];
+            const current = root._handleToIdentity[entry.handle];
+            if (current && root._verifyKey(current) === entry.key) {
+                const verified = exitCode === 0 && String(output || "").trim() === "b true";
+                root._verifyCache[entry.key] = {
+                    verified: verified,
+                    expires: Date.now() + (verified ? 30000 : 1000)
+                };
+            }
+        }
+        Qt.callLater(root._startNextVerification);
     }
 
     Process {
         id: _verifyProc
         running: false
-        property string _pendingKey: ""
         stdout: StdioCollector {
             id: _verifyStdout
         }
         stderr: StdioCollector {
             id: _verifyStderr
         }
-        onExited: (exitCode, exitStatus) => {
-            const key = _verifyProc._pendingKey;
-            _verifyProc._pendingKey = "";
-            delete root._verifyInFlight[key];
-            if (exitCode !== 0) {
-                // Broker absent or method missing — treat as unverified. The
-                // cross-silo path takes over (default-deny under policy).
-                root._verifyCache[key] = false;
-                return;
-            }
-            const out = String(_verifyStdout.text || "").trim();
-            // busctl prints booleans as "b true" / "b false".
-            const verified = out.endsWith("true");
-            root._verifyCache[key] = verified;
-            if (!verified) {
-                Logger.w("ClipboardGate", "VerifyClientIdentity denied for key=" + key + " out=" + out);
-            }
-        }
+        onExited: (exitCode, exitStatus) => root._finishVerification(exitCode, _verifyStdout.text)
     }
 
     // Derive a stable silo string from a (sandboxEngine, appId,
@@ -315,10 +359,10 @@ Singleton {
         // the (pid, starttime, exe, label) the compositor observed.
         const existing = root._handleToIdentity[handle] || {};
         root._handleToIdentity[handle] = Object.assign({}, existing, {
-                "sandboxEngine": sandboxEngine || "",
-                "appId": appId || "",
-                "instanceId": instanceId || ""
-            });
+            "sandboxEngine": sandboxEngine || "",
+            "appId": appId || "",
+            "instanceId": instanceId || ""
+        });
     }
 
     // Tier-4 strict MIME allow-list. The base type (everything before the
@@ -472,16 +516,10 @@ Singleton {
         // (P1-1). Only trustworthy when the v23 sidecar source is honoured
         // (pending === null); otherwise pass 0/0 → broker enforce denies
         // cross-silo rather than resolving an unrelated handle.
-        const _srcId = (pending === null)
-            ? (root._handleToIdentity[sourceHandle] || {}) : {};
-        const brokerResult = root._binding.checkClipboardTransfer(
-            srcSilo, dstSilo, mimeList, srcAppId, dstAppId,
-            sourceSandboxEngine, identityVerified,
-            (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
-        const decision = ClipboardBroker.parseCheckClipboardTransferResult(
-            brokerResult.exitCode, brokerResult.stdout || "");
-        root._logDecisionAndMaybeClear(decisionEntry, decision.verdict,
-                                      decision.reason);
+        const _srcId = (pending === null) ? (root._handleToIdentity[sourceHandle] || {}) : {};
+        const brokerResult = root._binding.checkClipboardTransfer(srcSilo, dstSilo, mimeList, srcAppId, dstAppId, sourceSandboxEngine, identityVerified, (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
+        const decision = ClipboardBroker.parseCheckClipboardTransferResult(brokerResult.exitCode, brokerResult.stdout || "");
+        root._logDecisionAndMaybeClear(decisionEntry, decision.verdict, decision.reason);
     }
 
     // -- focus-aware-clear (qdwin_shell_v1 seat_focus_changed) ----------
@@ -504,8 +542,7 @@ Singleton {
         // side effects per action: journal the deny, clear the selection,
         // and forget the now-cleared source so we don't re-clear on the
         // next focus change.
-        const actions = ClipboardFocusClear.planFocusClear(
-            seat, handle, root._handleToSilo, root._selectionSourceSilo);
+        const actions = ClipboardFocusClear.planFocusClear(seat, handle, root._handleToSilo, root._selectionSourceSilo);
         for (let i = 0; i < actions.length; i++) {
             const a = actions[i];
             root._logFocusClear(seat, a.srcSilo, a.dstSilo, a.isPrimary);
@@ -607,15 +644,11 @@ Singleton {
         // Relay the source app's authenticated (pid, starttime) for
         // launch-record attestation of the source silo (P1-1).
         const _srcId = root._handleToIdentity[sourceHandle] || {};
-        const brokerResult = root._binding.checkClipboardReceive(
-            srcSilo, dstSilo, mime, srcAppId, dstAppId,
-            sourceSandboxEngine, identityVerified,
-            (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
+        const brokerResult = root._binding.checkClipboardReceive(srcSilo, dstSilo, mime, srcAppId, dstAppId, sourceSandboxEngine, identityVerified, (_srcId.pid >>> 0) || 0, _srcId.starttime || 0);
         // The broker returns a bare "allow"/"deny" string (busctl prints
         // `s "allow"`). Reuse the set-time parser — same wire format,
         // same fail-closed semantics on nonzero exit/timeout/malformed.
-        const decision = ClipboardBroker.parseCheckClipboardTransferResult(
-            brokerResult.exitCode, brokerResult.stdout || "");
+        const decision = ClipboardBroker.parseCheckClipboardTransferResult(brokerResult.exitCode, brokerResult.stdout || "");
         root._answerReceive(requestHandle, seat, srcSilo, dstSilo, mime, decision.verdict, decision.reason);
     }
 }

@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "BrokerGate.js" as BrokerGate
 
 // Defense-in-depth gate around HooksService's script execution.
 //
@@ -21,15 +22,9 @@ import qs.Commons
 //
 // Details dict: { "script": <full command string> }
 //
-// Decision policy:
-//   - "allow"   → execute script
-//   - "deny"    → skip + log
-//   - "unknown" → execute (defense-in-depth, not gatekeeping); fire
-//                 async RequestPermission so admin sees the rule next
-//                 time and can switch the verdict.
-//   - broker absent / call fails → execute (graceful degradation;
-//                                  qdshell must still work without
-//                                  qdistro broker).
+// Only an explicit, well-formed allow executes. Unknown decisions queue an
+// admin request for a future invocation; that request does not authorize this
+// invocation. Transport errors and malformed replies deny.
 //
 // The broker is on the system bus:
 //   bus  = org.qdistro.AdminBroker1
@@ -43,132 +38,76 @@ Singleton {
   readonly property string brokerPath: "/org/qdistro/AdminBroker1"
   readonly property string brokerIface: "org.qdistro.AdminBroker1"
 
-  // Pending gate requests, keyed by a unique id. Each entry:
-  //   { event, script, args, callback }
-  // Fed to a single Process queue so concurrent hooks don't fork bombs.
-  property var _pending: ({})
-  property int _nextId: 1
+  property var _queue: []
+  property var _active: null
 
-  // Public entry — non-blocking. Calls broker.CheckPermission for the
-  // (event, script) pair, then on grant invokes onAllow().
-  //   event: short event name, e.g. "wallpaperChange"
-  //   script: command string that would have been passed to sh -lc
-  //   onAllow: function() to invoke when the gate clears
-  function gate(event, script, onAllow) {
+  function gate(event, script, onAllow, onDeny) {
     if (!event || !script) {
+      if (onDeny)
+        onDeny();
       return;
     }
-    const id = _nextId++;
-    _pending[id] = {
-      "event": event,
-      "script": script,
-      "onAllow": onAllow,
-    };
+    if (_queue.length >= 64) {
+      Logger.w("HooksGate", "gate queue full; hook denied", event);
+      if (onDeny)
+        onDeny();
+      return;
+    }
+    _queue.push({ event: event, script: script, onAllow: onAllow, onDeny: onDeny, phase: "check" });
+    _startNext();
+  }
+
+  function gateBlocking(event, script, onAllow, onDeny) {
+    gate(event, script, onAllow, onDeny);
+  }
+
+  function _startNext() {
+    if (_active || !_queue.length)
+      return;
+    _active = _queue.shift();
     _checkProcess.command = [
-      "busctl", "--system", "--no-pager", "call",
+      "busctl", "--system", "--no-pager", "--timeout=2s", "call",
       brokerBus, brokerPath, brokerIface,
-      "CheckPermission", "sa{sv}",
-      "hook.allowed:" + event,
-      "1", "script", "s", script,
+      _active.phase === "check" ? "CheckPermission" : "RequestPermission", "sa{sv}",
+      "hook.allowed:" + _active.event,
+      "1", "script", "s", _active.script
     ];
-    // Stash id in env so the exit handler knows which pending entry
-    // resolved. busctl doesn't carry user data — we scope per-call by
-    // serializing through a single Process and a queue.
-    _checkProcess.environment = ["__QDSHELL_GATE_ID=" + id];
     _checkProcess.running = true;
   }
 
-  // Internal: route HooksService's blocking power-hook through the gate.
-  // Mirrors gate(), but the caller's onAllow is responsible for
-  // launching its own blocking Process and finalizing the callback.
-  function gateBlocking(event, script, onAllow) {
-    gate(event, script, onAllow);
+  function _finishCheck(exitCode, output) {
+    const entry = _active;
+    if (entry && entry.phase === "check") {
+      const result = BrokerGate.parseStringVerdict(exitCode, output);
+      if (result.verdict === "allow") {
+        try {
+          entry.onAllow();
+        } catch (e) {
+          Logger.e("HooksGate", "onAllow callback raised:", e);
+        }
+      } else {
+        Logger.w("HooksGate", "hook denied", entry.event, result.reason);
+        if (entry.onDeny) {
+          try {
+            entry.onDeny();
+          } catch (e) {
+            Logger.e("HooksGate", "onDeny callback raised:", e);
+          }
+        }
+        if (exitCode === 0 && String(output || "").trim() === 's "unknown"' && _queue.length < 64) {
+          _queue.push({ event: entry.event, script: entry.script, phase: "request" });
+        }
+      }
+    }
+    _active = null;
+    Qt.callLater(root._startNext);
   }
 
   Process {
     id: _checkProcess
     running: false
-
-    stdout: StdioCollector {
-      id: _stdoutCollector
-    }
-    stderr: StdioCollector {
-      id: _stderrCollector
-    }
-
-    onExited: (exitCode, exitStatus) => {
-      // Recover gate id from the env we stashed.
-      let id = -1;
-      const env = _checkProcess.environment || [];
-      for (let i = 0; i < env.length; i++) {
-        const kv = env[i];
-        if (kv.indexOf("__QDSHELL_GATE_ID=") === 0) {
-          id = parseInt(kv.substring("__QDSHELL_GATE_ID=".length), 10);
-          break;
-        }
-      }
-      const entry = (id > 0) ? root._pending[id] : null;
-      if (entry && id > 0) {
-        delete root._pending[id];
-      }
-      if (!entry) {
-        Logger.w("HooksGate", "exit handler with no matching pending entry");
-        return;
-      }
-
-      // Parse busctl output. On success it prints `s "allow"` (or
-      // "deny" / "unknown"). On failure (broker absent, rate-limit,
-      // bus error) exitCode != 0.
-      const stdout = (_stdoutCollector.text || "").trim();
-      let verdict = "unknown";
-      if (exitCode === 0) {
-        const m = stdout.match(/^s\s+"([^"]+)"/);
-        if (m) {
-          verdict = m[1];
-        }
-      } else {
-        // Broker absent / not running / not installed — fall through
-        // to graceful-degradation allow. Log once at debug; this is
-        // the expected state on dev VMs without qdistro infra.
-        Logger.d("HooksGate", "broker check failed (exitCode=" + exitCode
-                 + "), falling back to allow:", entry.event);
-        verdict = "broker-absent";
-      }
-
-      if (verdict === "deny") {
-        Logger.w("HooksGate", "DENIED hook", entry.event,
-                 "by broker rule. Script not executed:", entry.script);
-        return;
-      }
-
-      // allow / unknown / broker-absent → execute. For "unknown",
-      // fire-and-forget RequestPermission so admin's rules UI gets a
-      // pending entry next time.
-      if (verdict === "unknown") {
-        _requestProcess.command = [
-          "busctl", "--system", "--no-pager", "call",
-          root.brokerBus, root.brokerPath, root.brokerIface,
-          "RequestPermission", "sa{sv}",
-          "hook.allowed:" + entry.event,
-          "1", "script", "s", entry.script,
-        ];
-        _requestProcess.running = true;
-      }
-
-      try {
-        entry.onAllow();
-      } catch (e) {
-        Logger.e("HooksGate", "onAllow callback raised:", e);
-      }
-    }
-  }
-
-  // Fire-and-forget RequestPermission Process for the "unknown" path.
-  // We don't care about its result; it queues a pending entry in the
-  // broker's admin-prompt list so admin can decide the rule for next
-  // time. Output deliberately ignored.
-  Process {
-    id: _requestProcess
-    running: false
+    stdout: StdioCollector { id: _stdoutCollector }
+    stderr: StdioCollector { id: _stderrCollector }
+    onExited: (exitCode, exitStatus) => root._finishCheck(exitCode, _stdoutCollector.text)
   }
 }
