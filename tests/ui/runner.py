@@ -649,7 +649,13 @@ def ctrl_socket_vm(session: VMSession, command: str, *, timeout: float = 30.0) -
         script = (
             f"set -eu\n"
             f"echo {b64} | base64 -d | "
-            f"socat -T 10 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock\n"
+            # `-t 2` matters: without it socat lingers only its 0.5s DEFAULT
+            # after the shell closes its end, and a capture reply that arrives
+            # later is lost -- the caller then sees an EMPTY reply and reports
+            # a capture/transport failure for a capture that actually
+            # succeeded. The admin branch below already passed `-t 2`; this
+            # branch did not, and the asymmetry was the bug.
+            f"socat -t 2 -T 10 - UNIX-CONNECT:{VM_XDG_RUNTIME_DIR}/qdshell.sock\n"
         )
     else:
         script = (
@@ -806,7 +812,17 @@ def _convert_ppm_to_png(ppm_path: Path, png_path: Path) -> None:
         )
 
 
-def screenshot_vm(session: VMSession, out_path: Path) -> Path:
+class StaleCaptureError(RuntimeError):
+    """qdshell served a retained (live=0) frame instead of a fresh one.
+
+    Distinct from a transport failure ON PURPOSE: the image is valid, it just
+    describes the last composited state. Callers doing diagnostics may opt in
+    with allow_stale=True; a current-state assertion must not.
+    """
+
+
+def screenshot_vm(session: VMSession, out_path: Path, *,
+                  allow_stale: bool = False, live_retries: int = 1) -> Path:
     """Capture qdwin's real Virtual-1 framebuffer to a PNG.
 
     Drives qdshell's root-only `capture` ctrl verb (the in-compositor
@@ -821,13 +837,59 @@ def screenshot_vm(session: VMSession, out_path: Path) -> Path:
     guest = (f"{VM_XDG_RUNTIME_DIR}/qdshell-ui-capture-"
              f"{os.getpid()}-{time.monotonic_ns()}.png")
     try:
-        reply = ctrl_socket_vm(session, f"capture Virtual-1 {guest}",
-                               timeout=30.0)
+        for _attempt in range(max(1, live_retries + 1)):
+            reply = ctrl_socket_vm(session, f"capture Virtual-1 {guest}",
+                                   timeout=30.0)
+            # A retained frame often means the repaint had not landed yet.
+            # Ask once more before treating staleness as terminal.
+            if " live=0" not in reply:
+                break
+            # Do not sleep after the final attempt -- there is nothing left to
+            # wait for.
+            if _attempt < max(1, live_retries + 1) - 1:
+                time.sleep(0.5)
+        # qdshell v33 can answer with a RETAINED frame when no repaint was
+        # possible (seat away, power off, repaint wedge), appending
+        # `live=0 age_ms=<n>` and sometimes `msc=<n>`. That is a VALID image
+        # with stale evidence. A `fullmatch` of the bare form rejected it and
+        # raised "shell capture failed", turning a successful-but-stale
+        # capture into what reads as a transport fault. (No claim is made here
+        # about which historical run failures that explains; establishing that
+        # would need matching run evidence.)
+        # Accept ONLY the documented v33 suffix fields, not arbitrary or
+        # repeated key/values: a reply shape we do not understand must not be
+        # silently treated as a good capture.
         m = re.fullmatch(
-            r"ok output=Virtual-1 width=(\d+) height=(\d+) path=(\S+)", reply)
+            r"ok output=Virtual-1 width=(\d+) height=(\d+) path=(\S+)"
+            r"(?: live=(?P<live>[01]))?"
+            r"(?: age_ms=(?P<age_ms>\d+))?"
+            r"(?: msc=(?P<msc>\d+))?", reply)
         if not m or m.group(3) != guest:
             raise RuntimeError(f"shell capture failed: {reply!r}")
         reply_w, reply_h = int(m.group(1)), int(m.group(2))
+        # A RETAINED frame is a valid image with STALE evidence: qdshell served
+        # the last composited frame because no repaint was possible. Rejecting
+        # it outright (the old `fullmatch` of the bare form) turned a
+        # successful capture into "shell capture failed", which reads as a
+        # transport fault rather than a staleness signal. (No claim is made
+        # here about which historical run failures this explains -- that would
+        # need matching run evidence.) But merely WARNING is not enough either: this
+        # function returns a plain path that the caller hands straight to the
+        # UI judge, so freshness never reaches the assertion and a stale frame
+        # can satisfy a current-state check. So: retry once for a live frame,
+        # and if it is still retained, FAIL with an explicit stale-capture
+        # error rather than returning evidence about the past.
+        if m.group("live") == "0":
+            stale_age = m.group("age_ms")
+            if allow_stale:
+                print(f"WARN: retained (non-live) frame, age_ms={stale_age}",
+                      file=sys.stderr)
+            else:
+                raise StaleCaptureError(
+                    f"qdshell served a RETAINED frame (live=0, "
+                    f"age_ms={stale_age}); it shows the last composited state, "
+                    f"not the current screen. Pass allow_stale=True only for "
+                    f"diagnostics, never for a current-state assertion.")
 
         meta = _vm_run_script(
             session,
