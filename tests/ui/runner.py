@@ -23,6 +23,7 @@ import contextlib
 import dataclasses
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -30,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Iterator, Optional, Union
 
@@ -834,10 +836,31 @@ def screenshot_vm(session: VMSession, out_path: Path, *,
     console, never qdwin's output, and must not back a content assertion.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    guest = (f"{VM_XDG_RUNTIME_DIR}/qdshell-ui-capture-"
-             f"{os.getpid()}-{time.monotonic_ns()}.png")
+    # EVERY attempt gets its OWN destination. qdwin REFUSES to write a capture
+    # over a path that already exists -- `error: destination already exists
+    # (refusing stale capture)` (qml-plugin/qdwin-binding.cpp). A retry that
+    # reuses the first attempt's path therefore cannot succeed: attempt 1
+    # creates the file, attempt 2 draws the refusal, and the refusal does not
+    # match the reply grammar -- so a staleness retry surfaces as "shell
+    # capture failed", a transport fault the caller never provoked.
+    guests: list[str] = []
+
+    def _next_guest() -> str:
+        # uuid4 + the attempt index, NOT a timestamp. time.monotonic_ns() is
+        # monotonic but not guaranteed to be strictly increasing: its
+        # resolution may be coarser than a nanosecond, and two calls (here, or
+        # in concurrent screenshot_vm calls sharing this pid) can read the
+        # same value. That would regenerate the very collision this function
+        # exists to avoid. Uniqueness must not depend on clock resolution.
+        path = (f"{VM_XDG_RUNTIME_DIR}/qdshell-ui-capture-"
+                f"{os.getpid()}-{uuid.uuid4().hex}-{len(guests)}.png")
+        guests.append(path)
+        return path
+
     try:
-        for _attempt in range(max(1, live_retries + 1)):
+        attempts = max(1, live_retries + 1)
+        for _attempt in range(attempts):
+            guest = _next_guest()
             reply = ctrl_socket_vm(session, f"capture Virtual-1 {guest}",
                                    timeout=30.0)
             # A retained frame often means the repaint had not landed yet.
@@ -846,7 +869,7 @@ def screenshot_vm(session: VMSession, out_path: Path, *,
                 break
             # Do not sleep after the final attempt -- there is nothing left to
             # wait for.
-            if _attempt < max(1, live_retries + 1) - 1:
+            if _attempt < attempts - 1:
                 time.sleep(0.5)
         # qdshell v33 can answer with a RETAINED frame when no repaint was
         # possible (seat away, power off, repaint wedge), appending
@@ -891,16 +914,20 @@ def screenshot_vm(session: VMSession, out_path: Path, *,
                     f"not the current screen. Pass allow_stale=True only for "
                     f"diagnostics, never for a current-state assertion.")
 
+        # shlex.quote here too, for the same reason as the cleanup below: the
+        # guest path is interpolated into a shell script, and a hand-rolled
+        # '...' wrap breaks on any path VM_XDG_RUNTIME_DIR makes quote-bearing.
+        qguest = shlex.quote(guest)
         meta = _vm_run_script(
             session,
-            f"set -eu\nstat -c %s '{guest}'\nsha256sum '{guest}' | cut -d' ' -f1\n",
+            f"set -eu\nstat -c %s {qguest}\nsha256sum {qguest} | cut -d' ' -f1\n",
             timeout=15.0)
         if meta.returncode != 0:
             raise RuntimeError(
                 f"could not stat/hash guest capture: {meta.stderr.strip()}")
         guest_size, guest_sha = meta.stdout.split()
 
-        b64 = _vm_run_script(session, f"set -eu\nbase64 -w0 '{guest}'\n",
+        b64 = _vm_run_script(session, f"set -eu\nbase64 -w0 {qguest}\n",
                              timeout=30.0)
         if b64.returncode != 0:
             raise RuntimeError(
@@ -928,8 +955,23 @@ def screenshot_vm(session: VMSession, out_path: Path, *,
                     f"{reply_w}x{reply_h}")
         tmp_path.replace(out_path)
     finally:
-        with contextlib.suppress(Exception):
-            _vm_run_script(session, f"rm -f '{guest}'\n", timeout=10.0)
+        # Remove EVERY path attempted, not just the last one: a retry leaves
+        # the earlier attempt's file behind in the VM's XDG_RUNTIME_DIR. One
+        # guest-agent round trip, not one per attempt -- `rm -f` already
+        # tolerates the paths that were never created.
+        #
+        # BEST-EFFORT, by construction: every _vm_run_script failure is
+        # suppressed, so a guest-agent or shell fault leaves the files behind,
+        # as does killing the process. This attempts removal; it does not
+        # guarantee no leak.
+        #
+        # shlex.quote, not a hand-rolled '...' wrap: VM_XDG_RUNTIME_DIR is not
+        # guaranteed single-quote-free anywhere, and `--` stops a path that
+        # begins with a dash from being read as an option.
+        if guests:
+            args = " ".join(shlex.quote(g) for g in guests)
+            with contextlib.suppress(Exception):
+                _vm_run_script(session, f"rm -f -- {args}\n", timeout=10.0)
     return out_path
 
 
