@@ -1,3 +1,9 @@
+> **Moved.** This repository is frozen and archived. Development continues in
+> [qdistro/qdistro](https://github.com/qdistro/qdistro/tree/main/qdshell) under
+> `qdshell/`. Its full history up to `efd42d984` is also preserved there on
+> branch [`legacy/multirepo/qdshell`](https://github.com/qdistro/qdistro/tree/legacy/multirepo/qdshell).
+> This repository was renamed from `qdshell` to `legacy-qdshell`.
+
 # qdshell
 
 A Wayland desktop shell for [qdistro](https://github.com/qdistro/qdistro)
